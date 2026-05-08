@@ -55,7 +55,7 @@ namespace AvifEncoder
         // ★ 自定义编码器
         public string Encoder { get; set; } = "libaom-av1";
 
-        public string MetricMode { get; set; } = "mix";
+        public string MetricMode { get; set; } = "vmaf";
 
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
@@ -2966,12 +2966,12 @@ AVIF 编码器 CLI -- 帮助手册
                        libsvtav1   速度最快，多线程优化 (适合批量处理)
                        rav1e       速度与压缩率平衡，Rust 实现 (部分高级参数不支持)
                      可使用 ffmpeg -encoders | grep av1 查看本机支持的编码器
-  --metric <模式>   质量评价模式 (默认 mix)
+  --metric <模式>   质量评价模式 (默认 vmaf)
+                     vmaf   - VMAF
                      ssim   - SSIM
                      psnr   - PSNR (亮度)
-                     msssim - MS-SSIM
-                     vmaf   - VMAF
-                     mix    - 加权混合评分（默认）
+                     msssim - MS-SSIM       
+                     mix    - 加权混合评分
 超时选项 (所有值均为正整数)
 ----------------------------------------
   --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
