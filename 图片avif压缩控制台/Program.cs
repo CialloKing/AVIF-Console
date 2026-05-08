@@ -55,7 +55,7 @@ namespace AvifEncoder
         // ★ 自定义编码器
         public string Encoder { get; set; } = "libaom-av1";
 
-        public string MetricMode { get; set; } = "ssim";
+        public string MetricMode { get; set; } = "mix";
 
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
@@ -66,6 +66,27 @@ namespace AvifEncoder
             if (Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase))
                 return AomParams;
             return "";
+        }
+
+
+
+        /// <summary>
+        /// 根据当前 MetricMode 自动调整 TargetSSIM 的默认上限，
+        /// 确保在不同度量下搜索目标落在合理区间。
+        /// 仅在用户未手动指定 -q 时调用。
+        /// </summary>
+        public void AdjustTargetForMetricMode()
+        {
+            switch (MetricMode?.ToLower())
+            {
+                case "vmaf":
+                    TargetSSIM = Math.Min(TargetSSIM, 0.98);   // VMAF 归一化目标不宜超过 0.98
+                    break;
+                case "mix":
+                    TargetSSIM = Math.Min(TargetSSIM, 0.95);   // 混合评分组合多个指标，上限略低
+                    break;
+                    // ssim / psnr / msssim 保持原值（0~1 之间均合理）
+            }
         }
     }
 
@@ -2861,8 +2882,21 @@ AVIF 编码器 CLI -- 帮助手册
 ----------------------------------------
   -s         启用 CRF 搜索 (自动选择最优 CRF)
   -n         禁用 CRF 搜索 (默认，使用预设 CRF)
-  -q <n>     目标 SSIM 值 (0.0~1.0, 如 -q 0.98)
-             仅在搜索启用时有效 (默认: 预设值)
+  -q <n>     手动设置质量目标 (0.0~1.0)，覆盖预设值。
+             （注意：当使用 --metric vmaf 或 mix 时，
+              -q 的含义变为对应模式的广义质量分数。）
+             各模式未手动指定时的默认目标：
+               ssim    - 由预设决定 (0.91~0.99)
+               psnr    - 由预设决定 (0.91~0.99，已归一化)
+               msssim  - 由预设决定 (0.91~0.99)
+               vmaf    - ≤ 0.98 (自动从预设值截断)
+               mix     - ≤ 0.95 (自动从预设值截断)
+             推荐手动指定范围：
+               ssim    : 0.85 ~ 0.99
+               psnr    : 0.80 ~ 0.99
+               msssim  : 0.85 ~ 0.99
+               vmaf    : 0.90 ~ 0.98
+               mix     : 0.85 ~ 0.96
 
 色彩采样 (三选一，默认源自适应)
 ----------------------------------------
@@ -2905,12 +2939,12 @@ AVIF 编码器 CLI -- 帮助手册
                        libsvtav1   速度最快，多线程优化 (适合批量处理)
                        rav1e       速度与压缩率平衡，Rust 实现 (部分高级参数不支持)
                      可使用 ffmpeg -encoders | grep av1 查看本机支持的编码器
-  --metric <模式>   质量评价模式 (默认 ssim)
+  --metric <模式>   质量评价模式 (默认 mix)
                      ssim   - SSIM
                      psnr   - PSNR (亮度)
                      msssim - MS-SSIM
                      vmaf   - VMAF
-                     mix    - 加权混合评分
+                     mix    - 加权混合评分（默认）
 超时选项 (所有值均为正整数)
 ----------------------------------------
   --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
@@ -3185,9 +3219,14 @@ AVIF 编码器 CLI -- 帮助手册
             if (!string.IsNullOrEmpty(opts.NameFormat))
                 config.OutputNameFormat = opts.NameFormat;
 
-            // ★ 新增指标模式
+            // ★ 设置指标模式
             if (!string.IsNullOrEmpty(opts.MetricMode))
                 config.MetricMode = opts.MetricMode;
+
+            // ★ 自动调整默认目标（仅在用户未手动指定 -q 时）
+            bool userSetQuality = opts.CustomSSIM.HasValue;
+            if (!userSetQuality)
+                config.AdjustTargetForMetricMode();
 
             config.AutoSource = opts.AutoSource;
             if (!opts.AutoSource)
