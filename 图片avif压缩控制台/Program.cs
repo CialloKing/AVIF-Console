@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Text.Json;   // 如果使用 System.Text.Json
+
 
 namespace AvifEncoder
 {
@@ -93,6 +95,16 @@ namespace AvifEncoder
         // ★ 新增：最终成功的 ffmpeg 命令字符串（便于完整审计）
         public string? CommandLine { get; set; }
     }
+
+    /// <summary> 一次 libvmaf 计算得到的全部常用指标 </summary>
+    public sealed class QualityMetrics
+    {
+        public double SSIM { get; set; }
+        public double PSNR_Y { get; set; }
+        public double MS_SSIM { get; set; }
+        public double VMAF { get; set; }
+    }
+
 
     public static class Logger
     {
@@ -242,6 +254,129 @@ namespace AvifEncoder
             {
                 // 极端异常时使用文件名小写作为回退键（应极少发生）
                 return $"__fallback__{Path.GetFileName(input).ToLowerInvariant()}";
+            }
+        }
+
+
+        /// <summary>
+        /// 使用 libvmaf 一次性计算 ref (原图) 与 dist (编码后) 的 SSIM / PSNR‑Y / MS‑SSIM / VMAF。
+        /// 返回 QualityMetrics，失败返回 null。会自动处理分辨率不一致的情况（缩放至相同尺寸）。
+        /// </summary>
+        private async Task<QualityMetrics?> ComputeAllMetricsAsync(string refPath, string distPath)
+        {
+            if (!EnsureFilesValid(refPath, distPath)) return null;
+
+            // 生成唯一临时 JSON 文件，放在输出目录下，路径使用正斜杠
+            string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
+                                  .Replace('\\', '/');
+
+            try
+            {
+                var (w1, h1) = await GetResolutionAsync(refPath).WaitAsync(TimeSpan.FromSeconds(30));
+                var (w2, h2) = await GetResolutionAsync(distPath).WaitAsync(TimeSpan.FromSeconds(30));
+                string filter;
+                if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
+                {
+                    int w = Math.Min(w1, w2);
+                    int h = Math.Min(h1, h2);
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                }
+                else
+                {
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                }
+
+                string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
+                              $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
+
+                var psi = new ProcessStartInfo(_ffmpegPath, args)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using var p = new Process { StartInfo = psi };
+                p.Start();
+                var stdoutTask = p.StandardOutput.ReadToEndAsync();
+                var stderrTask = p.StandardError.ReadToEndAsync();
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(_config.SsimTimeoutMinutes));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? default, cts.Token);
+
+                try { await Task.WhenAll(stdoutTask, stderrTask, p.WaitForExitAsync(linkedCts.Token)); }
+                catch (OperationCanceledException)
+                {
+                    if (!p.HasExited) try { p.Kill(); } catch { }
+                    Logger.Log($"ComputeAllMetrics 超时: {Path.GetFileName(refPath)}");
+                    return null;
+                }
+
+                // 记录 stderr（总是记录，便于调试）
+                string stderr = await stderrTask;
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    Logger.Log($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+
+                if (p.ExitCode != 0)
+                {
+                    Logger.Log($"ComputeAllMetrics 失败 (exit {p.ExitCode}): {stderr.Trim()}");
+                    return null;
+                }
+
+                // 读取 JSON
+                string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar); // 转回本地路径
+                if (!File.Exists(physicalPath))
+                {
+                    Logger.Log($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
+                    return null;
+                }
+
+                string json = await File.ReadAllTextAsync(physicalPath);
+                return ParseVmafJson(json);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"ComputeAllMetrics 异常: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                // 清理临时文件
+                try
+                {
+                    string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
+                    if (File.Exists(physicalPath)) File.Delete(physicalPath);
+                }
+                catch { }
+            }
+        }
+
+        private static QualityMetrics? ParseVmafJson(string json)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var pooled = doc.RootElement.GetProperty("pooled_metrics");
+
+                double ssim = pooled.GetProperty("float_ssim").GetProperty("mean").GetDouble();
+                double ms_ssim = pooled.GetProperty("float_ms_ssim").GetProperty("mean").GetDouble();
+                double vmaf = pooled.GetProperty("vmaf").GetProperty("mean").GetDouble();
+                double psnr_y = pooled.GetProperty("psnr_y").GetProperty("mean").GetDouble();
+
+                return new QualityMetrics
+                {
+                    SSIM = ssim,
+                    PSNR_Y = psnr_y,
+                    MS_SSIM = ms_ssim,
+                    VMAF = vmaf
+                };
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"解析 VMAF JSON 失败: {ex.Message}");
+                return null;
             }
         }
 
@@ -945,6 +1080,30 @@ namespace AvifEncoder
 
                 string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
                 // 其余逻辑不变...
+
+                // ★ [新功能] 额外计算全部指标，输出到日志供测试
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
+                        if (metrics != null)
+                        {
+                            Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
+                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                        }
+                        else
+                        {
+                            Logger.Log($"多指标 [{name}] 计算失败");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
+                    }
+                });
+
 
                 if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
                 {
