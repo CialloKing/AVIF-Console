@@ -210,7 +210,7 @@ namespace AvifEncoder
         }
     }
 
-    public class AvifPipeline
+    public class AvifPipeline : IDisposable
     {
         private readonly string _inputDir;
         private readonly string _outputDir;
@@ -265,7 +265,13 @@ namespace AvifEncoder
             return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
         }
 
-
+        public void Dispose()
+        {
+            _globalCts?.Cancel();
+            _globalCts?.Dispose();
+            _ssimConcurrency?.Dispose();
+            _ffmpegSlots?.Dispose();
+        }
 
         /// <summary>
         /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
@@ -351,11 +357,11 @@ namespace AvifEncoder
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=vmaf:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=vmaf:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
@@ -2245,9 +2251,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 var (w1, h1) = await GetResolutionAsync(a).WaitAsync(TimeSpan.FromSeconds(30));
                 var (w2, h2) = await GetResolutionAsync(b).WaitAsync(TimeSpan.FromSeconds(30));
-                if (w1 == 0 && h1 == 0 && w2 == 0 && h2 == 0)
+
+                // ★ 修复：任意一边分辨率无效则立即返回 -1
+                if (w1 <= 0 || h1 <= 0 || w2 <= 0 || h2 <= 0)
                 {
-                    Logger.Log($"SSIM 无法获取分辨率: a={Path.GetFileName(a)}, b={Path.GetFileName(b)}");
+                    Logger.Log($"SSIM 分辨率无效: a={Path.GetFileName(a)} ({w1}x{h1}), b={Path.GetFileName(b)} ({w2}x{h2})");
                     return -1;
                 }
 
@@ -3441,14 +3449,18 @@ AVIF 编码器 CLI -- 帮助手册
                 catch { }
             }
 
+            AvifPipeline? pipeline = null;
             try
             {
-                var pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config);
+                pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config);
                 await pipeline.RunAsync();
             }
             catch (Exception ex) { Console.WriteLine($"[FAIL] 错误: {ex.Message}"); }
             finally
             {
+                // 释放 pipeline 资源（信号量、取消令牌等）
+                pipeline?.Dispose();
+
                 if (!forceEnableQuickEdit && consoleHandle != IntPtr.Zero)
                 {
                     try { SetConsoleMode(consoleHandle, originalMode); } catch { }
