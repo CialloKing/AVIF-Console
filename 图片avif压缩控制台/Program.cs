@@ -1489,15 +1489,27 @@ private async Task<(bool ok, int crf, string pixFmt)>
                 string aomPart = string.IsNullOrEmpty(effectiveAom) ? "" : $"-aom-params {effectiveAom}";
                 try
                 {
-
-                    // ★ 使用统一的安全模式参数构建方法
-                    // 安全模式单次 SSIM 中的编码调用：
-                    // ★ 安全扫描使用独立且较短的超时 SafeEncodeTimeoutMinutes，避免单个测试编码占用过长时间
                     string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart);
-
                     (bool ok, string _) = await RunFfmpegExAsync(_ffmpegPath, args,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !File.Exists(tmpAvif) || new FileInfo(tmpAvif).Length < 100) return -1;
+
+                    // ★ 优先使用多指标评分，匹配当前 MetricMode
+                    QualityMetrics? metrics = await GetOrComputeMetrics(
+                        inputPath, testCrf,
+                        tileCols: 1,                 // 安全模式使用单 tile
+                        cpuUsed: 0,                  // 安全模式使用 cpu-used 0
+                        config,
+                        IsJpeg(inputPath),
+                        "yuv420p");                  // 安全模式固定 yuv420p
+
+                    if (metrics != null)
+                    {
+                        double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
+                        return score;
+                    }
+
+                    // 回退：多指标失败时用旧版 SSIM
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
                 }
                 finally
