@@ -94,6 +94,16 @@ namespace AvifEncoder
 
         // ★ 新增：最终成功的 ffmpeg 命令字符串（便于完整审计）
         public string? CommandLine { get; set; }
+
+
+
+
+        // ★ 新增多指标字段
+        public double? FinalVMAF { get; set; }
+        public double? FinalPSNR_Y { get; set; }
+        public double? FinalMSSSIM { get; set; }
+        public double? FinalMixScore { get; set; }
+
     }
 
     /// <summary> 一次 libvmaf 计算得到的全部常用指标 </summary>
@@ -194,6 +204,16 @@ namespace AvifEncoder
             // 目前仅 libaom-av1 确定支持；svt-av1、rav1e 及硬件编码器均不支持
             return encoderName.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase);
         }
+
+
+        private static double ComputeMixScore(QualityMetrics m)
+        {
+            double vmafNorm = m.VMAF / 100.0;
+            double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+            return 0.35 * vmafNorm + 0.25 * m.MS_SSIM + 0.25 * m.SSIM + 0.15 * psnrNorm;
+        }
+
+
 
         /// <summary>
         /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
@@ -1028,6 +1048,8 @@ namespace AvifEncoder
                     cfg.PixelFormat += "10le";
             }
         }
+
+
         // ==================== 主调度方法 ====================
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
@@ -1055,7 +1077,6 @@ namespace AvifEncoder
                     TotalTime = DateTime.Now - fileStartTime,
                     PixelFormat = ""
                 };
-                // ★ 使用统一入口统计进度，不再手动 Increment + PrintProgress
                 MarkProcessed(failResult);
                 return failResult;
             }
@@ -1066,55 +1087,65 @@ namespace AvifEncoder
             var encodeResult = await PerformFinalEncodeAsync(inputPath, outputPath, config, encInfo, searchResult);
 
             double ssim = 0;
+            // ★ 将 metrics 声明提前到 if 之外
+            QualityMetrics? metrics = null;
+
             if (encodeResult.Success)
             {
-                // ★ 修复：使用 inputPath 变量并统一调用 GetNormalizedPathForCache
-                // 在 encodeResult.Success 分支中，将原来的缓存键拼接改为：
-                string normalizedInput = GetNormalizedPathForCache(inputPath);
-                string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                string aomParams = config.GetEffectiveAomParams();
-                bool jpeg = IsJpeg(inputPath);
-                int tileCols = encInfo.TileCols;
-                int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-
-                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
-                // 其余逻辑不变...
-
-                // ★ [新功能] 额外计算全部指标，输出到日志供测试
-                _ = Task.Run(async () =>
+                // ★ 调用多指标计算（同步等待）
+                try
                 {
-                    try
-                    {
-                        var metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
-                        if (metrics != null)
-                        {
-                            Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
-                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
-                        }
-                        else
-                        {
-                            Logger.Log($"多指标 [{name}] 计算失败");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
-                    }
-                });
-
-
-                if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                    metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
+                }
+                catch (Exception ex)
                 {
-                    ssim = cachedSsim;
-                    Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
+                    Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
+                }
+
+                if (metrics != null)
+                {
+                    // 使用 VMAF 提供的更准确的 SSIM
+                    ssim = metrics.SSIM;
+                    Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
+                               $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                               $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+
+                    // 存入 SSIM 缓存
+                    string normalizedInput = GetNormalizedPathForCache(inputPath);
+                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+                    string aomParams = config.GetEffectiveAomParams();
+                    bool jpeg = IsJpeg(inputPath);
+                    int tileCols = encInfo.TileCols;
+                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+
+                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+                    _ssimCache[cacheKey] = metrics.SSIM;
                 }
                 else
                 {
-                    ssim = await CalcSSIMAsync(inputPath, outputPath, encodeResult.ActualPixFmt);
-                    if (ssim >= 0)
-                        _ssimCache[cacheKey] = ssim;
+                    // 多指标失败，回退到旧版 SSIM 计算
+                    string normalizedInput = GetNormalizedPathForCache(inputPath);
+                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+                    string aomParams = config.GetEffectiveAomParams();
+                    bool jpeg = IsJpeg(inputPath);
+                    int tileCols = encInfo.TileCols;
+                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+
+                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+
+                    if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                    {
+                        ssim = cachedSsim;
+                        Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
+                    }
+                    else
+                    {
+                        ssim = await CalcSSIMAsync(inputPath, outputPath, encodeResult.ActualPixFmt);
+                        if (ssim >= 0)
+                            _ssimCache[cacheKey] = ssim;
+                    }
                 }
             }
 
@@ -1140,7 +1171,13 @@ namespace AvifEncoder
                 IsSafeMode = encodeResult.UseSafeMode,
                 AomParamsUsed = encodeResult.ActualAom ?? "",
                 CacheReused = encodeResult.FromCache,
-                CommandLine = encodeResult.FinalCommand ?? ""
+                CommandLine = encodeResult.FinalCommand ?? "",
+
+                // ★ 填充新指标
+                FinalVMAF = metrics?.VMAF,
+                FinalPSNR_Y = metrics?.PSNR_Y,
+                FinalMSSSIM = metrics?.MS_SSIM,
+                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
             };
 
             MarkProcessed(result);
@@ -2579,11 +2616,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string p = Path.Combine(_outputDir, "avif_stats.csv");
             var sb = new StringBuilder();
 
-            sb.AppendLine("文件名,原始文件名,原始大小,输出大小,压缩率,CRF,最终SSIM,编码耗时(秒),搜索耗时(秒),总耗时(秒),重试次数,像素格式,源像素格式,模式,安全模式,完整命令行,AOM参数,缓存复用,状态,失败原因");
+            // 调整列顺序：将 VMAF、PSNR‑Y、MS‑SSIM、MixScore 紧挨在 “SSIM” 之后
+            sb.AppendLine("文件名,原始文件名,原始大小,输出大小,压缩率,CRF,SSIM,VMAF,PSNR-Y,MS-SSIM,MixScore,编码耗时(秒),搜索耗时(秒),总耗时(秒),重试次数,像素格式,源像素格式,模式,安全模式,完整命令行,AOM参数,缓存复用,状态,失败原因");
 
             foreach (var r in results)
             {
-                // ★ 优先判断 Skipped，避免跳过的文件显示为“成功”
                 string status = r.Skipped ? "跳过" : (r.Success ? "成功" : "失败");
                 string errMsg = CsvEscape(r.ErrorMessage);
                 string fmt = r.PixelFormat ?? "";
@@ -2594,6 +2631,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 string aomParams = CsvEscape(r.AomParamsUsed ?? "");
                 string cache = r.CacheReused ? "是" : "否";
 
+                string vmaf = r.FinalVMAF?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
+                string psnrY = r.FinalPSNR_Y?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
+                string msssim = r.FinalMSSSIM?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+                string mix = r.FinalMixScore?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+
+                // 拼接顺序务必与表头一致
                 sb.AppendLine(CsvEscape(r.FileName) + "," +
                               CsvEscape(r.OriginalFileName) + "," +
                               r.OriginalSize.ToString(CultureInfo.InvariantCulture) + "," +
@@ -2601,6 +2644,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                               r.CompressionRatio.ToString("F4", CultureInfo.InvariantCulture) + "," +
                               r.UsedCRF.ToString(CultureInfo.InvariantCulture) + "," +
                               r.FinalSSIM.ToString("F4", CultureInfo.InvariantCulture) + "," +
+                              vmaf + "," +
+                              psnrY + "," +
+                              msssim + "," +
+                              mix + "," +
                               r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
                               r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
                               r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
