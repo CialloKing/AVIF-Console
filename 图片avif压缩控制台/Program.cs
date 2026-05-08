@@ -709,6 +709,7 @@ namespace AvifEncoder
         /// </summary>
         private async Task<string> GetSourcePixelFormat(string filePath)
         {
+
             string normalizedPath = GetNormalizedPathForCache(filePath);
             if (_srcPixFmtCache.TryGetValue(normalizedPath, out string? cached) && cached != null)
                 return cached;
