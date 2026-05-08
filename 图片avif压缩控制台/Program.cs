@@ -88,7 +88,33 @@ namespace AvifEncoder
                     // ssim / psnr / msssim 保持原值（0~1 之间均合理）
             }
         }
+
+
+
+
+
+
+        /// <summary>
+        /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
+        /// 例如：vmaf 模式下输入 95 将转换为 0.95；psnr 模式下输入 40 转换为 0.5。
+        /// </summary>
+        public void SetQualityTarget(double rawValue, string metricMode)
+        {
+            TargetSSIM = metricMode?.ToLower() switch
+            {
+                "ssim" => Math.Clamp(rawValue, 0, 1),
+                "psnr" => Math.Clamp((rawValue - 30) / 20.0, 0, 1),   // 30 dB -> 0, 50 dB -> 1
+                "msssim" => Math.Clamp(rawValue, 0, 1),
+                "vmaf" => Math.Clamp(rawValue / 100.0, 0, 1),
+                "mix" => Math.Clamp(rawValue, 0, 1),
+                _ => Math.Clamp(rawValue, 0, 1)                   // fallback
+            };
+        }
     }
+
+
+
+
 
     public class EncodeResult
     {
@@ -2887,21 +2913,17 @@ AVIF 编码器 CLI -- 帮助手册
 ----------------------------------------
   -s         启用 CRF 搜索 (自动选择最优 CRF)
   -n         禁用 CRF 搜索 (默认，使用预设 CRF)
-  -q <n>     手动设置质量目标 (0.0~1.0)，覆盖预设值。
-             （注意：当使用 --metric vmaf 或 mix 时，
-              -q 的含义变为对应模式的广义质量分数。）
-             各模式未手动指定时的默认目标：
-               ssim    - 由预设决定 (0.91~0.99)
-               psnr    - 由预设决定 (0.91~0.99，已归一化)
-               msssim  - 由预设决定 (0.91~0.99)
-               vmaf    - ≤ 0.98 (自动从预设值截断)
-               mix     - ≤ 0.95 (自动从预设值截断)
-             推荐手动指定范围：
-               ssim    : 0.85 ~ 0.99
-               psnr    : 0.80 ~ 0.99
-               msssim  : 0.85 ~ 0.99
-               vmaf    : 0.90 ~ 0.98
-               mix     : 0.85 ~ 0.96
+  -q <n>     手动设置质量目标，输入值为当前 --metric 模式的原生数值：
+               ssim    - 0.0~1.0（直接 SSIM）
+               psnr    - 30~50（单位 dB，亮度 PSNR）
+               msssim  - 0.0~1.0（直接 MS-SSIM）
+               vmaf    - 0~100（VMAF 分数，90 以上为高质量）
+               mix     - 0.0~1.0（加权混合评分）
+             示例：
+               --metric vmaf -q 95   → 要求 VMAF ≥ 95
+               --metric psnr -q 40   → 要求亮度 PSNR ≥ 40 dB
+               --metric mix -q 0.90  → 要求综合评分 ≥ 0.90
+             若未手动指定，则使用预设值并自动适配上限。
 
 色彩采样 (三选一，默认源自适应)
 ----------------------------------------
@@ -3118,9 +3140,10 @@ AVIF 编码器 CLI -- 帮助手册
                     else if (flags.Equals("o") && i + 1 < args.Length) { opts.OutputDir = args[++i]; }
                     else if (flags.Equals("q") && i + 1 < args.Length)
                     {
-                        if (double.TryParse(args[++i], out double q) && q >= 0 && q <= 1)
-                            opts.CustomSSIM = q;
-                        else throw new Exception("SSIM 目标必须是 0~1 的数字");
+                        if (double.TryParse(args[++i], out double q))
+                            opts.CustomSSIM = q;   // 不再检查范围，由后续转换时负责
+                        else
+                            throw new Exception("-q 需要是一个数值");
                     }
                     else if (flags.Equals("r") && i + 1 < args.Length)
                     {
@@ -3204,7 +3227,12 @@ AVIF 编码器 CLI -- 帮助手册
                 else if (opts.Force420) config.PixelFormat = "yuv420p10le";
                 else if (opts.Force422) config.PixelFormat = "yuv422p10le";
                 if (opts.ManualThreads.HasValue) config.MaxJobs = opts.ManualThreads.Value;
-                if (opts.CustomSSIM.HasValue) config.TargetSSIM = opts.CustomSSIM.Value;
+                if (opts.CustomSSIM.HasValue)
+                {
+                    // 用户提供了 -q，根据当前 metricMode 转换原生值到内部 0‑1 目标
+                    string mode = opts.MetricMode ?? "mix";
+                    config.SetQualityTarget(opts.CustomSSIM.Value, mode);
+                }
             }
 
             if (opts.MinCRF.HasValue) config.MinCRF = opts.MinCRF.Value;
