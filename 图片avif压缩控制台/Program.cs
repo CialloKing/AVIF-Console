@@ -770,8 +770,9 @@ namespace AvifEncoder
         {
             if (isLosslessMode)
             {
-                // 无损模式使用 YUV444（数学无损），目前不携带 Alpha
-                return _config.BitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+                // 无损模式使用 YUV444（数学无损），若源文件有 Alpha 通道则携带 Alpha
+                string baseFmt = hasAlpha ? "yuva444p" : "yuv444p";
+                return _config.BitDepth >= 10 ? baseFmt + "10le" : baseFmt;
             }
 
             if (_config.AutoSource)
@@ -787,7 +788,7 @@ namespace AvifEncoder
 
                 int targetBitDepth = _config.UserSetBitDepth ? _config.BitDepth : (srcIs10bit ? 10 : 8);
 
-                // ★ 修复：正确生成 yuva / yuv 格式
+                // 正确生成 yuva / yuv 格式
                 string depthSuffix = targetBitDepth >= 10 ? "10le" : "";
                 return hasAlpha ? $"yuva{chroma}p{depthSuffix}" : $"yuv{chroma}p{depthSuffix}";
             }
@@ -812,7 +813,7 @@ namespace AvifEncoder
                     depthSuffix = _config.BitDepth >= 10 ? "10le" : "";
                 }
 
-                // ★ 修复：正确生成 yuva / yuv 格式
+                // 正确生成 yuva / yuv 格式
                 return hasAlpha ? $"yuva{chroma}p{depthSuffix}" : $"yuv{chroma}p{depthSuffix}";
             }
         }
