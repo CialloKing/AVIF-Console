@@ -262,7 +262,7 @@ namespace AvifEncoder
         {
             double vmafNorm = m.VMAF / 100.0;
             double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-            return 0.35 * vmafNorm + 0.25 * m.MS_SSIM + 0.25 * m.SSIM + 0.15 * psnrNorm;
+            return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
         }
 
 
@@ -2644,16 +2644,16 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         {
             switch (metricMode?.ToLower())
             {
-                case "ssim": return m.SSIM;                         // 0‑1
+                case "ssim": return m.SSIM;
                 case "psnr": return Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                case "msssim": return m.MS_SSIM;                      // 0‑1
-                case "vmaf": return m.VMAF / 100.0;                 // 0‑1
+                case "msssim": return m.MS_SSIM;
+                case "vmaf": return m.VMAF / 100.0;
                 case "mix":
                     double vmafNorm = m.VMAF / 100.0;
                     double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                    return 0.35 * vmafNorm + 0.25 * m.MS_SSIM + 0.25 * m.SSIM + 0.15 * psnrNorm;
+                    return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
                 default:
-                    return m.SSIM; // 默认回退到 SSIM
+                    return m.SSIM;
             }
         }
 
