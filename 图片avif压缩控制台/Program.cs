@@ -77,15 +77,17 @@ namespace AvifEncoder
         /// </summary>
         public void AdjustTargetForMetricMode()
         {
+            // ★ 无损模式下不调整质量目标，避免日志混淆
+            if (Lossless) return;
+
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":
-                    TargetSSIM = Math.Min(TargetSSIM, 0.98);   // VMAF 归一化目标不宜超过 0.98
+                    TargetSSIM = Math.Min(TargetSSIM, 0.98);
                     break;
                 case "mix":
-                    TargetSSIM = Math.Min(TargetSSIM, 0.95);   // 混合评分组合多个指标，上限略低
+                    TargetSSIM = Math.Min(TargetSSIM, 0.95);
                     break;
-                    // ssim / psnr / msssim 保持原值（0~1 之间均合理）
             }
         }
 
@@ -1519,11 +1521,13 @@ private async Task<(bool ok, int crf, string pixFmt)>
             int bestSafeCRF = -1;
             int totalSteps = config.MaxCRF - config.MinCRF + 1;
             int step = 0;
+            int consecutiveFailures = 0;  // ★ 新增连续失败计数
 
             for (int testCrf = config.MaxCRF; testCrf >= config.MinCRF; testCrf--)
             {
                 step++;
                 if (safeToken.IsCancellationRequested) break;
+
                 if (step == 1 || step == totalSteps || step % 5 == 0)
                     SafeWriteLine($"  [{name}] 安全扫描 {step}/{totalSteps} (CRF={testCrf})...");
 
@@ -1533,7 +1537,21 @@ private async Task<(bool ok, int crf, string pixFmt)>
                     bestSafeCRF = testCrf;
                     break;
                 }
-                // 不再记录未达标的 CRF，确保只有满足质量目标时才算成功
+
+                // ★ 失败计数与上限检查
+                if (curSSIM < 0)
+                {
+                    consecutiveFailures++;
+                    if (consecutiveFailures >= 5)
+                    {
+                        SafeWriteLine($"  [{name}] 安全扫描连续失败 {consecutiveFailures} 次，终止扫描");
+                        break;
+                    }
+                }
+                else
+                {
+                    consecutiveFailures = 0;  // 有有效分数则重置计数
+                }
             }
 
             if (bestSafeCRF > 0)
@@ -1561,32 +1579,23 @@ private async Task<(bool ok, int crf, string pixFmt)>
                 string aomPart = string.IsNullOrEmpty(effectiveAom) ? "" : $"-aom-params {effectiveAom}";
                 try
                 {
+                    // 安全模式编码一次
                     string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart);
                     (bool ok, string _) = await RunFfmpegExAsync(_ffmpegPath, args,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !File.Exists(tmpAvif) || new FileInfo(tmpAvif).Length < 100) return -1;
 
-                    // ★ 优先使用多指标评分，匹配当前 MetricMode
-                    QualityMetrics? metrics = await GetOrComputeMetrics(
-                        inputPath, testCrf,
-                        tileCols: 1,                 // 安全模式使用单 tile
-                        cpuUsed: 0,                  // 安全模式使用 cpu-used 0
-                        config,
-                        IsJpeg(inputPath),
-                        "yuv420p");                  // 安全模式固定 yuv420p
-
+                    // ★ 直接使用已生成的临时文件计算多指标，不再二次编码
+                    QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif);
                     if (metrics != null)
                     {
                         double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
                         return score;
                     }
-                    // ★ 回退日志
-                    Logger.Log($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
+
                     // 回退：多指标失败时用旧版 SSIM
+                    Logger.Log($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
-
-
-
                 }
                 finally
                 {
