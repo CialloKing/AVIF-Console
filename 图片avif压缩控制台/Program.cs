@@ -2424,7 +2424,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             foreach (var r in results)
             {
-                string status = r.Success ? "成功" : "失败";
+                // ★ 优先判断 Skipped，避免跳过的文件显示为“成功”
+                string status = r.Skipped ? "跳过" : (r.Success ? "成功" : "失败");
                 string errMsg = CsvEscape(r.ErrorMessage);
                 string fmt = r.PixelFormat ?? "";
                 string srcFmt = r.SourcePixelFormat ?? "";
