@@ -367,7 +367,7 @@ namespace AvifEncoder
 
                 if (p.ExitCode != 0)
                 {
-                    Logger.Log($"ComputeAllMetrics 失败 (exit {p.ExitCode}): {stderr.Trim()}");
+                    Logger.Log($"ComputeAllMetrics 失败 (exit {p.ExitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
                     return null;
                 }
 
@@ -1529,9 +1529,13 @@ private async Task<(bool ok, int crf, string pixFmt)>
                         double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
                         return score;
                     }
-
+                    // ★ 回退日志
+                    Logger.Log($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
                     // 回退：多指标失败时用旧版 SSIM
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
+
+
+
                 }
                 finally
                 {
@@ -2408,6 +2412,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 // 控制并发 ffmpeg 调用
                 if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
+                    Logger.Log($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
                     newTask.SetResult(null);
                     return null;
                 }
