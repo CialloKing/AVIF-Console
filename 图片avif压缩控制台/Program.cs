@@ -182,6 +182,9 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, double> _ssimCache = new();
         private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
+        // ★ 新增
+        private readonly ConcurrentDictionary<string, QualityMetrics> _metricsCache = new();
+        private readonly ConcurrentDictionary<string, Task<QualityMetrics?>> _metricsTasks = new();
         // 将原来的 (string file, TimeSpan encodeTime) 改为包含命令字符串
         private readonly ConcurrentDictionary<string, (string file, TimeSpan encodeTime, string commandLine)> _encodeCache = new();
         private readonly SemaphoreSlim _ssimConcurrency;
@@ -2327,6 +2330,104 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string? cleanFmt = pixFmt?.Replace("a", "");
             return await SSIMDirect(orig, enc, cleanFmt);
         }
+
+
+
+
+
+
+        /// <summary>
+        /// 获取或计算给定编码参数下的多指标。
+        /// 使用与 SSIM 缓存相同的键，以便未来统一。
+        /// </summary>
+        private async Task<QualityMetrics?> GetOrComputeMetrics(
+            string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg, bool jpeg, string pixFmt)
+        {
+            // 无损模式返回理想指标
+            if (cfg.Lossless)
+                return new QualityMetrics { SSIM = 1.0, PSNR_Y = 100.0, MS_SSIM = 1.0, VMAF = 100.0 };
+
+            int actualDepth = pixFmt.Contains("10le") ? 10 : 8;
+            string normalizedInput = GetNormalizedPathForCache(input);
+            string effectiveAom = cfg.GetEffectiveAomParams();
+
+            // 使用与 SSIM 缓存一致的键，确保后续可以复用
+            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth);
+
+            if (_metricsCache.TryGetValue(key, out QualityMetrics? cached))
+                return cached;
+
+            // 防止重复计算
+            var newTask = new TaskCompletionSource<QualityMetrics?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var task = _metricsTasks.GetOrAdd(key, newTask.Task);
+            bool isOwner = task == newTask.Task;
+
+            if (!isOwner)
+            {
+                try { return await task.WaitAsync(TimeSpan.FromMinutes(30)); }
+                catch { return null; }
+            }
+
+            try
+            {
+                // 控制并发 ffmpeg 调用
+                if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
+                {
+                    newTask.SetResult(null);
+                    return null;
+                }
+
+                try
+                {
+                    // 生成临时编码文件
+                    string tmp = Path.Combine(_outputDir, $"_p_{Guid.NewGuid():N}.avif");
+                    try
+                    {
+                        int searchCpu = Math.Min(cpuUsed + 2, 8);
+                        var encResult = await EncodeToFileExAsync(input, tmp, crf, tileCols, searchCpu, cfg, jpeg, pixFmt,
+                            isTrueLossless: false, cfg.SearchEncodeTimeoutMinutes, allowParamDegrade: true);
+
+                        if (!encResult.ok || !File.Exists(tmp) || new FileInfo(tmp).Length < 100)
+                        {
+                            newTask.SetResult(null);
+                            return null;
+                        }
+
+                        QualityMetrics? metrics = await ComputeAllMetricsAsync(input, tmp);
+                        if (metrics != null)
+                        {
+                            _metricsCache[key] = metrics;
+                            Logger.Log($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
+                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                        }
+                        newTask.SetResult(metrics);
+                        return metrics;
+                    }
+                    finally
+                    {
+                        if (File.Exists(tmp)) try { File.Delete(tmp); } catch { }
+                    }
+                }
+                finally
+                {
+                    _ssimConcurrency.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"GetOrComputeMetrics 异常: {ex.Message}");
+                newTask.TrySetResult(null);
+                return null;
+            }
+            finally
+            {
+                if (isOwner)
+                    _metricsTasks.TryRemove(key, out _);
+            }
+        }
+
+
 
 
         // ========== 修复后的 GetOrComputeSSIM（信号量超时） ==========
