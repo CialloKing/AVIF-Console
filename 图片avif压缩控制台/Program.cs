@@ -12,6 +12,19 @@ namespace AvifEncoder
 {
     public enum CliPreset { Fast, Balanced, Best, Extreme }
 
+
+
+
+    class ProbeInfo
+    {
+        public string PixFmt { get; set; } = "yuv420p";
+        public bool HasAlpha { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+    }
+
+
+
     public class PresetConfig
     {
         public int BaseCRF { get; set; }
@@ -274,6 +287,44 @@ namespace AvifEncoder
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
         }
+
+
+
+
+
+        private readonly ConcurrentDictionary<string, ProbeInfo> _probeCache = new();
+
+private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
+{
+    string key = GetNormalizedPathForCache(filePath);
+    if (_probeCache.TryGetValue(key, out var cached)) return cached;
+
+    // 一次性 ffprobe 获取所有信息
+    string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless -of json \"{filePath}\"";
+    string json = await RunProcessAndGetOutputAsync(_ffprobePath, args);
+    if (string.IsNullOrEmpty(json)) return null;
+
+    try
+    {
+        using var doc = JsonDocument.Parse(json);
+        var stream = doc.RootElement.GetProperty("streams")[0];
+        string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
+        int w = stream.GetProperty("width").GetInt32();
+        int h = stream.GetProperty("height").GetInt32();
+
+        bool hasAlpha = fmt switch
+        {
+            "rgba" or "bgra" or "argb" or "abgr" => true,
+            "rgba64le" or "bgra64le" => true,
+            _ => false
+        };
+
+        var info = new ProbeInfo { PixFmt = fmt, HasAlpha = hasAlpha, Width = w, Height = h };
+        _probeCache[key] = info;
+        return info;
+    }
+    catch { return null; }
+}
 
         /// <summary>
         /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
@@ -882,27 +933,32 @@ namespace AvifEncoder
 
 
 
+        /// <summary>
+        /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
+        /// </summary>
         private async Task<bool> SourceHasAlpha(string filePath)
         {
-            // ★ 修改：保留原始大小写
-            string normalizedPath = GetNormalizedPathForCache(filePath);
+            // ★ 优先从统一 Probe 缓存获取
+            var info = await GetProbeInfoAsync(filePath);
+            if (info != null)
+            {
+                // 同步更新旧缓存
+                string normalizedPath = GetNormalizedPathForCache(filePath);
+                _srcAlphaCache[normalizedPath] = info.HasAlpha;
+                return info.HasAlpha;
+            }
 
-            // 优先从 GetSourcePixelFormat 已填充的缓存中读取
-            if (_srcAlphaCache.TryGetValue(normalizedPath, out bool hasAlpha))
-                return hasAlpha;
-
-            // 兜底：本不应该执行到这里，但保留一次 ffprobe 以备意外
+            // 兜底：单独探测
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"";
             string raw = await RunProcessAndGetOutputAsync(_ffprobePath, args);
             string fmt = raw.Trim().ToLower();
-
-            hasAlpha = fmt switch
+            bool hasAlpha = fmt switch
             {
                 "rgba" or "bgra" or "argb" or "abgr" => true,
                 "rgba64le" or "bgra64le" => true,
                 _ => false
             };
-            _srcAlphaCache[normalizedPath] = hasAlpha;
+            _srcAlphaCache[GetNormalizedPathForCache(filePath)] = hasAlpha;
             return hasAlpha;
         }
 
@@ -922,62 +978,76 @@ namespace AvifEncoder
         /// <summary>
         /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p
         /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
+        /// 高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p。
+        /// </summary>
         private async Task<string> GetSourcePixelFormat(string filePath)
         {
-
-            string normalizedPath = GetNormalizedPathForCache(filePath);
-            if (_srcPixFmtCache.TryGetValue(normalizedPath, out string? cached) && cached != null)
-                return cached;
-
-            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"";
-            string raw = await RunProcessAndGetOutputAsync(_ffprobePath, args);
-            string fmt = raw.Trim().ToLower();
-
-            // Alpha 信息缓存（同样使用大小写敏感的键）
-            bool hasAlpha = fmt switch
+            // ★ 优先从统一 Probe 缓存获取
+            var info = await GetProbeInfoAsync(filePath);
+            if (info != null)
             {
-                "rgba" or "bgra" or "argb" or "abgr" => true,
-                "rgba64le" or "bgra64le" => true,
-                _ => false
-            };
-            _srcAlphaCache[normalizedPath] = hasAlpha;
+                string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
 
-            // 像素格式标准化
-            if (fmt == "gray" || fmt.StartsWith("gray"))
-            {
-                bool is10bit = fmt.Contains("16") || fmt.Contains("10");
-                fmt = is10bit ? "yuv420p10le" : "yuv420p";
-            }
-            else if (fmt.Contains("yuvj"))
-                fmt = fmt.Replace("yuvj", "yuv");
-            else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr"))
-            {
-                bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
-                               fmt == "argb" || fmt == "abgr";
-                if (fmt.Contains("64") && !is4Comp) is4Comp = true;
+                // 填充旧的 Alpha 缓存（如果未填充）
+                string normalizedPath = GetNormalizedPathForCache(filePath);
+                if (!_srcAlphaCache.ContainsKey(normalizedPath))
+                    _srcAlphaCache[normalizedPath] = info.HasAlpha;
 
-                int components = is4Comp ? 4 : 3;
-                var match = Regex.Match(fmt, @"(\d+)");
-                int totalBits = 0;
-                if (match.Success) int.TryParse(match.Groups[1].Value, out totalBits);
-                if (totalBits == 0) totalBits = components * 8;
-                int perCompBits = totalBits / components;
-                int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
-
-                // 生成不带后缀的色度采样表示
-                string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
-
-                // ★ 如果源有 Alpha，则在表示中显式加入 'a'
-                if (hasAlpha)
+                // 像素格式标准化（复用原有逻辑）
+                if (fmt == "gray" || fmt.StartsWith("gray"))
                 {
-                    chromaFmt = chromaFmt.Replace("yuv", "yuva");
+                    bool is10bit = fmt.Contains("16") || fmt.Contains("10");
+                    fmt = is10bit ? "yuv420p10le" : "yuv420p";
                 }
-                fmt = chromaFmt;
+                else if (fmt.Contains("yuvj"))
+                {
+                    fmt = fmt.Replace("yuvj", "yuv");
+                }
+                else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr"))
+                {
+                    bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
+                                   fmt == "argb" || fmt == "abgr";
+                    if (fmt.Contains("64") && !is4Comp) is4Comp = true;
+
+                    int components = is4Comp ? 4 : 3;
+                    var match = Regex.Match(fmt, @"(\d+)");
+                    int totalBits = 0;
+                    if (match.Success) int.TryParse(match.Groups[1].Value, out totalBits);
+                    if (totalBits == 0) totalBits = components * 8;
+                    int perCompBits = totalBits / components;
+                    int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
+
+                    string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+                    if (info.HasAlpha)
+                        chromaFmt = chromaFmt.Replace("yuv", "yuva");
+                    fmt = chromaFmt;
+                }
+
+                if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
+
+                // 更新旧的像素格式缓存
+                _srcPixFmtCache[normalizedPath] = fmt;
+                return fmt;
             }
 
-            if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
-            _srcPixFmtCache[normalizedPath] = fmt;
-            return fmt;
+            // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
+            string raw = await RunProcessAndGetOutputAsync(_ffprobePath,
+                $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
+            string fmtFallback = raw.Trim().ToLower();
+
+            // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
+            if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
+                fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
+            else if (fmtFallback.Contains("yuvj"))
+                fmtFallback = fmtFallback.Replace("yuvj", "yuv");
+            else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
+                fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
+
+            if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
+            _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
+            return fmtFallback;
         }
 
 
@@ -2817,18 +2887,28 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
+        /// <summary>
+        /// 获取图像分辨率，优先从统一 Probe 缓存获取。
+        /// </summary>
         private async Task<(int w, int h)> GetResolutionAsync(string path)
         {
-            string cacheKey = GetNormalizedPathForCache(path);
-            if (_resolutionCache.TryGetValue(cacheKey, out var cached))
-                return cached;
+            // ★ 优先从统一 Probe 缓存获取
+            var info = await GetProbeInfoAsync(path);
+            if (info != null)
+            {
+                // 同步更新旧的分辨率缓存
+                string cacheKey = GetNormalizedPathForCache(path);
+                _resolutionCache[cacheKey] = (info.Width, info.Height);
+                return (info.Width, info.Height);
+            }
 
+            // 兜底：单独探测
             string args = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{path}\"";
             string o = await RunProcessAndGetOutputAsync(_ffprobePath, args).WaitAsync(TimeSpan.FromSeconds(30));
             var parts = o.Trim().Split(',');
             if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
             {
-                _resolutionCache[cacheKey] = (w, h);
+                _resolutionCache[GetNormalizedPathForCache(path)] = (w, h);
                 return (w, h);
             }
             return (0, 0);
@@ -3523,99 +3603,87 @@ AVIF 编码器 CLI -- 帮助手册
 
         // ========== 编码器实际可用性测试 ==========
         private static async Task<List<(string name, bool available, string note)>> TestEncodersAsync(
-                                        List<string> encoders, string outputDir, string inputDir = "input")
+    List<string> encoders, string outputDir, string inputDir = "input")
         {
-            // 直接创建测试用 BMP（256x256 纯红色），不使用 input 目录中的图片
+            // 创建测试 BMP
             byte[] testBmp = CreateTestBmp();
             string testDir = Path.Combine(outputDir, "_encoder_test");
             Directory.CreateDirectory(testDir);
             string testInput = Path.Combine(testDir, "test_input.bmp");
             File.WriteAllBytes(testInput, testBmp);
-
             Logger.Log("======== 编码器可用性测试开始 ========");
             try
             {
-                var result = new List<(string name, bool available, string note)>();
-                foreach (var enc in encoders)
+                // ★ 并发测试所有编码器
+                var tasks = encoders.Select(enc => TestSingleEncoderAsync(enc, testInput, testDir));
+                var results = await Task.WhenAll(tasks);
+                foreach (var res in results)
                 {
-                    bool ok = false;
-                    string note = "";
-                    string stderrFull = "";
-                    int exitCode = -1;
-                    string usedArgs = "";
-
-                    try
-                    {
-                        string outFile = Path.Combine(testDir, $"test_{enc}.avif");
-                        string qpParam = "-crf 30";
-                        if (enc.StartsWith("av1_nvenc")) qpParam = "-qp 30";
-                        else if (enc.StartsWith("av1_qsv")) qpParam = "-global_quality 30";
-                        else if (enc.StartsWith("av1_amf")) qpParam = "-qp 30";
-                        else if (enc.StartsWith("av1_vulkan")) qpParam = "-qp 30";
-                        else if (enc.StartsWith("av1_vaapi")) qpParam = "-global_quality 30";
-                        else if (enc.StartsWith("av1_mf")) qpParam = "-crf 30";
-
-                        usedArgs = $"-y -loglevel error -i \"{testInput}\" -c:v {enc} -pix_fmt yuv420p {qpParam} -frames:v 1 \"{outFile}\"";
-
-                        var psi = new ProcessStartInfo("ffmpeg", usedArgs)
-                        {
-                            UseShellExecute = false,
-                            CreateNoWindow = true,
-                            RedirectStandardError = true
-                        };
-                        using var p = Process.Start(psi);
-                        if (p == null)
-                        {
-                            note = "无法启动 ffmpeg";
-                            Logger.Log($"编码器测试 {enc}: 无法启动 ffmpeg");
-                            result.Add((enc, false, note));
-                            continue;
-                        }
-
-                        stderrFull = await p.StandardError.ReadToEndAsync();
-                        await p.WaitForExitAsync();
-                        exitCode = p.ExitCode;
-
-                        Logger.Log($"编码器测试 {enc}:");
-                        Logger.Log($"  命令行: ffmpeg {usedArgs}");
-                        Logger.Log($"  退出码: {exitCode}");
-                        Logger.Log($"  stderr: {stderrFull}");
-
-                        if (exitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
-                        {
-                            ok = true;
-                            note = "可用";
-                            Logger.Log($"  [OK] 可用 (文件大小: {new FileInfo(outFile).Length} 字节)");
-                        }
-                        else
-                        {
-                            note = ParseError(stderrFull);
-                            Logger.Log($"  [FAIL] {note}");
-                        }
-
-                        if (File.Exists(outFile))
-                            try { File.Delete(outFile); } catch { }
-                    }
-                    catch (Exception ex)
-                    {
-                        note = $"异常: {ex.Message}";
-                        Logger.Log($"编码器测试 {enc}: 异常 - {ex.Message}");
-                    }
-                    result.Add((enc, ok, note));
+                    Logger.Log($"编码器测试 {res.name}: {(res.available ? "[OK]" : "[FAIL]")} {res.note}");
                 }
                 Logger.Log("======== 编码器可用性测试结束 ========");
-                return result;
+                return results.ToList();
             }
             finally
             {
-                try { if (File.Exists(testInput)) File.Delete(testInput); } catch { }
-                try
-                {
-                    if (Directory.Exists(testDir) && !Directory.EnumerateFileSystemEntries(testDir).Any())
-                        Directory.Delete(testDir);
-                }
-                catch { }
+                if (File.Exists(testInput)) File.Delete(testInput);
+                // 仅当目录为空时删除
+                if (Directory.Exists(testDir) && !Directory.EnumerateFileSystemEntries(testDir).Any())
+                    Directory.Delete(testDir);
             }
+        }
+
+        // 抽取单个编码器测试逻辑
+        private static async Task<(string name, bool available, string note)> TestSingleEncoderAsync(
+            string enc, string testInput, string testDir)
+        {
+            bool ok = false;
+            string note = "不可用";
+            try
+            {
+                string outFile = Path.Combine(testDir, $"test_{enc}.avif");
+                string qpParam = enc switch
+                {
+                    var e when e.StartsWith("av1_nvenc") => "-qp 30",
+                    var e when e.StartsWith("av1_qsv") => "-global_quality 30",
+                    var e when e.StartsWith("av1_amf") => "-qp 30",
+                    var e when e.StartsWith("av1_vulkan") => "-qp 30",
+                    var e when e.StartsWith("av1_vaapi") => "-global_quality 30",
+                    _ => "-crf 30"
+                };
+
+                string args = $"-y -loglevel error -i \"{testInput}\" -c:v {enc} -pix_fmt yuv420p {qpParam} -frames:v 1 \"{outFile}\"";
+
+                var psi = new ProcessStartInfo("ffmpeg", args)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true
+                };
+
+                using var p = Process.Start(psi);
+                if (p == null) return (enc, false, "无法启动 ffmpeg");
+
+                string stderr = await p.StandardError.ReadToEndAsync();
+                await p.WaitForExitAsync();
+
+                if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
+                {
+                    ok = true;
+                    note = "可用";
+                }
+                else
+                {
+                    note = ParseError(stderr);
+                }
+
+                if (File.Exists(outFile)) File.Delete(outFile);
+            }
+            catch (Exception ex)
+            {
+                note = $"异常: {ex.Message}";
+            }
+            return (enc, ok, note);
         }
 
         private static string ParseError(string stderr)
