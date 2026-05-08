@@ -1236,7 +1236,7 @@ private async Task<(bool ok, int crf, string pixFmt)>
 
         // ---------- 安全模式全扫描 ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
-            RunSafeModeScan(string inputPath, PresetConfig config, string name)
+    RunSafeModeScan(string inputPath, PresetConfig config, string name)
         {
             using var safeCts = new CancellationTokenSource(TimeSpan.FromMinutes(config.SafeTimeoutMinutes));
             var safeToken = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1255,8 +1255,12 @@ private async Task<(bool ok, int crf, string pixFmt)>
                     SafeWriteLine($"  [{name}] 安全扫描 {step}/{totalSteps} (CRF={testCrf})...");
 
                 double curSSIM = await SafeModeSSIM(inputPath, config, testCrf, safeToken);
-                if (curSSIM >= target) { bestSafeCRF = testCrf; break; }
-                if (curSSIM >= 0 && bestSafeCRF == -1) bestSafeCRF = testCrf;
+                if (curSSIM >= target)
+                {
+                    bestSafeCRF = testCrf;
+                    break;
+                }
+                // 不再记录未达标的 CRF，确保只有满足质量目标时才算成功
             }
 
             if (bestSafeCRF > 0)
