@@ -709,7 +709,6 @@ namespace AvifEncoder
         /// </summary>
         private async Task<string> GetSourcePixelFormat(string filePath)
         {
-            // ★ 修改：保留原始大小写，不再调用 ToLowerInvariant()
             string normalizedPath = GetNormalizedPathForCache(filePath);
             if (_srcPixFmtCache.TryGetValue(normalizedPath, out string? cached) && cached != null)
                 return cached;
@@ -748,7 +747,16 @@ namespace AvifEncoder
                 if (totalBits == 0) totalBits = components * 8;
                 int perCompBits = totalBits / components;
                 int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
-                fmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+
+                // 生成不带后缀的色度采样表示
+                string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+
+                // ★ 如果源有 Alpha，则在表示中显式加入 'a'
+                if (hasAlpha)
+                {
+                    chromaFmt = chromaFmt.Replace("yuv", "yuva");
+                }
+                fmt = chromaFmt;
             }
 
             if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
