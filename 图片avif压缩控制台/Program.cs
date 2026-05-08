@@ -1032,52 +1032,71 @@ namespace AvifEncoder
             var semaphore = new SemaphoreSlim(config.MaxJobs);
             var tasks = files.Select(async file =>
             {
-                bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
-                if (!acquired)
-                {
-                    Logger.Log($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
-                    var failResult = new EncodeResult
-                    {
-                        Index = file.index,
-                        FileName = GetOutputFileName(file.filePath, file.index),
-                        OriginalFileName = Path.GetFileName(file.filePath),
-                        Success = false,
-                        Skipped = false,
-                        ErrorMessage = "任务信号量获取超时",
-                        TotalTime = TimeSpan.Zero
-                    };
-                    results[file.index] = failResult;
-                    MarkProcessed(failResult);
-                    return;
-                }
                 try
                 {
-                    var r = await ProcessSingleFileAsync(file.filePath, file.index, config, isRetry);
-                    if (r != null) results[r.Index] = r;
+                    bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
+                    if (!acquired)
+                    {
+                        Logger.Log($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
+                        var failResult = new EncodeResult
+                        {
+                            Index = file.index,
+                            FileName = GetOutputFileName(file.filePath, file.index),
+                            OriginalFileName = Path.GetFileName(file.filePath),
+                            Success = false,
+                            Skipped = false,
+                            ErrorMessage = "任务信号量获取超时",
+                            TotalTime = TimeSpan.Zero
+                        };
+                        results[file.index] = failResult;
+                        MarkProcessed(failResult);
+                        return;
+                    }
+                    try
+                    {
+                        var r = await ProcessSingleFileAsync(file.filePath, file.index, config, isRetry);
+                        if (r != null) results[r.Index] = r;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"文件处理异常: {file.filePath} - {ex.Message}");
+                        var failResult = new EncodeResult
+                        {
+                            Index = file.index,
+                            FileName = GetOutputFileName(file.filePath, file.index),
+                            OriginalFileName = Path.GetFileName(file.filePath),
+                            Success = false,
+                            Skipped = false,
+                            ErrorMessage = $"异常: {ex.Message}",
+                            TotalTime = TimeSpan.Zero
+                        };
+                        results[file.index] = failResult;
+                        MarkProcessed(failResult);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException)
                 {
-                    Logger.Log($"文件处理异常: {file.filePath} - {ex.Message}");
-                    var failResult = new EncodeResult
+                    // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
+                    Logger.Log($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
+                    var cancelResult = new EncodeResult
                     {
                         Index = file.index,
                         FileName = GetOutputFileName(file.filePath, file.index),
                         OriginalFileName = Path.GetFileName(file.filePath),
                         Success = false,
                         Skipped = false,
-                        ErrorMessage = $"异常: {ex.Message}",
+                        ErrorMessage = "用户取消操作",
                         TotalTime = TimeSpan.Zero
                     };
-                    results[file.index] = failResult;
-                    MarkProcessed(failResult);
-                }
-                finally
-                {
-                    semaphore.Release();
+                    results[file.index] = cancelResult;
+                    MarkProcessed(cancelResult);
                 }
             });
             await Task.WhenAll(tasks);
-            // 按文件索引顺序返回结果
             return results.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value);
         }
 
@@ -2166,10 +2185,13 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 if (!p.HasExited)
                 {
                     try { p.Kill(entireProcessTree: true); } catch { }
-                    using var finalCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    try { await p.WaitForExitAsync(finalCts.Token); }
-                    catch (OperationCanceledException) { Logger.Log("等待 ffmpeg 退出超时（已强制终止）"); }
                 }
+                // ★ 修复 Bug2：安全等待读取任务结束，避免未观察异常
+                try
+                {
+                    await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch { }
                 Logger.Log($"ffmpeg 超时/取消，进程是否已退出: {p.HasExited}");
                 return (false, p.HasExited ? "超时(已退出)" : "超时(进程残留)");
             }
@@ -3283,7 +3305,8 @@ AVIF 编码器 CLI -- 帮助手册
                 AvifPipeline.ApplyBitDepth(config);
             }
 
-            if (opts.ManualCRF.HasValue)
+            // 位置：BuildPresetConfig 方法内，替换原有的 if (opts.ManualCRF.HasValue) 块
+            if (opts.ManualCRF.HasValue && !config.Lossless)  // 增加 Lossless 检查
             {
                 if (!config.UseCRFSearch)
                 {
