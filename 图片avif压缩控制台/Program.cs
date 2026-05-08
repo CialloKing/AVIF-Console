@@ -55,6 +55,8 @@ namespace AvifEncoder
         // ★ 自定义编码器
         public string Encoder { get; set; } = "libaom-av1";
 
+        public string MetricMode { get; set; } = "ssim";
+
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
         /// 只有 libaom-av1 支持 aq-mode/deltaq-mode 等参数，其他编码器返回空字符串。
@@ -2571,110 +2573,127 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             return (best, found, anySuccess);
         }
 
-
+        /// <summary>
+        /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
+        /// </summary>
+        private double GetSearchScore(QualityMetrics m, string metricMode)
+        {
+            switch (metricMode?.ToLower())
+            {
+                case "ssim": return m.SSIM;                         // 0‑1
+                case "psnr": return Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                case "msssim": return m.MS_SSIM;                      // 0‑1
+                case "vmaf": return m.VMAF / 100.0;                 // 0‑1
+                case "mix":
+                    double vmafNorm = m.VMAF / 100.0;
+                    double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                    return 0.35 * vmafNorm + 0.25 * m.MS_SSIM + 0.25 * m.SSIM + 0.15 * psnrNorm;
+                default:
+                    return m.SSIM; // 默认回退到 SSIM
+            }
+        }
 
 
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient)> BinarySearchCRFAsync(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
         {
             string name = Path.GetFileName(input);
-            double target = cfg.TargetSSIM + SSIMMargin;
-            Logger.CRF($"[{name}] 二分搜索 目标={target:F4}");
+            double target = cfg.TargetSSIM + SSIMMargin;   // 目标值仍然沿用 TargetSSIM（现在可以是通用质量目标）
+            Logger.CRF($"[{name}] 二分搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(
                 searchCts.Token, _globalCts?.Token ?? default).Token;
 
-            // 获取 SSIM 的工厂函数（带三次重试）
-            Func<int, Task<double>> getSSIM = async crf =>
+            // ★ 统一的评分工厂，使用多指标
+            Func<int, Task<double>> getScore = async crf =>
             {
                 for (int i = 0; i < 3; i++)
                 {
                     token.ThrowIfCancellationRequested();
-                    double val = await GetOrComputeSSIM(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                    if (val >= 0) return val;
-                    if (i < 2) Logger.Log($"SSIM 单次失败，重试 ({i + 1}/2): {name} CRF={crf}");
+                    QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                    if (m != null)
+                    {
+                        double score = GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        return score;
+                    }
+                    if (i < 2) Logger.Log($"指标获取失败，重试 ({i + 1}/2): {name} CRF={crf}");
                 }
-                return -1;
+                return -1;   // 全部失败
             };
 
+            // 以下逻辑与原 BinarySearchCRFAsync 完全一致，只是把 getSSIM 换成了 getScore
             try
             {
                 // 1. 低端边界
-                int low = await FindLowBoundWithRetry(getSSIM, cfg.MinCRF, cfg.MaxCRF, name, token);
+                int low = await FindLowBoundWithRetry(getScore, cfg.MinCRF, cfg.MaxCRF, name, token);
                 if (low < 0) return (cfg.BaseCRF, true, false);
 
-                double lowSSIM = await getSSIM(low);
-                if (lowSSIM < 0) return (cfg.BaseCRF, true, false);
-                if (lowSSIM < target)
+                double lowScore = await getScore(low);
+                if (lowScore < 0) return (cfg.BaseCRF, true, false);
+                if (lowScore < target)
                 {
-                    SafeWriteLine($"  [{name}] [LOW] 最低可用 CRF({low}) SSIM={lowSSIM:F4} 不达标");
+                    SafeWriteLine($"  [{name}] [LOW] 最低可用 CRF({low}) 分数={lowScore:F4} 不达标");
                     return (low, false, true);
                 }
 
                 // 2. 高端边界
-                int high = await FindHighBoundWithRetry(getSSIM, low, cfg.MaxCRF, name, token);
+                int high = await FindHighBoundWithRetry(getScore, low, cfg.MaxCRF, name, token);
                 if (high < 0)
                 {
                     SafeWriteLine($"  [{name}] [WARN] 高端边界搜索失败，回退用 BaseCRF");
                     return (cfg.BaseCRF, true, false);
                 }
 
-                // ★ 修复：确保 high >= low，否则调整 high 为 low
                 if (high < low)
                 {
                     SafeWriteLine($"  [{name}] [WARN] 高端边界 {high} < 低端边界 {low}，将 high 调整为 {low}");
                     high = low;
                 }
 
-                double highSSIM = await getSSIM(high);
-                if (highSSIM < 0)
+                double highScore = await getScore(high);
+                if (highScore < 0)
                 {
-                    // 如果 high 处的 SSIM 仍然计算失败，尝试回到 low
                     if (high == low)
-                        return (low, false, false);   // 无法进一步搜索，直接使用 low
-                    SafeWriteLine($"  [{name}] [WARN] 高端边界 SSIM 失败，回退用 BaseCRF");
+                        return (low, false, false);
+                    SafeWriteLine($"  [{name}] [WARN] 高端边界分数计算失败，回退用 BaseCRF");
                     return (cfg.BaseCRF, true, false);
                 }
 
-                if (highSSIM >= target)
+                if (highScore >= target)
                 {
-                    SafeWriteLine($"  [HIGH] [{name}] 最高可用 CRF({high}) SSIM={highSSIM:F4} 已达标，使用 MaxCRF");
+                    SafeWriteLine($"  [HIGH] [{name}] 最高可用 CRF({high}) 分数={highScore:F4} 已达标，使用 MaxCRF");
                     return (high, false, false);
                 }
 
                 // 3. 二分搜索
-                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(getSSIM, low, high, target, name, token);
+                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(getScore, low, high, target, name, token);
                 if (!found && !anySuccess)
                     return (cfg.BaseCRF, true, false);
                 if (!found)
                 {
-                    SafeWriteLine($"  [{name}] [LOW] 所有搜索点 SSIM 均不足，使用最佳可用 CRF={best}");
+                    SafeWriteLine($"  [{name}] [LOW] 所有搜索点分数均不足，使用最佳可用 CRF={best}");
                     return (best, false, true);
                 }
 
-                // ★ 修正：缓存键使用 GetEffectiveAomParams() 与实际 SSIM 缓存一致
-                string cacheKey = GetSsimCacheKey(
-                    GetNormalizedPathForCache(input),
-                    best,
-                    pixFmt,
-                    tileCols,
-                    cfg.SearchCpuUsed,
-                    jpeg,
-                    cfg.GetEffectiveAomParams(),
-                    pixFmt.Contains("10le") ? 10 : 8
-                    );
-
-                if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim))
-                    SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {best} (SSIM≈{cachedSsim:F4})");
+                // ★ 获取最佳 CRF 的实际指标用于日志
+                QualityMetrics? bestMetrics = await GetOrComputeMetrics(input, best, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                if (bestMetrics != null)
+                {
+                    SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {best} | " +
+                                  $"SSIM={bestMetrics.SSIM:F4} PSNR-Y={bestMetrics.PSNR_Y:F2} " +
+                                  $"MS-SSIM={bestMetrics.MS_SSIM:F4} VMAF={bestMetrics.VMAF:F2}");
+                }
                 else
+                {
                     SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {best}");
+                }
 
                 return (best, false, false);
             }
             catch (OperationCanceledException)
             {
-                SafeWriteLine($" [{name}] [WARN] 搜索超时或取消，回退用 BaseCRF ({cfg.BaseCRF})");
+                SafeWriteLine($" [{name}] [WARN] 搜索超时/取消，回退用 BaseCRF ({cfg.BaseCRF})");
                 Logger.Log($"SSIM 搜索超时/取消: {name}");
                 return (cfg.BaseCRF, true, false);
             }
@@ -2874,7 +2893,12 @@ AVIF 编码器 CLI -- 帮助手册
                        libsvtav1   速度最快，多线程优化 (适合批量处理)
                        rav1e       速度与压缩率平衡，Rust 实现 (部分高级参数不支持)
                      可使用 ffmpeg -encoders | grep av1 查看本机支持的编码器
-
+  --metric <模式>   质量评价模式 (默认 ssim)
+                     ssim   - SSIM
+                     psnr   - PSNR (亮度)
+                     msssim - MS-SSIM
+                     vmaf   - VMAF
+                     mix    - 加权混合评分
 超时选项 (所有值均为正整数)
 ----------------------------------------
   --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
@@ -2933,7 +2957,7 @@ AVIF 编码器 CLI -- 帮助手册
         {
             public string InputDir = "input";
             public string OutputDir = "Avifoutput";
-            public CliPreset Preset = CliPreset.Extreme;   // 原来是 Balanced
+            public CliPreset Preset = CliPreset.Extreme;
             public bool ForceSearch;
             public bool ForceNoSearch;
             public bool Force420, Force444, Force422;
@@ -2948,6 +2972,7 @@ AVIF 编码器 CLI -- 帮助手册
             public int? EncodeTimeout, SearchTimeout, SafeTimeout,
                         SafeEncodeTimeout, SearchEncodeTimeout, SsimTimeout;
             public string? CustomEncoder;
+            public string? MetricMode;          // ★ 新增
         }
 
         // ========== 参数解析 ==========
@@ -2989,6 +3014,18 @@ AVIF 编码器 CLI -- 帮助手册
                 if (arg.StartsWith("--encoder="))
                 {
                     opts.CustomEncoder = arg["--encoder=".Length..];
+                    continue;
+                }
+
+                // ★ 新增指标模式
+                if (arg == "--metric" && i + 1 < args.Length)
+                {
+                    opts.MetricMode = args[++i].ToLower();
+                    continue;
+                }
+                if (arg.StartsWith("--metric="))
+                {
+                    opts.MetricMode = arg["--metric=".Length..].ToLower();
                     continue;
                 }
 
@@ -3136,6 +3173,10 @@ AVIF 编码器 CLI -- 帮助手册
             if (!string.IsNullOrEmpty(opts.NameFormat))
                 config.OutputNameFormat = opts.NameFormat;
 
+            // ★ 新增指标模式
+            if (!string.IsNullOrEmpty(opts.MetricMode))
+                config.MetricMode = opts.MetricMode;
+
             config.AutoSource = opts.AutoSource;
             if (!opts.AutoSource)
             {
@@ -3167,9 +3208,7 @@ AVIF 编码器 CLI -- 帮助手册
                 }
                 else
                 {
-
                     Console.WriteLine("[WARN] -r 仅在禁用搜索时有效，已忽略");
-
                 }
             }
 
