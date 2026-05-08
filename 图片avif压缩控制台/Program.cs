@@ -942,7 +942,7 @@ namespace AvifEncoder
                 int tileCols = encInfo.TileCols;
                 int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
 
-                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt,tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
                 // 其余逻辑不变...
 
                 if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
@@ -2273,7 +2273,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient)> BinarySearchCRFAsync(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
         {
             string name = Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
@@ -2312,10 +2312,29 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 // 2. 高端边界
                 int high = await FindHighBoundWithRetry(getSSIM, low, cfg.MaxCRF, name, token);
-                if (high < 0) return (cfg.BaseCRF, true, false);
+                if (high < 0)
+                {
+                    SafeWriteLine($"  [{name}] [WARN] 高端边界搜索失败，回退用 BaseCRF");
+                    return (cfg.BaseCRF, true, false);
+                }
+
+                // ★ 修复：确保 high >= low，否则调整 high 为 low
+                if (high < low)
+                {
+                    SafeWriteLine($"  [{name}] [WARN] 高端边界 {high} < 低端边界 {low}，将 high 调整为 {low}");
+                    high = low;
+                }
 
                 double highSSIM = await getSSIM(high);
-                if (highSSIM < 0) return (cfg.BaseCRF, true, false);
+                if (highSSIM < 0)
+                {
+                    // 如果 high 处的 SSIM 仍然计算失败，尝试回到 low
+                    if (high == low)
+                        return (low, false, false);   // 无法进一步搜索，直接使用 low
+                    SafeWriteLine($"  [{name}] [WARN] 高端边界 SSIM 失败，回退用 BaseCRF");
+                    return (cfg.BaseCRF, true, false);
+                }
+
                 if (highSSIM >= target)
                 {
                     SafeWriteLine($"  [HIGH] [{name}] 最高可用 CRF({high}) SSIM={highSSIM:F4} 已达标，使用 MaxCRF");
@@ -2343,7 +2362,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     cfg.GetEffectiveAomParams(),
                     pixFmt.Contains("10le") ? 10 : 8
                     );
-                
+
                 if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim))
                     SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {best} (SSIM≈{cachedSsim:F4})");
                 else
