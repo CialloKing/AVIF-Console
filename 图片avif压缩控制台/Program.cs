@@ -1712,25 +1712,30 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
         }
 
         /// <summary> 构建参数集尝试列表 </summary>
+        /// <summary> 构建参数集尝试列表 </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
+            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
+            // ★ 仅 libaom‑av1 支持 -row‑mt 参数，其他编码器传入空字符串
+            string rowMt = cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
+                           ? "-row-mt 1"
+                           : "";
+
             if (!isTrueLossless && isHighChroma)
             {
-                // 常规参数集
-                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, "-row-mt 1"));
+                // 常规参数集（使用有效 AOM 参数与计算出的 tile / cpu）
+                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // 降级参数集：仅对已知支持 tile-columns/rows 的编码器添加
-                    // libaom-av1 和 libsvtav1 均支持，librav1e 与硬件编码器不支持
+                    // 降级参数集：仅对已知支持 tile‑columns/rows 的编码器添加
                     bool encoderSupportsTileParams =
-                        cfg.Encoder.StartsWith("libaom-av1") ||
-                        cfg.Encoder.StartsWith("libsvtav1");
+                        cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ||
+                        cfg.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
 
                     string downgradeTile = encoderSupportsTileParams ? "-tile-columns 0 -tile-rows 0" : "";
                     sets.Add(("", downgradeTile, 0, ""));
@@ -1738,7 +1743,7 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
             }
             else
             {
-                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, "-row-mt 1"));
+                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
             }
             return sets;
         }
