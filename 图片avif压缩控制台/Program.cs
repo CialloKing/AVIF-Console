@@ -2611,7 +2611,15 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         }
 
 
-
+        // CSV 列名常量，修改这里即可同步表头和数据行
+        private static readonly string[] CsvColumnNames = new[]
+        {
+    "文件名", "原始文件名", "原始大小", "输出大小", "压缩率",
+    "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
+    "编码耗时(秒)", "搜索耗时(秒)", "总耗时(秒)", "重试次数",
+    "像素格式", "源像素格式", "模式", "安全模式",
+    "完整命令行", "AOM参数", "缓存复用", "状态", "失败原因"
+};
         /// <summary>
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
@@ -3356,56 +3364,66 @@ PerformSecantIteration(
             return (0, 0);
         }
 
+        private static string GetCsvRow(EncodeResult r)
+        {
+            string status = r.Skipped ? "跳过" : (r.Success ? "成功" : "失败");
+            string errMsg = CsvEscape(r.ErrorMessage);
+            string fmt = r.PixelFormat ?? "";
+            string srcFmt = r.SourcePixelFormat ?? "";
+            string mode = r.Mode ?? "";
+            string safe = r.IsSafeMode ? "是" : "否";
+            string command = CsvEscape(r.CommandLine ?? "");
+            string aomParams = CsvEscape(r.AomParamsUsed ?? "");
+            string cache = r.CacheReused ? "是" : "否";
+
+            string vmaf = r.FinalVMAF?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
+            string psnrY = r.FinalPSNR_Y?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
+            string msssim = r.FinalMSSSIM?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string mix = r.FinalMixScore?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+
+            // 按 CsvColumnNames 顺序拼接
+            var values = new[]
+            {
+        CsvEscape(r.FileName),
+        CsvEscape(r.OriginalFileName),
+        r.OriginalSize.ToString(CultureInfo.InvariantCulture),
+        r.OutputSize.ToString(CultureInfo.InvariantCulture),
+        r.CompressionRatio.ToString("F4", CultureInfo.InvariantCulture),
+        r.UsedCRF.ToString(CultureInfo.InvariantCulture),
+        r.FinalSSIM.ToString("F4", CultureInfo.InvariantCulture),
+        vmaf,
+        psnrY,
+        msssim,
+        mix,
+        r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
+        r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
+        r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
+        r.Retries.ToString(CultureInfo.InvariantCulture),
+        CsvEscape(fmt),
+        CsvEscape(srcFmt),
+        CsvEscape(mode),
+        CsvEscape(safe),
+        command,
+        aomParams,
+        CsvEscape(cache),
+        CsvEscape(status),
+        errMsg
+    };
+
+            return string.Join(",", values);
+        }
+
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
             string p = Path.Combine(_outputDir, "avif_stats.csv");
             var sb = new StringBuilder();
 
-            // 调整列顺序：将 VMAF、PSNR‑Y、MS‑SSIM、MixScore 紧挨在 “SSIM” 之后
-            sb.AppendLine("文件名,原始文件名,原始大小,输出大小,压缩率,CRF,SSIM,VMAF,PSNR-Y,MS-SSIM,MixScore,编码耗时(秒),搜索耗时(秒),总耗时(秒),重试次数,像素格式,源像素格式,模式,安全模式,完整命令行,AOM参数,缓存复用,状态,失败原因");
+            // 表头
+            sb.AppendLine(string.Join(",", CsvColumnNames));
 
             foreach (var r in results)
             {
-                string status = r.Skipped ? "跳过" : (r.Success ? "成功" : "失败");
-                string errMsg = CsvEscape(r.ErrorMessage);
-                string fmt = r.PixelFormat ?? "";
-                string srcFmt = r.SourcePixelFormat ?? "";
-                string mode = r.Mode ?? "";
-                string safe = r.IsSafeMode ? "是" : "否";
-                string command = CsvEscape(r.CommandLine ?? "");
-                string aomParams = CsvEscape(r.AomParamsUsed ?? "");
-                string cache = r.CacheReused ? "是" : "否";
-
-                string vmaf = r.FinalVMAF?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
-                string psnrY = r.FinalPSNR_Y?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
-                string msssim = r.FinalMSSSIM?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-                string mix = r.FinalMixScore?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-
-                // 拼接顺序务必与表头一致
-                sb.AppendLine(CsvEscape(r.FileName) + "," +
-                              CsvEscape(r.OriginalFileName) + "," +
-                              r.OriginalSize.ToString(CultureInfo.InvariantCulture) + "," +
-                              r.OutputSize.ToString(CultureInfo.InvariantCulture) + "," +
-                              r.CompressionRatio.ToString("F4", CultureInfo.InvariantCulture) + "," +
-                              r.UsedCRF.ToString(CultureInfo.InvariantCulture) + "," +
-                              r.FinalSSIM.ToString("F4", CultureInfo.InvariantCulture) + "," +
-                              vmaf + "," +
-                              psnrY + "," +
-                              msssim + "," +
-                              mix + "," +
-                              r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
-                              r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
-                              r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture) + "," +
-                              r.Retries.ToString(CultureInfo.InvariantCulture) + "," +
-                              CsvEscape(fmt) + "," +
-                              CsvEscape(srcFmt) + "," +
-                              CsvEscape(mode) + "," +
-                              CsvEscape(safe) + "," +
-                              command + "," +
-                              aomParams + "," +
-                              CsvEscape(cache) + "," +
-                              CsvEscape(status) + "," +
-                              errMsg);
+                sb.AppendLine(GetCsvRow(r));
             }
 
             File.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
