@@ -273,6 +273,8 @@ namespace AvifEncoder
 
         private readonly int _maxFfmpegConcurrency;
 
+        private int _disposed;
+
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
         private static bool EncoderSupportsStillPicture(string encoderName)
         {
@@ -329,6 +331,7 @@ namespace AvifEncoder
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _globalCts?.Cancel();
             _globalCts?.Dispose();
             _ssimConcurrency?.Dispose();
