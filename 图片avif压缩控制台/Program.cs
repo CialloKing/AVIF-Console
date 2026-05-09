@@ -934,9 +934,11 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 }
                 else if (r.Success)
                 {
+                    // 修改为（显示多个原生指标）：
+                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F1") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F2") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
                     SafeWriteLine($"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
                                   $"{FormatSize(r.OriginalSize)} -> {FormatSize(r.OutputSize)} | " +
-                                  $"{r.CompressionRatio:P1} | SSIM:{r.FinalSSIM:F4} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}");
+                                  $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}");
                 }
                 else
                 {
@@ -2715,7 +2717,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 double s = await getSSIM(i);
                 if (s >= 0) return i;
             }
-            SafeWriteLine($"  [{name}] [FAIL] 低端 SSIM 连续失败");
+            SafeWriteLine($"  [{name}] [FAIL] 低端指标连续失败");
             return -1;
         }
 
@@ -2735,9 +2737,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         }
 
 
-        private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(   // ★ 返回值增加 anySuccess
+        private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(
     Func<int, Task<double>> getSSIM, int low, int high,
-    double target, string name, CancellationToken token)
+    double target, string name, CancellationToken token,
+    // 新增参数：用于获取原始 metrics 显示
+    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
         {
             int best = low;
             bool found = false;
@@ -2755,9 +2759,16 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     continue;
                 }
 
-                anySuccess = true;            // ★ 至少有一次成功计算
+                anySuccess = true;
 
-                SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} -> SSIM={s:F4}");
+                // ★ 从缓存获取原始 metrics 用于显示（通常直接命中 _metricsCache）
+                var m = await GetOrComputeMetrics(name, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                string display = m != null
+                    ? $"VMAF={m.VMAF:F1}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}"
+                    : $"分数={s:F4}";
+
+                SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} -> {display}");
+
                 if (s >= target)
                 {
                     best = mid;
@@ -2867,7 +2878,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 }
 
                 // 3. 二分搜索
-                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(getScore, low, high, target, name, token);
+                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(getScore, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg);
                 if (!found && !anySuccess)
                     return (cfg.BaseCRF, true, false);
                 if (!found)
