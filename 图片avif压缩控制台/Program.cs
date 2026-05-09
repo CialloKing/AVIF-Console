@@ -84,7 +84,7 @@ namespace AvifEncoder
         /// </summary>
         public string GetEffectiveAomParams()
         {
-            if (Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase))
+            if (EncoderUtils.SupportsAomParams(Encoder))
                 return AomParams;
             return "";
         }
@@ -317,11 +317,7 @@ namespace AvifEncoder
         private readonly ILogger _logger;
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
-        private static bool EncoderSupportsStillPicture(string encoderName)
-        {
-            // 目前仅 libaom-av1 确定支持；svt-av1、rav1e 及硬件编码器均不支持
-            return encoderName.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase);
-        }
+        private static bool EncoderSupportsStillPicture(string encoderName) => EncoderUtils.SupportsStillPicture(encoderName);
 
         /// <summary>
         /// 等比缩放图片，使长边不超过 maxDim，输出为 PNG 临时文件。
@@ -435,28 +431,25 @@ namespace AvifEncoder
         {
             string enc = cfg.Encoder;
 
-            if (enc.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase))
+            if (EncoderUtils.IsLibAom(enc))
             {
                 return $"-cpu-used {cpuUsed} {tilePart} {rowMt}";
             }
 
-            if (enc.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase))
+            if (EncoderUtils.IsSvtAv1(enc))
             {
                 int svtPreset = SvtPresetFromCpuUsed(cpuUsed);
-                // 基础：preset + tune + tile
                 string baseArgs = $"-preset {svtPreset} -tune 0 {tilePart}";
-                // 若非无损模式，附加全部极致参数
                 if (!cfg.Lossless)
                     baseArgs += " -svtav1-params scd=0:aq-mode=2:enable-tpl-la=1:enable-mfmv=1:fast-decode=0";
                 return baseArgs;
             }
 
-            if (enc.StartsWith("librav1e", StringComparison.OrdinalIgnoreCase))
+            if (EncoderUtils.IsRav1e(enc))
             {
                 return $"-speed {cpuUsed} {tilePart}";
             }
 
-            // 硬件编码器
             return "-preset p4";
         }
 
@@ -693,15 +686,15 @@ namespace AvifEncoder
         {
             // 至少预留 2 个 SSIM 计算并发，避免搜索完全串行
             _inputDir = inputDir; _outputDir = outputDir; _config = config;
-            _ffmpegPath = FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
-            _ffprobePath = FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
+            _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
+            _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
 
             // 注入进程运行器（未提供则使用真实实现）
             _processRunner = processRunner ?? new RealProcessRunner();
 
             _logger = logger ?? new FileLogger(_outputDir);
 
-            bool isHardwareEncoder = !config.Encoder.StartsWith("lib");
+            bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
 
             int cpuCount = Environment.ProcessorCount;
             int ssimSlots = Math.Max(2, cpuCount);
@@ -1950,12 +1943,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string stillPic = useStillPic ? "-still-picture 1" : "";
 
             // 仅对 libaom-av1 传入单 tile 和 -row-mt
-            string safeTile = config.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
-                              ? "-tile-columns 0 -tile-rows 0"
-                              : "";
-            string safeRowMt = config.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
-                               ? "-row-mt 1"
-                               : "";
+            string safeTile = EncoderUtils.IsLibAom(config.Encoder) ? "-tile-columns 0 -tile-rows 0" : "";
+            string safeRowMt = EncoderUtils.IsLibAom(config.Encoder) ? "-row-mt 1" : "";
 
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
 
@@ -2265,9 +2254,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             var sets = new List<(string, string, int, string)>();
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
-            string rowMt = cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
-                               ? "-row-mt 1"
-                               : "";
+            string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
 
             if (!isTrueLossless && isHighChroma)
             {
@@ -2283,9 +2270,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                     sets.Add((effectiveAom, "-tile-columns 0 -tile-rows 0", 0, ""));
 
                     // 4. 最终兜底（空 AOM + tile-columns 0 + cpu-used 0）
-                    bool encoderSupportsTileParams =
-                        cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ||
-                        cfg.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
+                    bool encoderSupportsTileParams = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
                     string downgradeTile = encoderSupportsTileParams ? "-tile-columns 0 -tile-rows 0" : "";
                     sets.Add(("", downgradeTile, 0, ""));
                 }
@@ -3578,7 +3563,42 @@ PerformSecantIteration(
     }
 
 
+    /// <summary>编码器类型判断与通用工具方法</summary>
+    internal static class EncoderUtils
+    {
+        public static bool IsLibAom(string encoder) =>
+            encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase);
 
+        public static bool IsSvtAv1(string encoder) =>
+            encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
+
+        public static bool IsRav1e(string encoder) =>
+            encoder.StartsWith("librav1e", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>是否为软件编码器（lib 开头）</summary>
+        public static bool IsSoftwareEncoder(string encoder) =>
+            encoder.StartsWith("lib", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>是否支持 still-picture 参数</summary>
+        public static bool SupportsStillPicture(string encoder) =>
+            IsLibAom(encoder);
+
+        /// <summary>是否支持 AOM 高级参数（目前仅 libaom-av1 支持）</summary>
+        public static bool SupportsAomParams(string encoder) =>
+            IsLibAom(encoder);
+
+        /// <summary>在 PATH 环境变量中查找可执行文件</summary>
+        public static string? FindExecutable(string name)
+        {
+            var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
+            foreach (var p in paths ?? Array.Empty<string>())
+            {
+                string full = Path.Combine(p, OperatingSystem.IsWindows() ? $"{name}.exe" : name);
+                if (File.Exists(full)) return full;
+            }
+            return null;
+        }
+    }
 
 
 
