@@ -275,6 +275,8 @@ namespace AvifEncoder
 
         private int _disposed;
 
+        private readonly IProcessRunner _processRunner;
+
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
         private static bool EncoderSupportsStillPicture(string encoderName)
         {
@@ -329,6 +331,13 @@ namespace AvifEncoder
             return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
         }
 
+        private async Task<string> RunProbeAsync(string file, string args)
+        {
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                file, args, TimeSpan.FromSeconds(30), _globalCts?.Token ?? default);
+            return stdout;
+        }
+
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -351,7 +360,7 @@ namespace AvifEncoder
 
             // 一次性 ffprobe 获取所有信息
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless -of json \"{filePath}\"";
-            string json = await RunProcessAndGetOutputAsync(_ffprobePath, args);
+            string json = await RunProbeAsync(_ffprobePath, args);
             if (string.IsNullOrEmpty(json)) return null;
 
             try
@@ -452,7 +461,7 @@ namespace AvifEncoder
 
             // 生成唯一临时 JSON 文件
             string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
-                                          .Replace('\\', '/');
+                                              .Replace('\\', '/');
 
             try
             {
@@ -463,53 +472,26 @@ namespace AvifEncoder
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    // 注意：不再包含 name=vmaf
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    // 注意：不再包含 name=vmaf
                     filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
                               $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
 
-                var psi = new ProcessStartInfo(_ffmpegPath, args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
+                var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
+                var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                    _ffmpegPath, args, timeout, _globalCts?.Token ?? default);
 
-                using var p = new Process { StartInfo = psi };
-                p.Start();
-                var stdoutTask = p.StandardOutput.ReadToEndAsync();
-                var stderrTask = p.StandardError.ReadToEndAsync();
-
-                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(_config.SsimTimeoutMinutes));
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    _globalCts?.Token ?? default, cts.Token);
-
-                try { await Task.WhenAll(stdoutTask, stderrTask, p.WaitForExitAsync(linkedCts.Token)); }
-                catch (OperationCanceledException)
-                {
-                    if (!p.HasExited) try { p.Kill(); } catch { }
-                    // ★ 修复：等待异步读取结束，避免未观察异常
-                    try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
-                    Logger.Log($"ComputeAllMetrics 超时: {Path.GetFileName(refPath)}");
-                    return null;
-                }
-
-                // 读取 stderr 完整内容（用于提取 VMAF 分数）
-                string stderr = await stderrTask;
                 if (!string.IsNullOrWhiteSpace(stderr))
                     Logger.Log($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
 
-                if (p.ExitCode != 0)
+                if (exitCode != 0)
                 {
-                    Logger.Log($"ComputeAllMetrics 失败 (exit {p.ExitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    Logger.Log($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
                     return null;
                 }
 
@@ -534,7 +516,6 @@ namespace AvifEncoder
                 }
                 else
                 {
-                    // 如果整个 stderr 都没找到，尝试备用模式（有些版本可能格式不同）
                     vmafMatch = Regex.Match(stderr, @"vmaf\s*=\s*([0-9.]+)");
                     if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
                             NumberStyles.Float, CultureInfo.InvariantCulture, out vmafScore))
@@ -667,35 +648,29 @@ namespace AvifEncoder
         }
 
 
-        public AvifPipeline(string inputDir, string outputDir, PresetConfig config)
+        public AvifPipeline(string inputDir, string outputDir, PresetConfig config, IProcessRunner? processRunner = null)
         {
             // 至少预留 2 个 SSIM 计算并发，避免搜索完全串行
             _inputDir = inputDir; _outputDir = outputDir; _config = config;
             _ffmpegPath = FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
             _ffprobePath = FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
 
+            // 注入进程运行器（未提供则使用真实实现）
+            _processRunner = processRunner ?? new RealProcessRunner();
+
             bool isHardwareEncoder = !config.Encoder.StartsWith("lib");
 
             int cpuCount = Environment.ProcessorCount;
             int ssimSlots = Math.Max(2, cpuCount);
-            // 硬件编码器基于 GPU，可承受更高并发// SSIM 依旧主要占用 CPU// 软件编码器受限于 CPU
-            // 根据编码器类型设置 ffmpeg 进程池大小
-            // 根据编码器类型设置 ffmpeg 进程池大小
             int ffmpegPoolSize = isHardwareEncoder
-                                 ? Math.Max(2, cpuCount * 2)   // GPU 通常能承受更高并发
-                                 : Math.Max(2, cpuCount / 2);  // 软件编码器受限于 CPU
+                                     ? Math.Max(2, cpuCount * 2)
+                                     : Math.Max(2, cpuCount / 2);
 
-            // 若用户未手动指定 -t，则自动提升文件级并行度（保持 MaxJobs 与 ffmpegPoolSize 协调）
-            // 若用户未手动指定 -t，则自动提升文件级并行度（保持 MaxJobs 与 ffmpegPoolSize 协调）
-            // 若用户未通过 -t 手动指定，则同步调整文件级并发上限
-            // （MaxJobs 的自动值 = sqrt(cpuCount)，手动指定时会覆盖自动值）
             if (isHardwareEncoder && config.MaxJobs <= Math.Max(2, (int)Math.Sqrt(cpuCount)))
             {
                 config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
             }
 
-            // 实际可同时运行的 ffmpeg 进程数，受文件级并行限制
-            // 记录最大并发数
             _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
@@ -775,7 +750,7 @@ namespace AvifEncoder
             {
                 // 修复：通过 is_lossless 字段准确判断 WebP 是否无损
                 string args = $"-v error -select_streams v:0 -show_entries stream=is_lossless -of csv=p=0 \"{filePath}\"";
-                string output = await RunProcessAndGetOutputAsync(_ffprobePath, args);
+                string output = await RunProbeAsync(_ffprobePath, args);
                 return output.Trim() == "1";         // ffprobe 返回 "1" 表示无损
             }
             return false;
@@ -1059,7 +1034,7 @@ namespace AvifEncoder
 
             // 兜底：单独探测
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"";
-            string raw = await RunProcessAndGetOutputAsync(_ffprobePath, args);
+            string raw = await RunProbeAsync(_ffprobePath, args);
             string fmt = raw.Trim().ToLower();
             bool hasAlpha = fmt switch
             {
@@ -1142,7 +1117,7 @@ namespace AvifEncoder
             }
 
             // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
-            string raw = await RunProcessAndGetOutputAsync(_ffprobePath,
+            string raw = await RunProbeAsync(_ffprobePath,
                 $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
             string fmtFallback = raw.Trim().ToLower();
 
@@ -2456,50 +2431,17 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
         private async Task<(bool success, string stderrLastLine)> RunFfmpegExAsync(string file, string args, TimeSpan timeout)
         {
-            using var p = new Process
-            {
-                StartInfo = new ProcessStartInfo(file, args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                }
-            };
-            p.Start();
-            var stdoutTask = p.StandardOutput.ReadToEndAsync();
-            var stderrTask = p.StandardError.ReadToEndAsync();
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                file, args, timeout, _globalCts?.Token ?? default);
 
-            using var timeoutCts = new CancellationTokenSource(timeout);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_globalCts?.Token ?? default, timeoutCts.Token);
-            try
-            {
-                await Task.WhenAll(stdoutTask, stderrTask, p.WaitForExitAsync(linkedCts.Token));
-                string stderr = await stderrTask;
-                string lastLine = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";
+            string lastLine = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";
 
-                if (p.ExitCode != 0)
-                {
-                    Logger.Log($"ffmpeg 错误(退出码 {p.ExitCode}): {lastLine}");
-                    return (false, lastLine);
-                }
-                return (true, "");
-            }
-            catch (OperationCanceledException)
+            if (exitCode != 0)
             {
-                if (!p.HasExited)
-                {
-                    try { p.Kill(entireProcessTree: true); } catch { }
-                }
-                // ★ 修复 Bug2：安全等待读取任务结束，避免未观察异常
-                try
-                {
-                    await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5));
-                }
-                catch { }
-                Logger.Log($"ffmpeg 超时/取消，进程是否已退出: {p.HasExited}");
-                return (false, p.HasExited ? "超时(已退出)" : "超时(进程残留)");
+                Logger.Log($"ffmpeg 错误(退出码 {exitCode}): {lastLine}");
+                return (false, lastLine);
             }
+            return (true, "");
         }
 
         private static async Task<string> RunProcessAndGetOutputAsync(string file, string args)
@@ -2622,39 +2564,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
         private async Task<string> RunSsimProcess(string args)
         {
-            using var p = new Process
-            {
-                StartInfo = new ProcessStartInfo(_ffmpegPath, args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                }
-            };
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes), _globalCts?.Token ?? default);
 
-            p.Start();
-            var stdoutTask = p.StandardOutput.ReadToEndAsync();
-            var stderrTask = p.StandardError.ReadToEndAsync();
-
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(_config.SsimTimeoutMinutes));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                _globalCts?.Token ?? default, timeoutCts.Token);
-
-            try
-            {
-                await Task.WhenAll(stdoutTask, stderrTask, p.WaitForExitAsync(linkedCts.Token))
-                          .WaitAsync(linkedCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                if (!p.HasExited) { try { p.Kill(); } catch { } }
-                Logger.Log($"SSIM 超时");
-                return string.Empty;
-            }
-
-            string stdout = await stdoutTask;
-            string stderr = await stderrTask;
+            // 与之前行为一致，将 stdout 和 stderr 合并返回
             return stdout + stderr;
         }
 
@@ -3431,7 +3344,7 @@ PerformSecantIteration(
 
             // 兜底：单独探测
             string args = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{path}\"";
-            string o = await RunProcessAndGetOutputAsync(_ffprobePath, args).WaitAsync(TimeSpan.FromSeconds(30));
+            string o = await RunProbeAsync(_ffprobePath, args).WaitAsync(TimeSpan.FromSeconds(30));
             var parts = o.Trim().Split(',');
             if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
             {
@@ -3511,6 +3424,86 @@ PerformSecantIteration(
             _ => $"{t.TotalSeconds:F1}s"
         };
     }
+
+
+    // ========================================
+    // 新增：进程抽象层（放在 namespace AvifEncoder 内）
+    // ========================================
+
+    /// <summary>封装外部进程调用的接口，便于替换和测试</summary>
+    public interface IProcessRunner
+    {
+        /// <summary>
+        /// 运行指定的可执行文件，返回 (退出码, 标准输出, 标准错误)。
+        /// </summary>
+        Task<(int exitCode, string stdout, string stderr)> RunAsync(
+            string fileName,
+            string arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>使用真实操作系统进程的默认实现</summary>
+    public class RealProcessRunner : IProcessRunner
+    {
+        public async Task<(int exitCode, string stdout, string stderr)> RunAsync(
+            string fileName,
+            string arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo(fileName, arguments)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                }
+            };
+
+            process.Start();
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
+            try
+            {
+                await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                }
+            }
+
+            string stdout = await stdoutTask;
+            string stderr = await stderrTask;
+            return (process.ExitCode, stdout, stderr);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     class Program
     {
