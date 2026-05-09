@@ -248,7 +248,7 @@ namespace AvifEncoder
         private DateTime _startTime;
         private int _totalFiles;
         private int _processedCount;
-        private int _successCount;
+
         private long _totalOriginalSize;
         private long _totalOutputSize;
 
@@ -2153,7 +2153,7 @@ namespace AvifEncoder
                     {
                         Interlocked.Add(ref _totalOriginalSize, r.OriginalSize);
                         Interlocked.Add(ref _totalOutputSize, r.OutputSize);
-                        Interlocked.Increment(ref _successCount);
+
                     }
                     // 失败的文件不累加 OriginalSize/OutputSize，也不增加 successCount
                 }
