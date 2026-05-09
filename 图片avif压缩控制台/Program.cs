@@ -1287,62 +1287,68 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
             // ★ 将 metrics 声明提前到 if 之外
             QualityMetrics? metrics = null;
 
+            // 在 ProcessSingleFileAsync 方法内，替换原来的指标获取逻辑：
             if (encodeResult.Success)
             {
-                // ★ 调用多指标计算（同步等待）
-                try
-                {
-                    metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
-                }
+                // ★ 优先从缓存获取指标（搜索阶段可能已计算）
+                string normalizedInput = GetNormalizedPathForCache(inputPath);
+                string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+                int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+                string aomParams = config.GetEffectiveAomParams();
+                bool jpeg = IsJpeg(inputPath);
+                int tileCols = encInfo.TileCols;
+                int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
 
-                if (metrics != null)
+                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+                if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
                 {
-                    // 使用 VMAF 提供的更准确的 SSIM
-                    ssim = metrics.SSIM;
-                    Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
-                               $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                               $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
-
-                    // 存入 SSIM 缓存
-                    string normalizedInput = GetNormalizedPathForCache(inputPath);
-                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                    string aomParams = config.GetEffectiveAomParams();
-                    bool jpeg = IsJpeg(inputPath);
-                    int tileCols = encInfo.TileCols;
-                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-
-                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
-                    _ssimCache[cacheKey] = metrics.SSIM;
+                    metrics = cachedMetrics;
+                    Logger.Log($"最终指标复用缓存: {name} CRF={encodeResult.Crf} VMAF={metrics.VMAF:F2}");
                 }
                 else
                 {
-                    // 多指标失败，回退到旧版 SSIM 计算
-                    string normalizedInput = GetNormalizedPathForCache(inputPath);
-                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                    string aomParams = config.GetEffectiveAomParams();
-                    bool jpeg = IsJpeg(inputPath);
-                    int tileCols = encInfo.TileCols;
-                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-
-                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
-
-                    if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                    // 缓存未命中，进行完整的 VMAF 计算
+                    try
                     {
-                        ssim = cachedSsim;
-                        Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
+                        metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
+                    }
+
+                    if (metrics != null)
+                    {
+                        // 将计算结果写入缓存
+                        _metricsCache[cacheKey] = metrics;
+                        Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
+                                   $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                   $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                     }
                     else
                     {
-                        ssim = await CalcSSIMAsync(inputPath, outputPath, encodeResult.ActualPixFmt);
-                        if (ssim >= 0)
-                            _ssimCache[cacheKey] = ssim;
+                        // 多指标失败，回退到旧版 SSIM 计算
+                        if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                        {
+                            ssim = cachedSsim;
+                            Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
+                        }
+                        else
+                        {
+                            ssim = await CalcSSIMAsync(inputPath, outputPath, encodeResult.ActualPixFmt);
+                            if (ssim >= 0)
+                                _ssimCache[cacheKey] = ssim;
+                        }
                     }
+                }
+
+                // 如果 metrics 仍然为 null（缓存未命中且 VMAF 失败，但可能从旧版 SSIM 获得了值），则继续后续处理
+                // 注：原有的 _ssimCache 更新逻辑在 metrics 成功时也会执行，这里保留
+                if (metrics != null)
+                {
+                    ssim = metrics.SSIM;
+                    // 同时将 SSIM 存入旧版缓存（保持兼容）
+                    _ssimCache[cacheKey] = ssim;
                 }
             }
 
@@ -1707,10 +1713,27 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !File.Exists(tmpAvif) || new FileInfo(tmpAvif).Length < 100) return -1;
 
-                    // ★ 直接使用已生成的临时文件计算多指标，不再二次编码
+                    // 计算多指标
                     QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif);
                     if (metrics != null)
                     {
+                        // ★ 将安全模式计算结果写入 _metricsCache，供后续复用
+                        string normalizedInput = GetNormalizedPathForCache(inputPath);
+                        string safePixFmt = "yuv420p";   // 安全模式固定使用 yuv420p
+                        int safeBitDepth = 8;            // 安全模式默认 8bit（与 BuildSafeModeArgs 一致）
+                        string safeAom = effectiveAom;
+                        string cacheKey = GetSsimCacheKey(
+                            normalizedInput,
+                            testCrf,
+                            safePixFmt,
+                            0,                           // tileCols
+                            0,                           // cpuUsed
+                            IsJpeg(inputPath),
+                            safeAom,
+                            safeBitDepth);
+
+                        _metricsCache[cacheKey] = metrics;
+
                         double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
                         return score;
                     }
