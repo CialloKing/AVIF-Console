@@ -4,8 +4,9 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Text.Json;   // 如果使用 System.Text.Json
+using System.Text.RegularExpressions;
+using static AvifEncoder.PresetConfig;
 
 
 namespace AvifEncoder
@@ -113,9 +114,53 @@ namespace AvifEncoder
         }
 
 
+        /// <summary>文件系统抽象接口，封装常用的文件和目录操作。</summary>
+        public interface IFileSystem
+        {
+            bool FileExists(string path);
+            long GetFileLength(string path);
+            void CopyFile(string source, string destination, bool overwrite);
+            void DeleteFile(string path);
+            void WriteAllText(string path, string contents, Encoding encoding);
+            Task WriteAllTextAsync(string path, string contents, Encoding encoding);
+            Task<string> ReadAllTextAsync(string path);
+            void AppendAllText(string path, string contents);
+            DateTime GetCreationTime(string path);
 
+            bool DirectoryExists(string path);
+            void CreateDirectory(string path);
+            string[] GetFiles(string path, string searchPattern);
+            IEnumerable<string> EnumerateFiles(string path);
+            IEnumerable<string> EnumerateFileSystemEntries(string path);
+            void DeleteDirectory(string path, bool recursive);
+        }
 
+        public class RealFileSystem : IFileSystem
+        {
+            public bool FileExists(string path) => File.Exists(path);
+            public long GetFileLength(string path) => new FileInfo(path).Length;
+            public void CopyFile(string source, string destination, bool overwrite) =>
+                File.Copy(source, destination, overwrite);
+            public void DeleteFile(string path) => File.Delete(path);
+            public void WriteAllText(string path, string contents, Encoding encoding) =>
+                File.WriteAllText(path, contents, encoding);
+            public Task WriteAllTextAsync(string path, string contents, Encoding encoding) =>
+                File.WriteAllTextAsync(path, contents, encoding);
+            public Task<string> ReadAllTextAsync(string path) => File.ReadAllTextAsync(path);
+            public void AppendAllText(string path, string contents) => File.AppendAllText(path, contents);
+            public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
 
+            public bool DirectoryExists(string path) => Directory.Exists(path);
+            public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+            public string[] GetFiles(string path, string searchPattern) =>
+                Directory.GetFiles(path, searchPattern);
+            public IEnumerable<string> EnumerateFiles(string path) =>
+                Directory.EnumerateFiles(path);
+            public IEnumerable<string> EnumerateFileSystemEntries(string path) =>
+                Directory.EnumerateFileSystemEntries(path);
+            public void DeleteDirectory(string path, bool recursive) =>
+                Directory.Delete(path, recursive);
+        }
 
         /// <summary>
         /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
@@ -228,19 +273,23 @@ namespace AvifEncoder
     {
         private readonly object _lock = new();
         private readonly string _logDir;
+        private readonly IFileSystem _fs;
 
-        public FileLogger(string outputDir)
+        public FileLogger(string outputDir, IFileSystem? fileSystem = null)
         {
+            _fs = fileSystem ?? new RealFileSystem();
             _logDir = Path.Combine(outputDir, "log");
-            Directory.CreateDirectory(_logDir);
+            _fs.CreateDirectory(_logDir);
 
             // 清理30天前的 run 日志
             try
             {
                 var cutoff = DateTime.Now.AddDays(-30);
-                foreach (var f in Directory.GetFiles(_logDir, "run_*.log"))
-                    if (File.GetCreationTime(f) < cutoff)
-                        File.Delete(f);
+                foreach (var f in _fs.GetFiles(_logDir, "run_*.log"))
+                {
+                    if (_fs.GetCreationTime(f) < cutoff)
+                        _fs.DeleteFile(f);
+                }
             }
             catch { }
 
@@ -251,21 +300,21 @@ namespace AvifEncoder
         public void LogInfo(string msg)
         {
             lock (_lock)
-                File.AppendAllText(Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
+                _fs.AppendAllText(
+                    Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
 
         public void LogError(string msg)
         {
-            // 错误也写入同一日志文件，带 ERROR 标记
             lock (_lock)
-                File.AppendAllText(Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
+                _fs.AppendAllText(
+                    Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
                     $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}\n");
         }
 
         public void LogMetric(string metricName, string msg)
         {
-            // metricName 为 "ssim" 或 "crf" 等
             string fileName = metricName.ToLower() switch
             {
                 "ssim" => "ssim_trace.log",
@@ -274,7 +323,8 @@ namespace AvifEncoder
             };
 
             lock (_lock)
-                File.AppendAllText(Path.Combine(_logDir, fileName),
+                _fs.AppendAllText(
+                    Path.Combine(_logDir, fileName),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
     }
@@ -322,6 +372,42 @@ namespace AvifEncoder
 
         private readonly ILogger _logger;
 
+
+
+        private readonly IFileSystem _fs;
+
+        public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
+                    ILogger logger,
+                    IProcessRunner? processRunner = null,
+                    IFileSystem? fileSystem = null)
+        {
+            _fs = fileSystem ?? new RealFileSystem();
+            _inputDir = inputDir; _outputDir = outputDir; _config = config;
+            _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
+            _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
+
+            _processRunner = processRunner ?? new RealProcessRunner();
+            _logger = logger;
+
+            bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
+
+            int cpuCount = Environment.ProcessorCount;
+            int ssimSlots = Math.Max(2, cpuCount);
+            int ffmpegPoolSize = isHardwareEncoder
+                                     ? Math.Max(2, cpuCount * 2)
+                                     : Math.Max(2, cpuCount / 2);
+
+            if (isHardwareEncoder && config.MaxJobs <= Math.Max(2, (int)Math.Sqrt(cpuCount)))
+            {
+                config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
+            }
+
+            _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
+            _ssimConcurrency = new SemaphoreSlim(ssimSlots);
+            _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
+        }
+
+
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
         private static bool EncoderSupportsStillPicture(string encoderName) => EncoderUtils.SupportsStillPicture(encoderName);
 
@@ -331,7 +417,6 @@ namespace AvifEncoder
         /// </summary>
         private async Task ScaleImageAsync(string input, string output, int maxDim)
         {
-            // 获取源分辨率
             var (w, h) = await GetResolutionAsync(input);
             if (w <= 0 || h <= 0)
                 throw new Exception($"无法获取分辨率: {input}");
@@ -339,22 +424,16 @@ namespace AvifEncoder
             int longSide = Math.Max(w, h);
             if (longSide <= maxDim)
             {
-                // 无需缩放，直接复制（极少数情况）
-                File.Copy(input, output, true);
+                _fs.CopyFile(input, output, true);   // 替换 File.Copy
                 return;
             }
 
             double scale = (double)maxDim / longSide;
-            int targetW = (int)Math.Round(w * scale);
-            int targetH = (int)Math.Round(h * scale);
-
-            // 编码器通常要求偶数尺寸
-            targetW = targetW & ~1;
-            targetH = targetH & ~1;
+            int targetW = (int)Math.Round(w * scale) & ~1;
+            int targetH = (int)Math.Round(h * scale) & ~1;
             if (targetW < 2) targetW = 2;
             if (targetH < 2) targetH = 2;
 
-            // 确定输出像素格式，保留 Alpha
             bool hasAlpha = await SourceHasAlpha(input);
             string pixFmt = hasAlpha ? "rgba" : "rgb24";
 
@@ -499,7 +578,7 @@ namespace AvifEncoder
 
             // 生成唯一临时 JSON 文件
             string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
-                                              .Replace('\\', '/');
+                                                  .Replace('\\', '/');
 
             try
             {
@@ -535,13 +614,13 @@ namespace AvifEncoder
 
                 // 读取 JSON
                 string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
-                if (!File.Exists(physicalPath))
+                if (!_fs.FileExists(physicalPath))
                 {
                     _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
                     return null;
                 }
 
-                string json = await File.ReadAllTextAsync(physicalPath);
+                string json = await _fs.ReadAllTextAsync(physicalPath);
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
@@ -579,7 +658,7 @@ namespace AvifEncoder
                 try
                 {
                     string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
-                    if (File.Exists(physicalPath)) File.Delete(physicalPath);
+                    if (_fs.FileExists(physicalPath)) _fs.DeleteFile(physicalPath);
                 }
                 catch { }
             }
@@ -686,36 +765,7 @@ namespace AvifEncoder
         }
 
 
-        public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
-                    ILogger logger,                         // 必需参数，放在前面
-                    IProcessRunner? processRunner = null)   // 可选参数，放在最后
-        {
-            // 至少预留 2 个 SSIM 计算并发，避免搜索完全串行
-            _inputDir = inputDir; _outputDir = outputDir; _config = config;
-            _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
-            _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
-
-            // 注入进程运行器（未提供则使用真实实现）
-            _processRunner = processRunner ?? new RealProcessRunner();
-            _logger = logger;   // 直接使用注入的实例，不再自动创建
-
-            bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
-
-            int cpuCount = Environment.ProcessorCount;
-            int ssimSlots = Math.Max(2, cpuCount);
-            int ffmpegPoolSize = isHardwareEncoder
-                                     ? Math.Max(2, cpuCount * 2)
-                                     : Math.Max(2, cpuCount / 2);
-
-            if (isHardwareEncoder && config.MaxJobs <= Math.Max(2, (int)Math.Sqrt(cpuCount)))
-            {
-                config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
-            }
-
-            _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
-            _ssimConcurrency = new SemaphoreSlim(ssimSlots);
-            _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
-        }
+        
 
 
 
@@ -907,15 +957,15 @@ namespace AvifEncoder
         /// <summary> 扫描输入目录，返回按文件大小降序排列的文件列表 </summary>
         private async Task<List<(string path, int index)>?> ScanAndPrepareFilesAsync()
         {
-            if (!Directory.Exists(_inputDir))
+            if (!_fs.DirectoryExists(_inputDir))
             {
                 SafeWriteLine("输入文件夹不存在。");
                 return null;
             }
-            Directory.CreateDirectory(_outputDir);
+            _fs.CreateDirectory(_outputDir);
 
             var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
-            var sortedFiles = Directory.EnumerateFiles(_inputDir)
+            var sortedFiles = _fs.EnumerateFiles(_inputDir)
                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                 .OrderBy(f => f, new NaturalComparer())
                 .Select((path, idx) => (path, index: idx + 1))
@@ -930,7 +980,9 @@ namespace AvifEncoder
             _progress.SetTotalFiles(sortedFiles.Count);
             SafeWriteLine($"待处理: {_progress.TotalFiles} 张\n");
 
-            var processingOrder = sortedFiles.OrderByDescending(t => new FileInfo(t.path).Length).ToList();
+            var processingOrder = sortedFiles
+                .OrderByDescending(t => _fs.GetFileLength(t.path))
+                .ToList();
             return processingOrder;
         }
 
@@ -958,8 +1010,8 @@ namespace AvifEncoder
             foreach (var (filePath, index) in retryFiles)
             {
                 string outFile = Path.Combine(_outputDir, GetOutputFileName(filePath, index));
-                if (File.Exists(outFile))
-                    try { File.Delete(outFile); } catch { }
+                if (_fs.FileExists(outFile))
+                    try { _fs.DeleteFile(outFile); } catch { }
             }
 
             var retryResults = await ProcessFilesAsync(retryFiles, _config, isRetry: true);
@@ -1003,14 +1055,26 @@ namespace AvifEncoder
         private void FinalCleanup()
         {
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
-            // ★ 清理缩放临时目录
             string scaledDir = Path.Combine(_outputDir, "_scaled");
-            if (Directory.Exists(scaledDir))
+            if (_fs.DirectoryExists(scaledDir))
             {
-                try { Directory.Delete(scaledDir, true); } catch { }
+                try { _fs.DeleteDirectory(scaledDir, true); } catch { }
             }
-            foreach (var f in Directory.GetFiles(_outputDir, "_p_*.avif"))
-                try { File.Delete(f); } catch { }
+            foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))   // 替换 Directory.GetFiles
+                try { _fs.DeleteFile(f); } catch { }
+        }
+
+        private void CleanDirectory(string dir)
+        {
+            if (_fs.DirectoryExists(dir))
+            {
+                try
+                {
+                    _fs.DeleteDirectory(dir, true);
+                    _logger.LogInfo($"缓存已清理: {dir}");
+                }
+                catch (Exception ex) { _logger.LogInfo($"清理失败: {dir} - {ex.Message}"); }
+            }
         }
 
         // ========== 修复后的 PrintProgress（区分跳过） ==========
@@ -1019,14 +1083,7 @@ namespace AvifEncoder
             SafeWriteLine(_progress.GetProgressLine(r));
         }
 
-        private void CleanDirectory(string dir)
-        {
-            if (Directory.Exists(dir))
-            {
-                try { Directory.Delete(dir, true); _logger.LogInfo($"缓存已清理: {dir}"); }
-                catch (Exception ex) { _logger.LogInfo($"清理失败: {dir} - {ex.Message}"); }
-            }
-        }
+
 
 
 
@@ -1342,7 +1399,7 @@ namespace AvifEncoder
             finally
             {
                 if (scaling.TempFilePath != null)
-                    try { File.Delete(scaling.TempFilePath); } catch { }
+                    try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
             }
         }
 
@@ -1361,7 +1418,7 @@ namespace AvifEncoder
                 return new PreScalingResult(inputPath, false, null, srcW, srcH, srcW, srcH);
 
             string scaledDir = Path.Combine(_outputDir, "_scaled");
-            Directory.CreateDirectory(scaledDir);
+            _fs.CreateDirectory(scaledDir);
             string scaledFile = Path.Combine(scaledDir, $"_scaled_{Guid.NewGuid():N}.png");
             await ScaleImageAsync(inputPath, scaledFile, config.MaxResolution);
             var (sw, sh) = await GetResolutionAsync(scaledFile);
@@ -1434,15 +1491,15 @@ namespace AvifEncoder
         }
 
         private EncodeResult BuildResult(int index, string outputFileName, string name, string inputPath, string outputPath,
-            FinalEncodeResult encodeResult, CRFSearchResult searchResult, EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
+    FinalEncodeResult encodeResult, CRFSearchResult searchResult, EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
         {
             var result = new EncodeResult
             {
                 Index = index,
                 FileName = outputFileName,
                 OriginalFileName = name,
-                OriginalSize = encodeResult.Success ? new FileInfo(inputPath).Length : 0,
-                OutputSize = encodeResult.Success ? new FileInfo(outputPath).Length : 0,
+                OriginalSize = encodeResult.Success ? _fs.GetFileLength(inputPath) : 0,
+                OutputSize = encodeResult.Success ? _fs.GetFileLength(outputPath) : 0,
                 UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
                 FinalSSIM = ssim,
                 EncodeTime = encodeResult.EncodeTime,
@@ -1517,7 +1574,7 @@ namespace AvifEncoder
 
             string outputFileName = GetOutputFileName(inputPath, index);
             string outputPath = Path.Combine(_outputDir, outputFileName);
-            if (File.Exists(outputPath))
+            if (_fs.FileExists(outputPath))
             {
                 string name = Path.GetFileName(inputPath);
                 SafeWriteLine($"[SKIP] {name} (已存在，跳过)");
@@ -1527,17 +1584,9 @@ namespace AvifEncoder
                     Index = index,
                     FileName = outputFileName,
                     OriginalFileName = name,
-                    OriginalSize = new FileInfo(inputPath).Length,
-                    OutputSize = new FileInfo(outputPath).Length,
-                    UsedCRF = -1,
-                    FinalSSIM = -1,
-                    EncodeTime = TimeSpan.Zero,
-                    SearchTime = TimeSpan.Zero,
-                    TotalTime = TimeSpan.Zero,
-                    Retries = 0,
-                    Success = true,
-                    Skipped = true,
-                    PixelFormat = ""
+                    OriginalSize = _fs.GetFileLength(inputPath),
+                    OutputSize = _fs.GetFileLength(outputPath),
+                    // ... 其余字段
                 };
                 MarkProcessed(skipResult);
                 return skipResult;
@@ -1785,7 +1834,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
         // ---------- 安全模式单次 SSIM ----------
         private async Task<double> SafeModeSSIM(string inputPath, PresetConfig config, int testCrf,
-                                        CancellationToken token)
+                                CancellationToken token)
         {
             if (token.IsCancellationRequested) return -1;
 
@@ -1804,7 +1853,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart);
                     (bool ok, string _) = await RunFfmpegExAsync(_ffmpegPath, args,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
-                    if (!ok || !File.Exists(tmpAvif) || new FileInfo(tmpAvif).Length < 100) return -1;
+                    if (!ok || !_fs.FileExists(tmpAvif) || _fs.GetFileLength(tmpAvif) < 100) return -1;
 
                     // 计算多指标
                     QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif);
@@ -1842,7 +1891,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
                 finally
                 {
-                    if (File.Exists(tmpAvif)) try { File.Delete(tmpAvif); } catch { }
+                    if (_fs.FileExists(tmpAvif)) try { _fs.DeleteFile(tmpAvif); } catch { }
                 }
             }
             finally
@@ -2309,10 +2358,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
 
             // 缓存命中
-            if (_encodeCache.TryGetValue(cacheKey, out var cached) && File.Exists(cached.file))
+            if (_encodeCache.TryGetValue(cacheKey, out var cached) && _fs.FileExists(cached.file))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                File.Copy(cached.file, output, true);
+                _fs.CreateDirectory(Path.GetDirectoryName(output)!);
+                _fs.CopyFile(cached.file, output, true);
                 _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
@@ -2352,24 +2401,24 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                     if (success)
                     {
-                        if (new FileInfo(output).Length < 100)
+                        if (_fs.GetFileLength(output) < 100)
                         {
-                            _logger.LogInfo($"编码输出文件过小 ({new FileInfo(output).Length} 字节)，丢弃并重试");
-                            if (File.Exists(output)) File.Delete(output);
+                            _logger.LogInfo($"编码输出文件过小 ({_fs.GetFileLength(output)} 字节)，丢弃并重试");
+                            if (_fs.FileExists(output)) _fs.DeleteFile(output);
                             if (attempt < _maxRetries) { await Task.Delay(1000); continue; }
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
                         }
 
                         // 保存缓存
-                        Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
-                        File.Copy(output, cacheFile, true);
+                        _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
+                        _fs.CopyFile(output, cacheFile, true);
                         _encodeCache[cacheKey] = (cacheFile, sw.Elapsed, ffArgs);
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
                     }
 
                     string error = $"CRF={crf}, {stderrLastLine}";
                     _logger.LogInfo($"❌ 编码失败: {input} - {error}");
-                    if (File.Exists(output)) File.Delete(output);
+                    if (_fs.FileExists(output)) _fs.DeleteFile(output);
                     if (attempt < _maxRetries) await Task.Delay(1000);
                 }
 
@@ -2506,20 +2555,19 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
         private bool EnsureFilesValid(string a, string b)
         {
-            if (!File.Exists(a) || !File.Exists(b))
+            if (!_fs.FileExists(a) || !_fs.FileExists(b))
             {
                 _logger.LogInfo($"SSIM 文件缺失: a={Path.GetFileName(a)}, b={Path.GetFileName(b)}");
                 return false;
             }
 
-            long sizeA = new FileInfo(a).Length;
-            long sizeB = new FileInfo(b).Length;
+            long sizeA = _fs.GetFileLength(a);
+            long sizeB = _fs.GetFileLength(b);
             if (sizeA < 100 || sizeB < 100)
             {
                 _logger.LogInfo($"SSIM 文件太小 ({sizeA} / {sizeB} 字节)");
                 return false;
             }
-
             return true;
         }
 
@@ -2694,7 +2742,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         var encResult = await EncodeToFileExAsync(input, tmp, crf, tileCols, searchCpu, cfg, jpeg, pixFmt,
                             isTrueLossless: false, cfg.SearchEncodeTimeoutMinutes, allowParamDegrade: true);
 
-                        if (!encResult.ok || !File.Exists(tmp) || new FileInfo(tmp).Length < 100)
+                        if (!encResult.ok || !_fs.FileExists(tmp) || _fs.GetFileLength(tmp) < 100)
                         {
                             newTask.SetResult(null);
                             return null;
@@ -2713,7 +2761,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     }
                     finally
                     {
-                        if (File.Exists(tmp)) try { File.Delete(tmp); } catch { }
+                        if (_fs.FileExists(tmp)) try { _fs.DeleteFile(tmp); } catch { }
                     }
                 }
                 finally
@@ -2724,7 +2772,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             catch (Exception ex)
             {
                 _logger.LogInfo($"GetOrComputeMetrics 意外异常: [{Path.GetFileName(input)}] CRF={crf} - {ex.Message}");
-                // 将异常传播给所有等待者，避免被静默吞掉
                 newTask.TrySetException(ex);
                 return null;
             }
@@ -2738,7 +2785,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
-        
+
 
         private async Task<int> FindLowBoundWithRetry(
         Func<int, Task<double>> getSSIM, int minCRF, int maxCRF,
@@ -2966,11 +3013,11 @@ PerformSecantIteration(
             {
                 Encoder = cfg.Encoder,
                 BaseCRF = crf,
-                FinalCpuUsed = 6,                           // ← 从 8 降到 6
+                FinalCpuUsed = 6,
                 SearchCpuUsed = 6,
-                PixelFormat = "yuv420p",                    // ← 强制 yuv420p，避免 yuv444p 失败
+                PixelFormat = "yuv420p",
                 Lossless = false,
-                AomParams = "aq-mode=0:enable-cdef=0",     // ← 最小化但保证稳定
+                AomParams = "aq-mode=0:enable-cdef=0",
                 MaxJobs = cfg.MaxJobs,
                 BitDepth = cfg.BitDepth
             };
@@ -2979,11 +3026,11 @@ PerformSecantIteration(
             try
             {
                 var encResult = await EncodeToFileExAsync(input, tmpOutput, crf,
-                    tileCols, proxyCfg.FinalCpuUsed, proxyCfg, jpeg, "yuv420p",   // ← 显式传 yuv420p
+                    tileCols, proxyCfg.FinalCpuUsed, proxyCfg, jpeg, "yuv420p",
                     isTrueLossless: false, timeoutMinutes: cfg.SearchEncodeTimeoutMinutes,
                     allowParamDegrade: false);
 
-                if (!encResult.ok || !File.Exists(tmpOutput) || new FileInfo(tmpOutput).Length < 100)
+                if (!encResult.ok || !_fs.FileExists(tmpOutput) || _fs.GetFileLength(tmpOutput) < 100)
                     return -1;
 
                 QualityMetrics? m = await ComputeAllMetricsAsync(input, tmpOutput);
@@ -2993,7 +3040,7 @@ PerformSecantIteration(
             }
             finally
             {
-                if (File.Exists(tmpOutput)) try { File.Delete(tmpOutput); } catch { }
+                if (_fs.FileExists(tmpOutput)) try { _fs.DeleteFile(tmpOutput); } catch { }
             }
         }
 
@@ -3161,7 +3208,8 @@ PerformSecantIteration(
                     _logger.LogInfo($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
                 }
                 // 清理临时文件
-                try { if (File.Exists(probeOutput)) File.Delete(probeOutput); } catch { }
+                // 在方法末尾，替换 File.Exists/File.Delete
+                try { if (_fs.FileExists(probeOutput)) _fs.DeleteFile(probeOutput); } catch { }
             }
 
             return (low, high, recommendedFmt);
@@ -3315,7 +3363,7 @@ PerformSecantIteration(
                 sb.AppendLine(GetCsvRow(r));
             }
 
-            File.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
+            _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
             SafeWriteLine($"CSV 已保存: {p}");
         }
 
@@ -4102,12 +4150,14 @@ AVIF 编码器 CLI -- 帮助手册
             AvifPipeline? pipeline = null;
             try
             {
-                // 创建统一的日志器实例
+                // 创建统一的日志器实例（FileLogger 已支持 IFileSystem 注入）
                 var fileLogger = new FileLogger(opts.OutputDir);
-                // 让静态 Logger 类也使用同一个实例
                 Logger.SetInstance(fileLogger);
-                // 注入到 Pipeline
-                pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config, logger: fileLogger);
+
+                // 使用新构造函数创建 AvifPipeline，传入 fileSystem（或省略，内部会默认 RealFileSystem）
+                pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
+                    logger: fileLogger,
+                    fileSystem: new RealFileSystem());   // 显式传入，清晰直观
                 await pipeline.RunAsync();
             }
             catch (Exception ex) { Console.WriteLine($"[FAIL] 错误: {ex.Message}"); }
