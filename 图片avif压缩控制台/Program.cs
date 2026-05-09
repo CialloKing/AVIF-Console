@@ -504,6 +504,7 @@ namespace AvifEncoder
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _globalCts?.Cancel();
             _globalCts?.Dispose();
+            _globalCts = null;            // ← 新增：防止已释放对象被引用
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
         }
@@ -2908,7 +2909,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
     double target, string name, CancellationToken token,
     PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
         {
-            const int maxIter = 5;   // 删除未使用的 tolerance
+            const int maxIter = 3;   // 原5→3
 
             double x0 = low, x1 = high;
             double f0 = vl, f1 = vh;
@@ -2919,11 +2920,16 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             {
                 token.ThrowIfCancellationRequested();
 
-                // 获取迭代结果和更新后的区间
                 var iterationResult = await PerformSecantIteration(
                     getScore, x0, x1, f0, f1, target, low, high, name, iter, token, cfg);
 
-                // 更新区间值（替代 ref）
+                // 处理评估失败（返回 -1）
+                if (iterationResult.score < 0)
+                {
+                    _logger.LogInfo($"割线法迭代 {iter + 1} 评分失败(score<0)，提前终止");
+                    break;
+                }
+
                 x0 = iterationResult.newX0;
                 x1 = iterationResult.newX1;
                 f0 = iterationResult.newF0;
@@ -3066,26 +3072,36 @@ PerformSecantIteration(
 
             try
             {
+                // === MaxCRF 提前早停 ===
+                double maxScore = await getScore(cfg.MaxCRF);
+                if (maxScore >= target)
+                {
+                    SafeWriteLine($"  [{name}] MaxCRF={cfg.MaxCRF} 已达目标，直接使用");
+                    return (cfg.MaxCRF, false, false);
+                }
+                if (maxScore < 0)
+                    _logger.LogInfo($"MaxCRF 早停评估失败 [{name}]，继续正常搜索");
+                // ======================
+
                 // Stage A: Proxy 粗定位（含格式稳定性预探测）
                 var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
                 if (low < 0)
-                    return (cfg.BaseCRF, true, false);   // 边界探测完全失败
+                    return (cfg.BaseCRF, true, false);
 
-                // 如果预探测推荐了更稳定的格式，则切换格式并重建评分函数
                 string searchPixFmt = recommendedFmt ?? pixFmt;
                 Func<int, Task<double>> searchGetScore = getScore;
                 if (recommendedFmt != null)
                     searchGetScore = BuildGetScoreFunc(input, tileCols, cfg, searchPixFmt, jpeg, name, token);
 
-                // Stage B: 精搜索（调用公共核心）
+                // Stage B: 精搜索
                 var (crf, failed, insufficient) = await SearchCoreAsync(
                     input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, searchGetScore, token);
 
                 if (!failed && !insufficient)
                     return (crf, false, false);
 
-                // 精搜索失败或无法达标，尝试安全扫描并传入缩小的区间
+                // 精搜索失败，进行安全扫描
                 SafeWriteLine($"  [RETRY] [{name}] 精搜索未达成目标，启动安全扫描 (区间 {low}-{high})...");
                 (bool safeOk, int safeCrf, string safeFmt, bool safeMode) = await RunSafeModeScan(
                     input, cfg, name, low, high);
@@ -3101,6 +3117,7 @@ PerformSecantIteration(
                 return (cfg.BaseCRF, true, false);
             }
         }
+
 
 
         private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
@@ -3189,39 +3206,42 @@ PerformSecantIteration(
                 else { low = proxyLow; high = proxyHigh; }
             }
 
-            // 验证低端可用性
             low = await FindLowBoundWithRetry(getScore, low, high, name, token);
             if (low < 0) return (-1, -1, null);
 
-            // ★ 目标格式稳定性预探测
+            // ★ 目标格式稳定性预探测（带临时文件清理）
             string? recommendedFmt = null;
             if (!pixFmt.StartsWith("yuv420p"))
             {
                 int midForTest = (low + high) / 2;
-                // 临时文件路径
                 string probeOutput = Path.Combine(_outputDir, $"_probe_{Guid.NewGuid():N}.avif");
-                var testParams = (aomParams: cfg.GetEffectiveAomParams(),
-                                  tilePart: "-tile-columns 0 -tile-rows 0",
-                                  actualCpu: 0,
-                                  rowMt: "");
-                var testEnc = await TryEncodeWithParamSet(input, probeOutput,
-                    midForTest, pixFmt, testParams, cfg, false, 2, name);
-                if (!testEnc.ok)
+                try
                 {
-                    recommendedFmt = "yuv420p";
-                    SafeWriteLine($"  [{name}] 目标格式 {pixFmt} 预探测失败，精搜索将降级为 yuv420p");
-                    _logger.LogInfo($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
+                    var testParams = (aomParams: cfg.GetEffectiveAomParams(),
+                                      tilePart: "-tile-columns 0 -tile-rows 0",
+                                      actualCpu: 0,
+                                      rowMt: "");
+                    var testEnc = await TryEncodeWithParamSet(input, probeOutput,
+                        midForTest, pixFmt, testParams, cfg, false, 2, name);
+                    if (!testEnc.ok)
+                    {
+                        recommendedFmt = "yuv420p";
+                        SafeWriteLine($"  [{name}] 目标格式 {pixFmt} 预探测失败，精搜索将降级为 yuv420p");
+                        _logger.LogInfo($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
+                    }
                 }
-                // 清理临时文件
-                // 在方法末尾，替换 File.Exists/File.Delete
-                try { if (_fs.FileExists(probeOutput)) _fs.DeleteFile(probeOutput); } catch { }
+                finally
+                {
+                    // 确保无论成功或异常都删除临时文件
+                    try { if (_fs.FileExists(probeOutput)) _fs.DeleteFile(probeOutput); } catch { }
+                }
             }
 
             return (low, high, recommendedFmt);
         }
 
 
-        
+
 
 
         /// <summary>
@@ -3231,9 +3251,9 @@ PerformSecantIteration(
         /// insufficient: 表示最低 CRF 仍无法达标，目标无法实现。
         /// </summary>
         private async Task<(int crf, bool failed, bool insufficient)> SearchCoreAsync(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
-            string name, double target, int low, int high,
-            Func<int, Task<double>> getScore, CancellationToken token)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+    string name, double target, int low, int high,
+    Func<int, Task<double>> getScore, CancellationToken token)
         {
             // 1. 高端边界探测
             double highScore = await getScore(high);
@@ -3257,8 +3277,8 @@ PerformSecantIteration(
             (int bestCrf, double bestScore) = await SolveCrfBySecant(
                 getScore, low, high, lowScore, highScore, target, name, token, cfg, tileCols, pixFmt, jpeg);
 
-            // 4. 若割线法未收敛，回退二分搜索
-            if (Math.Abs(bestScore - target) > 0.01)
+            // 4. 若割线法未收敛，回退二分搜索（容差 0.01 → 0.025）
+            if (Math.Abs(bestScore - target) > 0.025)
             {
                 SafeWriteLine($"  [{name}] 割线未完全收敛，回退二分");
                 var (bCrf, _, _) = await BinarySearchWithSkip(getScore, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg, input);
