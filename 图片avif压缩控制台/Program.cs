@@ -277,7 +277,46 @@ namespace AvifEncoder
             return encoderName.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// 等比缩放图片，使长边不超过 maxDim，输出为 PNG 临时文件。
+        /// 保留 Alpha 通道（如果源文件有透明信息）。
+        /// </summary>
+        private async Task ScaleImageAsync(string input, string output, int maxDim)
+        {
+            // 获取源分辨率
+            var (w, h) = await GetResolutionAsync(input);
+            if (w <= 0 || h <= 0)
+                throw new Exception($"无法获取分辨率: {input}");
 
+            int longSide = Math.Max(w, h);
+            if (longSide <= maxDim)
+            {
+                // 无需缩放，直接复制（极少数情况）
+                File.Copy(input, output, true);
+                return;
+            }
+
+            double scale = (double)maxDim / longSide;
+            int targetW = (int)Math.Round(w * scale);
+            int targetH = (int)Math.Round(h * scale);
+
+            // 编码器通常要求偶数尺寸
+            targetW = targetW & ~1;
+            targetH = targetH & ~1;
+            if (targetW < 2) targetW = 2;
+            if (targetH < 2) targetH = 2;
+
+            // 确定输出像素格式，保留 Alpha
+            bool hasAlpha = await SourceHasAlpha(input);
+            string pixFmt = hasAlpha ? "rgba" : "rgb24";
+
+            string filter = $"scale={targetW}:{targetH}:flags=lanczos";
+            string args = $"-loglevel error -hide_banner -i \"{input}\" -vf \"{filter}\" -pix_fmt {pixFmt} \"{output}\"";
+
+            (bool ok, string err) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(2));
+            if (!ok)
+                throw new Exception($"缩放失败: {err}");
+        }
         private static double ComputeMixScore(QualityMetrics m)
         {
             double vmafNorm = m.VMAF / 100.0;
