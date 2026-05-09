@@ -26,6 +26,50 @@ namespace AvifEncoder
 
 
 
+
+    /// <summary>缓存管理器接口</summary>
+    public interface ICacheManager
+    {
+        bool TryGetEncode(string key, out (string file, TimeSpan encodeTime, string commandLine) cached);
+        void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine);
+        bool TryGetMetrics(string key, out QualityMetrics? metrics);   // 改为 QualityMetrics?
+        void SetMetrics(string key, QualityMetrics metrics);
+        bool TryGetSSIM(string key, out double ssim);
+        void SetSSIM(string key, double ssim);
+    }
+
+
+
+    public class CacheManager : ICacheManager
+    {
+        private readonly ConcurrentDictionary<string, (string file, TimeSpan encodeTime, string commandLine)> _encodeCache = new();
+        private readonly ConcurrentDictionary<string, QualityMetrics> _metricsCache = new();
+        private readonly ConcurrentDictionary<string, double> _ssimCache = new();
+
+        public bool TryGetEncode(string key, out (string file, TimeSpan encodeTime, string commandLine) cached)
+            => _encodeCache.TryGetValue(key, out cached);
+
+        public void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine)
+            => _encodeCache[key] = (cacheFile, encodeTime, commandLine);
+
+        public bool TryGetMetrics(string key, out QualityMetrics? metrics)   // 改为 QualityMetrics?
+            => _metricsCache.TryGetValue(key, out metrics);
+
+        public void SetMetrics(string key, QualityMetrics metrics)
+            => _metricsCache[key] = metrics;
+
+        public bool TryGetSSIM(string key, out double ssim)
+            => _ssimCache.TryGetValue(key, out ssim);
+
+        public void SetSSIM(string key, double ssim)
+            => _ssimCache[key] = ssim;
+    }
+
+
+
+
+
+
     public class PresetConfig
     {
         public int BaseCRF { get; set; }
@@ -345,20 +389,19 @@ namespace AvifEncoder
 
         private readonly ProgressTracker _progress = new ProgressTracker();
 
-        private readonly ConcurrentDictionary<string, double> _ssimCache = new();
+        
         private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
-        // ★ 新增
-        private readonly ConcurrentDictionary<string, QualityMetrics> _metricsCache = new();
-        private readonly ConcurrentDictionary<string, Task<QualityMetrics?>> _metricsTasks = new();
-        // 将原来的 (string file, TimeSpan encodeTime) 改为包含命令字符串
-        private readonly ConcurrentDictionary<string, (string file, TimeSpan encodeTime, string commandLine)> _encodeCache = new();
+
+        private readonly ICacheManager _cache;
+
+        
         private readonly SemaphoreSlim _ssimConcurrency;
         private readonly SemaphoreSlim _ffmpegSlots;
 
         private static readonly object _consoleLock = new();
         private CancellationTokenSource? _globalCts;
 
-       
+        private readonly ConcurrentDictionary<string, Task<QualityMetrics?>> _metricsTasks = new();
 
         private static void SafeWriteLine(string msg) { lock (_consoleLock) Console.WriteLine(msg); }
 
@@ -380,29 +423,27 @@ namespace AvifEncoder
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
-                    IFileSystem? fileSystem = null)
+                    IFileSystem? fileSystem = null,
+                    ICacheManager? cacheManager = null)
         {
             _fs = fileSystem ?? new RealFileSystem();
             _inputDir = inputDir; _outputDir = outputDir; _config = config;
             _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
             _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
-
             _processRunner = processRunner ?? new RealProcessRunner();
             _logger = logger;
+            _cache = cacheManager ?? new CacheManager();      // 关键注入
 
             bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
-
             int cpuCount = Environment.ProcessorCount;
             int ssimSlots = Math.Max(2, cpuCount);
             int ffmpegPoolSize = isHardwareEncoder
                                      ? Math.Max(2, cpuCount * 2)
                                      : Math.Max(2, cpuCount / 2);
-
             if (isHardwareEncoder && config.MaxJobs <= Math.Max(2, (int)Math.Sqrt(cpuCount)))
             {
                 config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
             }
-
             _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
@@ -1031,7 +1072,6 @@ namespace AvifEncoder
         private void PrintSummaryAndExport(List<EncodeResult?> results)
         {
             var totalTime = DateTime.Now - _progress.StartTime;
-            // 过滤掉 null 值，得到非空结果列表
             var allResults = results.Where(r => r != null).Cast<EncodeResult>().ToList();
             int successCount = allResults.Count(r => !r.Skipped && r.Success);
             int failCount = allResults.Count(r => !r.Skipped && !r.Success);
@@ -1045,7 +1085,7 @@ namespace AvifEncoder
             SafeWriteLine($"总文件数: {_progress.TotalFiles}  成功: {successCount}  失败: {failCount}  跳过: {skipCount}");
             SafeWriteLine($"原始大小: {FormatSize(totalOriginal)}  输出大小: {FormatSize(totalOutput)}");
             SafeWriteLine($"整体压缩率: {overallRatio:P1}  总耗时: {FormatTimeSpan(totalTime)}");
-            SafeWriteLine($"SSIM缓存项: {_ssimCache.Count}  编码缓存项: {_encodeCache.Count}");
+            // 移除旧的缓存计数输出，因为 ICacheManager 未暴露计数属性
             _logger.LogInfo($"Finished. 成功: {successCount}, 失败: {failCount}, 跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
 
             ExportCsv(allResults);
@@ -1444,10 +1484,10 @@ namespace AvifEncoder
             string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH);
 
             // 缓存命中
-            if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
+            if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
-                _logger.LogInfo($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics.VMAF:F2}");
-                return (cachedMetrics.SSIM, cachedMetrics);
+                _logger.LogInfo($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F2}");
+                return (cachedMetrics!.SSIM, cachedMetrics);
             }
 
             // 计算多指标
@@ -1460,17 +1500,17 @@ namespace AvifEncoder
 
             if (metrics != null)
             {
-                _metricsCache[cacheKey] = metrics;
+                _cache.SetMetrics(cacheKey, metrics);
                 _logger.LogInfo($"多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                 return (metrics.SSIM, metrics);
             }
 
             // 回退 SSIM 单一缓存
-            if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+            if (_cache.TryGetSSIM(cacheKey, out double cachedSsim) && cachedSsim >= 0)
                 return (cachedSsim, null);
 
             double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
-            if (ssim >= 0) _ssimCache[cacheKey] = ssim;
+            if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
             return (ssim, null);
         }
 
@@ -1879,7 +1919,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                             safeBitDepth,
                             safeW, safeH);               // ★ 传入分辨率
 
-                        _metricsCache[cacheKey] = metrics;
+                        _cache.SetMetrics(cacheKey, metrics);
 
                         double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
                         return score;
@@ -2358,7 +2398,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
 
             // 缓存命中
-            if (_encodeCache.TryGetValue(cacheKey, out var cached) && _fs.FileExists(cached.file))
+            if (_cache.TryGetEncode(cacheKey, out var cached) && File.Exists(cached.file))
             {
                 _fs.CreateDirectory(Path.GetDirectoryName(output)!);
                 _fs.CopyFile(cached.file, output, true);
@@ -2412,7 +2452,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         // 保存缓存
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         _fs.CopyFile(output, cacheFile, true);
-                        _encodeCache[cacheKey] = (cacheFile, sw.Elapsed, ffArgs);
+                        _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
                     }
 
@@ -2711,7 +2751,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             var (metricsW, metricsH) = await GetResolutionAsync(input);
             string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH);
 
-            if (_metricsCache.TryGetValue(key, out QualityMetrics? cached))
+            if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
                 return cached;
 
             var newTask = new TaskCompletionSource<QualityMetrics?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2751,7 +2791,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         QualityMetrics? metrics = await ComputeAllMetricsAsync(input, tmp);
                         if (metrics != null)
                         {
-                            _metricsCache[key] = metrics;
+                            _cache.SetMetrics(key, metrics);
                             _logger.LogInfo($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
                                            $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
                                            $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
@@ -4044,7 +4084,7 @@ AVIF 编码器 CLI -- 帮助手册
                 args = args.Where(a => a != "-e").ToArray();
             }
 
-            // ---------- 预先检查 ffmpeg 是否可用 ----------
+            // 预先检查 ffmpeg 是否可用
             bool ffmpegFound = false;
             var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
             foreach (var p in paths ?? Array.Empty<string>())
@@ -4153,17 +4193,20 @@ AVIF 编码器 CLI -- 帮助手册
                 var fileLogger = new FileLogger(opts.OutputDir);
                 Logger.SetInstance(fileLogger);
 
-                // 使用新构造函数，显式传入 IFileSystem 实现
+                // 创建缓存管理器实例
+                var cache = new CacheManager();
+
+                // 使用新构造函数，显式注入 ICacheManager
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
                     logger: fileLogger,
-                    processRunner: null,                // 可选，默认 RealProcessRunner
-                    fileSystem: new RealFileSystem());   // 显式传入，清晰直观
+                    processRunner: null,                // 默认 RealProcessRunner
+                    fileSystem: new RealFileSystem(),
+                    cacheManager: cache);              // 注入缓存服务
                 await pipeline.RunAsync();
             }
             catch (Exception ex) { Console.WriteLine($"[FAIL] 错误: {ex.Message}"); }
             finally
             {
-                // 释放 pipeline 资源（信号量、取消令牌等）
                 pipeline?.Dispose();
 
                 if (!forceEnableQuickEdit && consoleHandle != IntPtr.Zero)
