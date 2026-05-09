@@ -70,6 +70,11 @@ namespace AvifEncoder
 
         public string MetricMode { get; set; } = "vmaf";
 
+
+        // ★ 预缩放：长边最大像素数，0 或负数表示禁用
+        public int MaxResolution { get; set; } = 2560;
+
+
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
         /// 只有 libaom-av1 支持 aq-mode/deltaq-mode 等参数，其他编码器返回空字符串。
@@ -3439,6 +3444,7 @@ AVIF 编码器 CLI -- 帮助手册
                      psnr   - PSNR (亮度)
                      msssim - MS-SSIM       
                      mix    - 加权混合评分
+  --max-resolution <像素>  设置预缩放长边上限(默认2560)，0 禁用
 超时选项 (所有值均为正整数)
 ----------------------------------------
   --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
@@ -3513,6 +3519,8 @@ AVIF 编码器 CLI -- 帮助手册
                         SafeEncodeTimeout, SearchEncodeTimeout, SsimTimeout;
             public string? CustomEncoder;
             public string? MetricMode;          // ★ 新增
+
+            public int? MaxResolution;   // 用户传入的预缩放阈值
         }
 
         // ========== 参数解析 ==========
@@ -3557,7 +3565,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // ★ 新增指标模式
+                // 指标模式
                 if (arg == "--metric" && i + 1 < args.Length)
                 {
                     opts.MetricMode = args[++i].ToLower();
@@ -3566,6 +3574,23 @@ AVIF 编码器 CLI -- 帮助手册
                 if (arg.StartsWith("--metric="))
                 {
                     opts.MetricMode = arg["--metric=".Length..].ToLower();
+                    continue;
+                }
+
+                // ★ 预缩放
+                if (arg == "--max-resolution" && i + 1 < args.Length)
+                {
+                    if (int.TryParse(args[++i], out int mr) && mr >= 0)
+                        opts.MaxResolution = mr;
+                    else throw new Exception("--max-resolution 必须是非负整数");
+                    continue;
+                }
+                if (arg.StartsWith("--max-resolution="))
+                {
+                    string val = arg["--max-resolution=".Length..];
+                    if (int.TryParse(val, out int mr2) && mr2 >= 0)
+                        opts.MaxResolution = mr2;
+                    else throw new Exception("--max-resolution 必须是非负整数");
                     continue;
                 }
 
@@ -3608,9 +3633,8 @@ AVIF 编码器 CLI -- 帮助手册
                     else if (flags.Equals("q") && i + 1 < args.Length)
                     {
                         if (double.TryParse(args[++i], out double q))
-                            opts.CustomSSIM = q;   // 不再检查范围，由后续转换时负责
-                        else
-                            throw new Exception("-q 需要是一个数值");
+                            opts.CustomSSIM = q;
+                        else throw new Exception("-q 需要是一个数值");
                     }
                     else if (flags.Equals("r") && i + 1 < args.Length)
                     {
@@ -3763,7 +3787,8 @@ AVIF 编码器 CLI -- 帮助手册
                     Console.WriteLine("[WARN] -r 仅在禁用搜索时有效，已忽略");
                 }
             }
-
+            if (opts.MaxResolution.HasValue)
+                config.MaxResolution = opts.MaxResolution.Value;
             return config;
         }
 
