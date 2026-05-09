@@ -344,37 +344,40 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, ProbeInfo> _probeCache = new();
 
-private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
-{
-    string key = GetNormalizedPathForCache(filePath);
-    if (_probeCache.TryGetValue(key, out var cached)) return cached;
-
-    // 一次性 ffprobe 获取所有信息
-    string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless -of json \"{filePath}\"";
-    string json = await RunProcessAndGetOutputAsync(_ffprobePath, args);
-    if (string.IsNullOrEmpty(json)) return null;
-
-    try
-    {
-        using var doc = JsonDocument.Parse(json);
-        var stream = doc.RootElement.GetProperty("streams")[0];
-        string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
-        int w = stream.GetProperty("width").GetInt32();
-        int h = stream.GetProperty("height").GetInt32();
-
-        bool hasAlpha = fmt switch
+        private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
-            "rgba" or "bgra" or "argb" or "abgr" => true,
-            "rgba64le" or "bgra64le" => true,
-            _ => false
-        };
+            string key = GetNormalizedPathForCache(filePath);
+            if (_probeCache.TryGetValue(key, out var cached)) return cached;
 
-        var info = new ProbeInfo { PixFmt = fmt, HasAlpha = hasAlpha, Width = w, Height = h };
-        _probeCache[key] = info;
-        return info;
-    }
-    catch { return null; }
-}
+            // 一次性 ffprobe 获取所有信息
+            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless -of json \"{filePath}\"";
+            string json = await RunProcessAndGetOutputAsync(_ffprobePath, args);
+            if (string.IsNullOrEmpty(json)) return null;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var streams = doc.RootElement.GetProperty("streams");
+                if (streams.GetArrayLength() == 0) return null;   // ★ 无视频流，返回 null
+
+                var stream = streams[0];
+                string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
+                int w = stream.GetProperty("width").GetInt32();
+                int h = stream.GetProperty("height").GetInt32();
+
+                bool hasAlpha = fmt switch
+                {
+                    "rgba" or "bgra" or "argb" or "abgr" => true,
+                    "rgba64le" or "bgra64le" => true,
+                    _ => false
+                };
+
+                var info = new ProbeInfo { PixFmt = fmt, HasAlpha = hasAlpha, Width = w, Height = h };
+                _probeCache[key] = info;
+                return info;
+            }
+            catch { return null; }
+        }
 
         /// <summary>
         /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
