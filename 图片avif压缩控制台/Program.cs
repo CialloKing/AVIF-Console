@@ -376,6 +376,7 @@ namespace AvifEncoder
 
         private readonly IFileSystem _fs;
 
+
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
@@ -406,7 +407,6 @@ namespace AvifEncoder
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
         }
-
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
         private static bool EncoderSupportsStillPicture(string encoderName) => EncoderUtils.SupportsStillPicture(encoderName);
@@ -4150,13 +4150,13 @@ AVIF 编码器 CLI -- 帮助手册
             AvifPipeline? pipeline = null;
             try
             {
-                // 创建统一的日志器实例（FileLogger 已支持 IFileSystem 注入）
                 var fileLogger = new FileLogger(opts.OutputDir);
                 Logger.SetInstance(fileLogger);
 
-                // 使用新构造函数创建 AvifPipeline，传入 fileSystem（或省略，内部会默认 RealFileSystem）
+                // 使用新构造函数，显式传入 IFileSystem 实现
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
                     logger: fileLogger,
+                    processRunner: null,                // 可选，默认 RealProcessRunner
                     fileSystem: new RealFileSystem());   // 显式传入，清晰直观
                 await pipeline.RunAsync();
             }
