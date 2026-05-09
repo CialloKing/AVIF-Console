@@ -2525,42 +2525,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             return (true, "");
         }
 
-        private async Task<string> RunProcessAndGetOutputAsync(string file, string args)
-        {
-            using var p = new Process
-            {
-                StartInfo = new ProcessStartInfo(file, args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                }
-            };
-            p.Start();
-            var outTask = p.StandardOutput.ReadToEndAsync();
-            var errTask = p.StandardError.ReadToEndAsync();
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            try
-            {
-                await Task.WhenAll(outTask, errTask);
-                await p.WaitForExitAsync(cts.Token);
-                return await outTask;
-            }
-            catch (OperationCanceledException)
-            {
-                if (!p.HasExited)
-                {
-                    try { p.Kill(); } catch { }
-                    using var finalCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    try { await p.WaitForExitAsync(finalCts.Token); }
-                    catch (OperationCanceledException) { _logger.LogInfo("等待 ffprobe 退出超时，已放弃"); }
-                }
-                _logger.LogInfo($"ffprobe 调用超时: {args}");
-                return string.Empty;
-            }
-        }
+        
 
         // ── 核心 SSIM 计算（已整合色彩空间归一化 + 时间轴同步） ──
         private async Task<double> SSIMDirect(string a, string b, string? targetPixFmt = null)
