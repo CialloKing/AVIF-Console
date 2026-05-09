@@ -564,13 +564,13 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             try
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                using var doc = JsonDocument.Parse(json);
                 var pooled = doc.RootElement.GetProperty("pooled_metrics");
 
-                double ssim = pooled.GetProperty("float_ssim").GetProperty("mean").GetDouble();
-                double ms_ssim = pooled.GetProperty("float_ms_ssim").GetProperty("mean").GetDouble();
-                double vmaf = pooled.GetProperty("vmaf").GetProperty("mean").GetDouble();
-                double psnr_y = pooled.GetProperty("psnr_y").GetProperty("mean").GetDouble();
+                double ssim = pooled.TryGetProperty("float_ssim", out var e) ? e.GetProperty("mean").GetDouble() : 0;
+                double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) ? e.GetProperty("mean").GetDouble() : 0;
+                double vmaf = pooled.TryGetProperty("vmaf", out e) ? e.GetProperty("mean").GetDouble() : -1; // -1 标记缺失
+                double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
 
                 return new QualityMetrics
                 {
