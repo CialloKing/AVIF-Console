@@ -245,12 +245,7 @@ namespace AvifEncoder
 
         private const double SSIMMargin = 0.001;
 
-        private DateTime _startTime;
-        private int _totalFiles;
-        private int _processedCount;
-
-        private long _totalOriginalSize;
-        private long _totalOutputSize;
+        private readonly ProgressTracker _progress = new ProgressTracker();
 
         private readonly ConcurrentDictionary<string, double> _ssimCache = new();
         private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
@@ -800,7 +795,7 @@ namespace AvifEncoder
             };
 
             Console.OutputEncoding = Encoding.UTF8;
-            _startTime = DateTime.Now;
+            _progress.Start(DateTime.Now);
             Logger.Init(_outputDir);
             Logger.Log($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
 
@@ -884,8 +879,8 @@ namespace AvifEncoder
                 return null;
             }
 
-            _totalFiles = sortedFiles.Count;
-            SafeWriteLine($"待处理: {_totalFiles} 张\n");
+            _progress.SetTotalFiles(sortedFiles.Count);
+            SafeWriteLine($"待处理: {_progress.TotalFiles} 张\n");
 
             var processingOrder = sortedFiles.OrderByDescending(t => new FileInfo(t.path).Length).ToList();
             return processingOrder;
@@ -935,7 +930,7 @@ namespace AvifEncoder
         /// <summary> 统计并打印最终总结，导出 CSV </summary>
         private void PrintSummaryAndExport(List<EncodeResult?> results)
         {
-            var totalTime = DateTime.Now - _startTime;
+            var totalTime = DateTime.Now - _progress.StartTime;
             // 过滤掉 null 值，得到非空结果列表
             var allResults = results.Where(r => r != null).Cast<EncodeResult>().ToList();
             int successCount = allResults.Count(r => !r.Skipped && r.Success);
@@ -947,7 +942,7 @@ namespace AvifEncoder
             double overallRatio = totalOriginal == 0 ? 0 : 1.0 - (double)totalOutput / totalOriginal;
 
             SafeWriteLine("\n================ 转换完成 ================");
-            SafeWriteLine($"总文件数: {_totalFiles}  成功: {successCount}  失败: {failCount}  跳过: {skipCount}");
+            SafeWriteLine($"总文件数: {_progress.TotalFiles}  成功: {successCount}  失败: {failCount}  跳过: {skipCount}");
             SafeWriteLine($"原始大小: {FormatSize(totalOriginal)}  输出大小: {FormatSize(totalOutput)}");
             SafeWriteLine($"整体压缩率: {overallRatio:P1}  总耗时: {FormatTimeSpan(totalTime)}");
             SafeWriteLine($"SSIM缓存项: {_ssimCache.Count}  编码缓存项: {_encodeCache.Count}");
@@ -973,37 +968,7 @@ namespace AvifEncoder
         // ========== 修复后的 PrintProgress（区分跳过） ==========
         private void PrintProgress(EncodeResult? r)
         {
-            int done = Volatile.Read(ref _processedCount), total = _totalFiles;
-            double pct = done * 100.0 / total;
-            var elapsed = DateTime.Now - _startTime;
-            string eta = "计算中...";
-            if (done > 0 && done < total) eta = FormatTimeSpan(TimeSpan.FromSeconds(elapsed.TotalSeconds / done * (total - done)));
-            else if (done == total) eta = "已完成";
-            string line = $"[{done}/{total} {pct,5:F1}%]";
-
-            if (r != null)
-            {
-                if (r.Skipped)
-                {
-                    SafeWriteLine($"{line} [SKIP] 跳过 {r.FileName} | {r.OriginalFileName}");
-                }
-                else if (r.Success)
-                {
-                    // 修改为（显示多个原生指标）：
-                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F1") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F2") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
-                    SafeWriteLine($"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
-                                  $"{FormatSize(r.OriginalSize)} -> {FormatSize(r.OutputSize)} | " +
-                                  $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}");
-                }
-                else
-                {
-                    SafeWriteLine($"{line} [FAIL] 失败 | {r.OriginalFileName} | 原因:{r.ErrorMessage} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}");
-                }
-            }
-            else
-            {
-                SafeWriteLine($"{line} [SKIP] 跳过");
-            }
+            SafeWriteLine(_progress.GetProgressLine(r));
         }
 
         private void CleanDirectory(string dir)
@@ -2132,20 +2097,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
         private void MarkProcessed(EncodeResult? r)
         {
-            Interlocked.Increment(ref _processedCount);
-            if (r != null)
-            {
-                if (!r.Skipped)   // 只有非跳过文件才参与成功/失败统计
-                {
-                    if (r.Success)
-                    {
-                        Interlocked.Add(ref _totalOriginalSize, r.OriginalSize);
-                        Interlocked.Add(ref _totalOutputSize, r.OutputSize);
-
-                    }
-                    // 失败的文件不累加 OriginalSize/OutputSize，也不增加 successCount
-                }
-            }
+            _progress.MarkFileProcessed();
             PrintProgress(r);
         }
 
@@ -3495,7 +3447,67 @@ PerformSecantIteration(
 
 
 
+    /// <summary>封装进度统计、ETA 计算与进度行格式化</summary>
+    public class ProgressTracker
+    {
+        private DateTime _startTime;
+        private int _totalFiles;
+        private int _processedCount;
 
+        public DateTime StartTime => _startTime;
+        public int ProcessedCount => Volatile.Read(ref _processedCount);
+        public int TotalFiles => _totalFiles;
+
+        public void Start(DateTime startTime) => _startTime = startTime;
+        public void SetTotalFiles(int count) => _totalFiles = count;
+
+        public void MarkFileProcessed()
+        {
+            Interlocked.Increment(ref _processedCount);
+        }
+
+        public string GetProgressLine(EncodeResult? r)
+        {
+            int done = ProcessedCount, total = TotalFiles;
+            double pct = done * 100.0 / total;
+            var elapsed = DateTime.Now - _startTime;
+            string eta = "计算中...";
+            if (done > 0 && done < total)
+                eta = FormatTimeSpanLocal(TimeSpan.FromSeconds(elapsed.TotalSeconds / done * (total - done)));
+            else if (done == total)
+                eta = "已完成";
+            string line = $"[{done}/{total} {pct,5:F1}%]";
+
+            if (r != null)
+            {
+                if (r.Skipped)
+                    return $"{line} [SKIP] 跳过 {r.FileName} | {r.OriginalFileName}";
+                if (r.Success)
+                {
+                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F1") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F2") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
+                    return $"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
+                           $"{FormatSizeLocal(r.OriginalSize)} -> {FormatSizeLocal(r.OutputSize)} | " +
+                           $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}";
+                }
+                return $"{line} [FAIL] 失败 | {r.OriginalFileName} | 原因:{r.ErrorMessage} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}";
+            }
+            return $"{line} [SKIP] 跳过";
+        }
+
+        private static string FormatSizeLocal(long b) => b switch
+        {
+            >= 1_048_576 => $"{b / 1_048_576.0:F2} MB",
+            >= 1024 => $"{b / 1024.0:F2} KB",
+            _ => $"{b} B"
+        };
+
+        private static string FormatTimeSpanLocal(TimeSpan t) => t switch
+        {
+            { TotalHours: >= 1 } => $"{(int)t.TotalHours}h {t.Minutes}m {t.Seconds}s",
+            { TotalMinutes: >= 1 } => $"{(int)t.TotalMinutes}m {t.Seconds}s",
+            _ => $"{t.TotalSeconds:F1}s"
+        };
+    }
 
 
 
