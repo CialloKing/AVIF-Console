@@ -1666,8 +1666,8 @@ namespace AvifEncoder
                     if (!searchOk)
                     {
                         SafeWriteLine($" [RETRY] [{name}] 普通搜索失败，开始安全模式全扫描 (yuv420p, cpu‑used 0)...");
-                        (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(
-                            inputPath, config, name);
+                        // 此时普通搜索已失败，但 proxy 阶段未提供区间，回退使用全范围
+                        (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(inputPath, config, name, config.MinCRF, config.MaxCRF);
                     }
 
                     swSearch.Stop();
@@ -1742,7 +1742,7 @@ namespace AvifEncoder
 
         // ---------- 安全模式全扫描 ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
-    RunSafeModeScan(string inputPath, PresetConfig config, string name)
+RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow, int scanHigh)
         {
             using var safeCts = new CancellationTokenSource(TimeSpan.FromMinutes(config.SafeTimeoutMinutes));
             var safeToken = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1750,11 +1750,14 @@ namespace AvifEncoder
 
             double target = config.TargetSSIM + SSIMMargin;
             int bestSafeCRF = -1;
-            int totalSteps = config.MaxCRF - config.MinCRF + 1;
+            // ★ 使用传入的区间，而非全局 MinCRF/MaxCRF
+            int start = scanHigh;
+            int end = scanLow;
+            int totalSteps = start - end + 1;
             int step = 0;
-            int consecutiveFailures = 0;  // ★ 新增连续失败计数
+            int consecutiveFailures = 0;
 
-            for (int testCrf = config.MaxCRF; testCrf >= config.MinCRF; testCrf--)
+            for (int testCrf = start; testCrf >= end; testCrf--)
             {
                 step++;
                 if (safeToken.IsCancellationRequested) break;
@@ -1769,7 +1772,6 @@ namespace AvifEncoder
                     break;
                 }
 
-                // ★ 失败计数与上限检查
                 if (curSSIM < 0)
                 {
                     consecutiveFailures++;
@@ -1781,7 +1783,7 @@ namespace AvifEncoder
                 }
                 else
                 {
-                    consecutiveFailures = 0;  // 有有效分数则重置计数
+                    consecutiveFailures = 0;
                 }
             }
 
@@ -3187,16 +3189,31 @@ PerformSecantIteration(
 
             try
             {
-                // Stage A: Proxy 粗定位
-                var (low, high) = await PerformProxyPhaseAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
+                // Stage A: Proxy 粗定位（含格式稳定性预探测）
+                var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
                 if (low < 0)
                     return (cfg.BaseCRF, true, false);   // 边界探测完全失败
 
+                // 如果预探测推荐了更稳定的格式，则替换
+                string searchPixFmt = recommendedFmt ?? pixFmt;
+
                 // Stage B: 精搜索
                 (int crf, bool failed, bool insufficient) = await PerformPreciseSearchAsync(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, low, high, getScore, token);
+                    input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, getScore, token);
 
-                return (crf, failed, insufficient);
+                if (!failed && !insufficient)
+                    return (crf, false, false);
+
+                // 精搜索失败或无法达标，尝试安全扫描并传入缩小的区间
+                SafeWriteLine($"  [RETRY] [{name}] 精搜索未达成目标，启动安全扫描 (区间 {low}-{high})...");
+                (bool safeOk, int safeCrf, string safeFmt, bool safeMode) = await RunSafeModeScan(
+                    input, cfg, name, low, high);
+
+                if (safeOk)
+                    return (safeCrf, true, false);
+
+                return (cfg.BaseCRF, true, true);
             }
             catch (OperationCanceledException)
             {
@@ -3206,31 +3223,74 @@ PerformSecantIteration(
         }
 
 
-
         private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
         {
+            // ★ 记录连续失败次数，用于提前切换稳定参数
+            int consecutiveFailures = 0;
+            const int failThreshold = 2; // 连续失败超过该阈值时强制使用降级参数
+
             return async crf =>
             {
                 for (int i = 0; i < 3; i++)
                 {
                     token.ThrowIfCancellationRequested();
-                    QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+
+                    QualityMetrics? m = null;
+
+                    // 如果连续失败未超过阈值，先尝试正常参数
+                    if (consecutiveFailures < failThreshold)
+                    {
+                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                        if (m != null)
+                        {
+                            consecutiveFailures = 0; // 成功则重置计数
+                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        }
+
+                        // 降速重试
+                        m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
+                        if (m != null)
+                        {
+                            consecutiveFailures = 0;
+                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        }
+                    }
+
+                    // 超过阈值，或前两步失败：尝试 yuv420p 降级（更稳定）
                     if (!pixFmt.StartsWith("yuv420p"))
                     {
                         m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        if (m != null)
+                        {
+                            consecutiveFailures = 0;
+                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        }
                     }
+                    else
+                    {
+                        // 已经是 yuv420p 依然失败，尝试降低 cpu 到 0
+                        m = await GetOrComputeMetrics(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
+                        if (m != null)
+                        {
+                            consecutiveFailures = 0;
+                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                        }
+                    }
+
                     if (i < 2) Logger.Log($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
                 }
+
+                // 该 CRF 点彻底失败，增加连续失败计数
+                consecutiveFailures++;
+                if (consecutiveFailures >= failThreshold)
+                    Logger.Log($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
+
                 return -1;
             };
         }
 
 
-        private async Task<(int low, int high)> PerformProxyPhaseAsync(
+        private async Task<(int low, int high, string? recommendedPixFmt)> PerformProxyPhaseAsync(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, Func<int, Task<double>> getScore, CancellationToken token)
         {
@@ -3244,16 +3304,39 @@ PerformSecantIteration(
             if (plow >= 0 && phigh >= 0)
             {
                 SafeWriteLine($"  [{name}] Proxy: CRF={proxyLow} -> ≈{plow * 100:F1}, CRF={proxyHigh} -> ≈{phigh * 100:F1}");
-                if (plow < target) low = proxyLow;   // 整体不足
+                if (plow < target) low = proxyLow;
                 else if (phigh >= target) { low = proxyLow; high = proxyHigh; }
                 else { low = proxyLow; high = proxyHigh; }
             }
 
             // 验证低端可用性
             low = await FindLowBoundWithRetry(getScore, low, high, name, token);
-            if (low < 0) return (-1, -1);
+            if (low < 0) return (-1, -1, null);
 
-            return (low, high);
+            // ★ 目标格式稳定性预探测
+            string? recommendedFmt = null;
+            if (!pixFmt.StartsWith("yuv420p"))
+            {
+                int midForTest = (low + high) / 2;
+                // 临时文件路径
+                string probeOutput = Path.Combine(_outputDir, $"_probe_{Guid.NewGuid():N}.avif");
+                var testParams = (aomParams: cfg.GetEffectiveAomParams(),
+                                  tilePart: "-tile-columns 0 -tile-rows 0",
+                                  actualCpu: 0,
+                                  rowMt: "");
+                var testEnc = await TryEncodeWithParamSet(input, probeOutput,
+                    midForTest, pixFmt, testParams, cfg, false, 2, name);
+                if (!testEnc.ok)
+                {
+                    recommendedFmt = "yuv420p";
+                    SafeWriteLine($"  [{name}] 目标格式 {pixFmt} 预探测失败，精搜索将降级为 yuv420p");
+                    Logger.Log($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
+                }
+                // 清理临时文件
+                try { if (File.Exists(probeOutput)) File.Delete(probeOutput); } catch { }
+            }
+
+            return (low, high, recommendedFmt);
         }
 
 
