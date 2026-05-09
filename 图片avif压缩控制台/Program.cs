@@ -1364,7 +1364,12 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                     int tileCols = encInfo.TileCols;
                     int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
 
-                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+                    // 原有代码：
+                    // string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+
+                    // 修改为：
+                    var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
+                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH);
                     if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
                     {
                         metrics = cachedMetrics;
@@ -1788,6 +1793,10 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                         string safePixFmt = "yuv420p";   // 安全模式固定使用 yuv420p
                         int safeBitDepth = 8;            // 安全模式默认 8bit（与 BuildSafeModeArgs 一致）
                         string safeAom = effectiveAom;
+
+                        // ★ 获取当前输入图像的分辨率
+                        var (safeW, safeH) = await GetResolutionAsync(inputPath);
+
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput,
                             testCrf,
@@ -1796,7 +1805,8 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                             0,                           // cpuUsed
                             IsJpeg(inputPath),
                             safeAom,
-                            safeBitDepth);
+                            safeBitDepth,
+                            safeW, safeH);               // ★ 传入分辨率
 
                         _metricsCache[cacheKey] = metrics;
 
@@ -2135,13 +2145,15 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         /// 生成用于编码缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
         private string GetEncodeCacheKey(
-            string normalizedPath, int crf, string pixFmt,
-            string tilePart, int actualCpu, bool isTrueLossless,
-            string aomParams, bool jpeg, int bitDepth)
+    string normalizedPath, int crf, string pixFmt,
+    string tilePart, int actualCpu, bool isTrueLossless,
+    string aomParams, bool jpeg, int bitDepth,
+    int width = 0, int height = 0)       // ★ 新增
         {
+            string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
             return $"{normalizedPath}|crf={crf}|pix={pixFmt}" +
                    $"|tile={tilePart}|cpu={actualCpu}|lossless={isTrueLossless}" +
-                   $"|aom={aomParams}|jpeg={jpeg}|depth={bitDepth}";
+                   $"|aom={aomParams}|jpeg={jpeg}|depth={bitDepth}{res}";
         }
 
 
@@ -2269,17 +2281,22 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
 
         /// <summary> 尝试使用单个参数集编码，返回结果 </summary>
         private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
-                    string? actualAomParams, string? commandLine)>
+            string? actualAomParams, string? commandLine)>
 TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt,
                       (string aomParams, string tilePart, int actualCpu, string rowMt) param,
                       PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName)
         {
             string normalizedInput = GetNormalizedPathForCache(input);
+
+            // ★ 获取当前输入图像的分辨率
+            var (encW, encH) = await GetResolutionAsync(input);
+
             string cacheKey = GetEncodeCacheKey(
                 normalizedInput, crf, currentPixFmt,
                 param.tilePart, param.actualCpu, isTrueLossless,
                 param.aomParams, IsJpeg(input),
-                currentPixFmt.Contains("10le") ? 10 : 8);
+                currentPixFmt.Contains("10le") ? 10 : 8,
+                encW, encH);   // ★ 传入分辨率
 
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
 
@@ -2624,12 +2641,14 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
         private static string GetSsimCacheKey(
-            string normalizedPath, int crf, string pixFmt,
-            int tileCols, int cpuUsed, bool isJpeg,
-            string effectiveAomParams, int bitDepth)
+    string normalizedPath, int crf, string pixFmt,
+    int tileCols, int cpuUsed, bool isJpeg,
+    string effectiveAomParams, int bitDepth,
+    int width = 0, int height = 0)      // ★ 新增默认参数，保持兼容
         {
+            string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
             return $"{normalizedPath}|crf={crf}|pix={pixFmt}|tile={tileCols}|cpu={cpuUsed}" +
-                   $"|jpeg={isJpeg}|aom={effectiveAomParams}|depth={bitDepth}";
+                   $"|jpeg={isJpeg}|aom={effectiveAomParams}|depth={bitDepth}{res}";
         }
 
 
@@ -2658,7 +2677,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 使用与 SSIM 缓存相同的键，以便未来统一。
         /// </summary>
         private async Task<QualityMetrics?> GetOrComputeMetrics(
-            string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg, bool jpeg, string pixFmt)
+    string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg, bool jpeg, string pixFmt)
         {
             // 无损模式返回理想指标
             if (cfg.Lossless)
@@ -2668,8 +2687,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string normalizedInput = GetNormalizedPathForCache(input);
             string effectiveAom = cfg.GetEffectiveAomParams();
 
+            // ★ 获取当前输入图像的分辨率
+            var (metricsW, metricsH) = await GetResolutionAsync(input);
+
             // 使用与 SSIM 缓存一致的键，确保后续可以复用
-            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth);
+            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH);
 
             if (_metricsCache.TryGetValue(key, out QualityMetrics? cached))
                 return cached;
