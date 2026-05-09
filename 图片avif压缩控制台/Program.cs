@@ -197,6 +197,12 @@ namespace AvifEncoder
             _instance = new FileLogger(outputDir);
         }
 
+        // ★ 新增：允许外部注入已创建的 FileLogger 实例
+        public static void SetInstance(FileLogger logger)
+        {
+            _instance = logger;
+        }
+
         public static void Log(string msg) => _instance?.LogInfo(msg);
         public static void SSIM(string input, int crf, double ssim)
         {
@@ -681,8 +687,8 @@ namespace AvifEncoder
 
 
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
-                    IProcessRunner? processRunner = null,
-                    ILogger? logger = null)
+                    ILogger logger,                         // 必需参数，放在前面
+                    IProcessRunner? processRunner = null)   // 可选参数，放在最后
         {
             // 至少预留 2 个 SSIM 计算并发，避免搜索完全串行
             _inputDir = inputDir; _outputDir = outputDir; _config = config;
@@ -691,8 +697,7 @@ namespace AvifEncoder
 
             // 注入进程运行器（未提供则使用真实实现）
             _processRunner = processRunner ?? new RealProcessRunner();
-
-            _logger = logger ?? new FileLogger(_outputDir);
+            _logger = logger;   // 直接使用注入的实例，不再自动创建
 
             bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
 
@@ -4101,7 +4106,12 @@ AVIF 编码器 CLI -- 帮助手册
             AvifPipeline? pipeline = null;
             try
             {
-                pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config);
+                // 创建统一的日志器实例
+                var fileLogger = new FileLogger(opts.OutputDir);
+                // 让静态 Logger 类也使用同一个实例
+                Logger.SetInstance(fileLogger);
+                // 注入到 Pipeline
+                pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config, logger: fileLogger);
                 await pipeline.RunAsync();
             }
             catch (Exception ex) { Console.WriteLine($"[FAIL] 错误: {ex.Message}"); }
