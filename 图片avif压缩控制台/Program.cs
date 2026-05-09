@@ -2139,25 +2139,27 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表 </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
+    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
-            // ★ 仅 libaom‑av1 支持 -row‑mt 参数，其他编码器传入空字符串
             string rowMt = cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
                            ? "-row-mt 1"
                            : "";
 
             if (!isTrueLossless && isHighChroma)
             {
-                // 常规参数集（使用有效 AOM 参数与计算出的 tile / cpu）
+                // 参数集 1：常规（完整 AOM + 正常 cpu + 正常 tile）
                 sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // 降级参数集：仅对已知支持 tile‑columns/rows 的编码器添加
+                    // ★ 参数集 2（新增）：降速保格式（完整 AOM + cpu-used=0，仍用正常 tile）
+                    sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), 0, rowMt));
+
+                    // 参数集 3：降级（空 AOM + tile-columns 0 + cpu-used 0）
                     bool encoderSupportsTileParams =
                         cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ||
                         cfg.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
