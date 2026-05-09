@@ -1558,6 +1558,7 @@ namespace AvifEncoder
         }
 
         // 2. 准备编码基础信息
+        // 2. 准备编码基础信息
         private async Task<EncodingInfo?> PrepareEncodingInfoAsync(string inputPath, PresetConfig config)
         {
             string name = Path.GetFileName(inputPath);
@@ -1604,7 +1605,17 @@ namespace AvifEncoder
                 }
             }
 
-            int tileCols = isTrulyLossless ? 0 : Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4);
+            // ───── 修改点：智能关闭瓦片（小尺寸图片避免瓦片失败） ─────
+            int tileCols = 0;
+            if (!isTrulyLossless)
+            {
+                tileCols = Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4);
+                // 如果图片尺寸太小（任何一边 < 256），禁用瓦片编码，避免 libaom 因最小瓦片限制而失败
+                if (tileCols > 0 && (w < 256 || h < 256))
+                    tileCols = 0;
+            }
+            // ─────────────────────────────────────────────────────
+
             int crf = config.BaseCRF;
             if (isLosslessMode && !isTrulyLossless) crf = 0;
 
@@ -2267,40 +2278,45 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
 
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表 </summary>
+        /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
+            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt = cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase)
-                           ? "-row-mt 1"
-                           : "";
+                               ? "-row-mt 1"
+                               : "";
 
             if (!isTrueLossless && isHighChroma)
             {
-                // 参数集 1：常规（完整 AOM + 正常 cpu + 正常 tile）
+                // 1. 正常配置（完整 AOM + 正常 cpu + 正常 tile）
                 sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // ★ 参数集 2（新增）：降速保格式（完整 AOM + cpu-used=0，仍用正常 tile）
+                    // 2. 降速保格式（完整 AOM + cpu-used=0 + 正常 tile）
                     sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), 0, rowMt));
 
-                    // 参数集 3：降级（空 AOM + tile-columns 0 + cpu-used 0）
+                    // 3. 【新增】完整 AOM + cpu-used=0 + 关闭瓦片（解决小尺寸图片瓦片失败问题）
+                    sets.Add((effectiveAom, "-tile-columns 0 -tile-rows 0", 0, ""));
+
+                    // 4. 最终兜底（空 AOM + tile-columns 0 + cpu-used 0）
                     bool encoderSupportsTileParams =
                         cfg.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ||
                         cfg.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
-
                     string downgradeTile = encoderSupportsTileParams ? "-tile-columns 0 -tile-rows 0" : "";
                     sets.Add(("", downgradeTile, 0, ""));
                 }
             }
             else
             {
+                // 非高位色度或无损模式，仅尝试一组参数
                 sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
             }
+
             return sets;
         }
 
