@@ -2971,13 +2971,13 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 返回最佳 CRF，若未收敛则返回最佳已知点。
         /// </summary>
         private async Task<(int crf, double score)> SolveCrfBySecant(
-            Func<int, Task<double>> getScore,
-            int low, int high,
-            double vl, double vh,
-            double target,
-            string name,
-            CancellationToken token,
-            PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
+    Func<int, Task<double>> getScore,
+    int low, int high,
+    double vl, double vh,
+    double target,
+    string name,
+    CancellationToken token,
+    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
         {
             // 收敛容限
             const double tolerance = 0.005;  // 相当于 VMAF 0.5 分
@@ -3010,7 +3010,13 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     break;
                 }
 
-                string display = $"VMAF={s * 100:F1}"; // 将 0-1 分数转换为 VMAF 原生值显示（适用于 VMAF 模式）
+                // ★ 根据当前度量模式生成正确的显示字符串
+                string display = cfg.MetricMode?.ToLower() switch
+                {
+                    "vmaf" => $"VMAF={s * 100:F1}",
+                    null or "" => $"分数={s:F4}",
+                    _ => $"分数={s:F4}"
+                };
                 SafeWriteLine($"  [{name}] [SECANT] iter={iter + 1}, CRF={crfNext} -> {display}");
 
                 if (Math.Abs(s - target) < tolerance)
