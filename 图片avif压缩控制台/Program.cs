@@ -75,6 +75,9 @@ namespace AvifEncoder
         public int MaxResolution { get; set; } = 2560;
 
 
+        // 是否将缩放应用于最终输出（默认 true，即输出为缩放后尺寸；false 则搜索缩放但输出原尺寸）
+        public bool ApplyScalingToOutput { get; set; } = true;
+
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
         /// 只有 libaom-av1 支持 aq-mode/deltaq-mode 等参数，其他编码器返回空字符串。
@@ -974,6 +977,12 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         private void FinalCleanup()
         {
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
+            // ★ 清理缩放临时目录
+            string scaledDir = Path.Combine(_outputDir, "_scaled");
+            if (Directory.Exists(scaledDir))
+            {
+                try { Directory.Delete(scaledDir, true); } catch { }
+            }
             foreach (var f in Directory.GetFiles(_outputDir, "_p_*.avif"))
                 try { File.Delete(f); } catch { }
         }
@@ -1349,7 +1358,15 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
 
                 var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo);
-                var encodeResult = await PerformFinalEncodeAsync(workingInputPath, outputPath, config, encInfo, searchResult);
+                // 根据配置决定最终编码是否使用缩放后的图像
+                string finalEncodeInputPath = workingInputPath;
+                if (wasScaled && !config.ApplyScalingToOutput)
+                {
+                    // 用户要求输出原尺寸，最终编码使用原始输入
+                    finalEncodeInputPath = inputPath;
+                    Logger.Log($"最终编码使用原始分辨率: {name}");
+                }
+                var encodeResult = await PerformFinalEncodeAsync(finalEncodeInputPath, outputPath, config, encInfo, searchResult);
 
                 double ssim = 0;
                 QualityMetrics? metrics = null;
@@ -3528,6 +3545,7 @@ AVIF 编码器 CLI -- 帮助手册
                      msssim - MS-SSIM       
                      mix    - 加权混合评分
   --max-resolution <像素>  设置预缩放长边上限(默认2560)，0 禁用
+  --output-full-res        搜索和指标使用缩放，但最终输出保留原尺寸
 超时选项 (所有值均为正整数)
 ----------------------------------------
   --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
@@ -3604,6 +3622,8 @@ AVIF 编码器 CLI -- 帮助手册
             public string? MetricMode;          // ★ 新增
 
             public int? MaxResolution;   // 用户传入的预缩放阈值
+
+            public bool OutputFullRes;   // 若为 true，则输出原尺寸（不将缩放应用到输出）
         }
 
         // ========== 参数解析 ==========
@@ -3660,7 +3680,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // ★ 预缩放
+                // 预缩放
                 if (arg == "--max-resolution" && i + 1 < args.Length)
                 {
                     if (int.TryParse(args[++i], out int mr) && mr >= 0)
@@ -3674,6 +3694,18 @@ AVIF 编码器 CLI -- 帮助手册
                     if (int.TryParse(val, out int mr2) && mr2 >= 0)
                         opts.MaxResolution = mr2;
                     else throw new Exception("--max-resolution 必须是非负整数");
+                    continue;
+                }
+
+                // ★ 输出原尺寸开关
+                if (arg == "--output-full-res")
+                {
+                    opts.OutputFullRes = true;
+                    continue;
+                }
+                if (arg.StartsWith("--output-full-res="))
+                {
+                    opts.OutputFullRes = true;
                     continue;
                 }
 
@@ -3872,6 +3904,8 @@ AVIF 编码器 CLI -- 帮助手册
             }
             if (opts.MaxResolution.HasValue)
                 config.MaxResolution = opts.MaxResolution.Value;
+
+            config.ApplyScalingToOutput = !opts.OutputFullRes;
             return config;
         }
 
