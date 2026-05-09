@@ -1317,170 +1317,166 @@ namespace AvifEncoder
             string outputPath = Path.Combine(_outputDir, outputFileName);
             var fileStartTime = DateTime.Now;
 
-            // ---- 预缩放处理 ----
-            string? scaledTempFile = null;
-            string workingInputPath = inputPath;
-            bool wasScaled = false;
+            // ---- 预缩放 ----
+            var scaling = await HandlePreScalingAsync(inputPath, config, name);
             try
             {
-                if (config.MaxResolution > 0)
-                {
-                    var (srcW, srcH) = await GetResolutionAsync(inputPath);
-                    int longSide = Math.Max(srcW, srcH);
-                    if (longSide > config.MaxResolution)
-                    {
-                        string scaledDir = Path.Combine(_outputDir, "_scaled");
-                        Directory.CreateDirectory(scaledDir);
-                        scaledTempFile = Path.Combine(scaledDir, $"_scaled_{Guid.NewGuid():N}.png");
-                        await ScaleImageAsync(inputPath, scaledTempFile, config.MaxResolution);
-                        workingInputPath = scaledTempFile;
-                        wasScaled = true;
-                        var (sw, sh) = await GetResolutionAsync(workingInputPath);
-                        Logger.Log($"预缩放: {name} {srcW}x{srcH} -> {sw}x{sh}");
-                    }
-                }
+                string workingInputPath = scaling.WorkingPath;
+                if (scaling.WasScaled)
+                    Logger.Log($"预缩放: {name} {scaling.OriginalWidth}x{scaling.OriginalHeight} -> {scaling.ScaledWidth}x{scaling.ScaledHeight}");
 
+                // 跳过已存在
                 var skipResult = await TrySkipExistingOutputAsync(workingInputPath, index, config, isRetry);
                 if (skipResult != null) return skipResult;
 
                 Logger.Log($"开始: {name}");
 
+                // 准备编码信息
                 var encInfo = await PrepareEncodingInfoAsync(workingInputPath, config);
                 if (encInfo == null)
-                {
-                    var failResult = new EncodeResult
-                    {
-                        Index = index,
-                        FileName = outputFileName,
-                        OriginalFileName = name,
-                        UsedCRF = -1,
-                        Success = false,
-                        ErrorMessage = "无法获取分辨率",
-                        TotalTime = DateTime.Now - fileStartTime,
-                        PixelFormat = ""
-                    };
-                    MarkProcessed(failResult);
-                    return failResult;
-                }
+                    return FailResult(index, outputFileName, name, "无法获取分辨率", fileStartTime);
 
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
 
+                // 搜索 + 最终编码
                 var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo);
-                // 根据配置决定最终编码是否使用缩放后的图像
-                string finalEncodeInputPath = workingInputPath;
-                if (wasScaled && !config.ApplyScalingToOutput)
-                {
-                    // 用户要求输出原尺寸，最终编码使用原始输入
-                    finalEncodeInputPath = inputPath;
-                    Logger.Log($"最终编码使用原始分辨率: {name}");
-                }
-                var encodeResult = await PerformFinalEncodeAsync(finalEncodeInputPath, outputPath, config, encInfo, searchResult);
+                string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
+                var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
-                double ssim = 0;
-                QualityMetrics? metrics = null;
+                // 计算最终质量
+                (double ssim, QualityMetrics? metrics) = await EvaluateFinalQualityAsync(
+                    workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
 
-                if (encodeResult.Success)
-                {
-                    string normalizedInput = GetNormalizedPathForCache(workingInputPath);
-                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                    string aomParams = config.GetEffectiveAomParams();
-                    bool jpeg = IsJpeg(workingInputPath);
-                    int tileCols = encInfo.TileCols;
-                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-
-                    // 原有代码：
-                    // string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
-
-                    // 修改为：
-                    var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
-                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH);
-                    if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
-                    {
-                        metrics = cachedMetrics;
-                        Logger.Log($"最终指标复用缓存: {name} CRF={encodeResult.Crf} VMAF={metrics.VMAF:F2}");
-                    }
-                    else
-                    {
-                        try
-                        {
-                            metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
-                        }
-
-                        if (metrics != null)
-                        {
-                            _metricsCache[cacheKey] = metrics;
-                            Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
-                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
-                        }
-                        else
-                        {
-                            if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
-                            {
-                                ssim = cachedSsim;
-                                Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
-                            }
-                            else
-                            {
-                                ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
-                                if (ssim >= 0)
-                                    _ssimCache[cacheKey] = ssim;
-                            }
-                        }
-                    }
-
-                    if (metrics != null)
-                    {
-                        ssim = metrics.SSIM;
-                        _ssimCache[cacheKey] = ssim;
-                    }
-                }
-
-                var result = new EncodeResult
-                {
-                    Index = index,
-                    FileName = outputFileName,
-                    OriginalFileName = name,
-                    OriginalSize = encodeResult.Success ? new FileInfo(inputPath).Length : 0,
-                    OutputSize = encodeResult.Success ? new FileInfo(outputPath).Length : 0,
-                    UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
-                    FinalSSIM = ssim,
-                    EncodeTime = encodeResult.EncodeTime,
-                    SearchTime = searchResult.SearchTime,
-                    TotalTime = DateTime.Now - fileStartTime,
-                    Retries = encodeResult.Retries,
-                    Success = encodeResult.Success,
-                    ErrorMessage = encodeResult.FailReason,
-                    Skipped = false,
-                    PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
-                    SourcePixelFormat = encInfo.SourcePixFmt,
-                    Mode = config.AutoSource ? "自适应" : "手动",
-                    IsSafeMode = encodeResult.UseSafeMode,
-                    AomParamsUsed = encodeResult.ActualAom ?? "",
-                    CacheReused = encodeResult.FromCache,
-                    CommandLine = encodeResult.FinalCommand ?? "",
-
-                    FinalVMAF = metrics?.VMAF,
-                    FinalPSNR_Y = metrics?.PSNR_Y,
-                    FinalMSSSIM = metrics?.MS_SSIM,
-                    FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
-                };
-
-                MarkProcessed(result);
-                return result;
+                // 组装结果
+                return BuildResult(index, outputFileName, name, inputPath, outputPath,
+                                   encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime);
             }
             finally
             {
-                if (wasScaled && !string.IsNullOrEmpty(scaledTempFile))
-                {
-                    try { File.Delete(scaledTempFile); } catch { }
-                }
+                if (scaling.TempFilePath != null)
+                    try { File.Delete(scaling.TempFilePath); } catch { }
             }
+        }
+
+        private record PreScalingResult(
+    string WorkingPath, bool WasScaled, string? TempFilePath,
+    int OriginalWidth, int OriginalHeight, int ScaledWidth, int ScaledHeight);
+
+        private async Task<PreScalingResult> HandlePreScalingAsync(string inputPath, PresetConfig config, string name)
+        {
+            if (config.MaxResolution <= 0)
+                return new PreScalingResult(inputPath, false, null, 0, 0, 0, 0);
+
+            var (srcW, srcH) = await GetResolutionAsync(inputPath);
+            int longSide = Math.Max(srcW, srcH);
+            if (longSide <= config.MaxResolution)
+                return new PreScalingResult(inputPath, false, null, srcW, srcH, srcW, srcH);
+
+            string scaledDir = Path.Combine(_outputDir, "_scaled");
+            Directory.CreateDirectory(scaledDir);
+            string scaledFile = Path.Combine(scaledDir, $"_scaled_{Guid.NewGuid():N}.png");
+            await ScaleImageAsync(inputPath, scaledFile, config.MaxResolution);
+            var (sw, sh) = await GetResolutionAsync(scaledFile);
+            return new PreScalingResult(scaledFile, true, scaledFile, srcW, srcH, sw, sh);
+        }
+
+
+        private async Task<(double ssim, QualityMetrics? metrics)> EvaluateFinalQualityAsync(
+    string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
+    EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+        {
+            if (!encodeResult.Success)
+                return (0, null);
+
+            string normalizedInput = GetNormalizedPathForCache(workingInputPath);
+            string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+            int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+            string aomParams = config.GetEffectiveAomParams();
+            bool jpeg = IsJpeg(workingInputPath);
+            int tileCols = encInfo.TileCols;
+            int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+            var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
+            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH);
+
+            // 缓存命中
+            if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
+            {
+                Logger.Log($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics.VMAF:F2}");
+                return (cachedMetrics.SSIM, cachedMetrics);
+            }
+
+            // 计算多指标
+            QualityMetrics? metrics = null;
+            try
+            {
+                metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+            }
+            catch (Exception ex) { Logger.Log($"多指标计算异常: {ex.Message}"); }
+
+            if (metrics != null)
+            {
+                _metricsCache[cacheKey] = metrics;
+                Logger.Log($"多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                return (metrics.SSIM, metrics);
+            }
+
+            // 回退 SSIM 单一缓存
+            if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                return (cachedSsim, null);
+
+            double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
+            if (ssim >= 0) _ssimCache[cacheKey] = ssim;
+            return (ssim, null);
+        }
+
+
+        private EncodeResult FailResult(int index, string outputFileName, string name, string error, DateTime fileStartTime)
+        {
+            var result = new EncodeResult
+            {
+                Index = index,
+                FileName = outputFileName,
+                OriginalFileName = name,
+                Success = false,
+                ErrorMessage = error,
+                TotalTime = DateTime.Now - fileStartTime
+            };
+            MarkProcessed(result);
+            return result;
+        }
+
+        private EncodeResult BuildResult(int index, string outputFileName, string name, string inputPath, string outputPath,
+            FinalEncodeResult encodeResult, CRFSearchResult searchResult, EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
+        {
+            var result = new EncodeResult
+            {
+                Index = index,
+                FileName = outputFileName,
+                OriginalFileName = name,
+                OriginalSize = encodeResult.Success ? new FileInfo(inputPath).Length : 0,
+                OutputSize = encodeResult.Success ? new FileInfo(outputPath).Length : 0,
+                UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
+                FinalSSIM = ssim,
+                EncodeTime = encodeResult.EncodeTime,
+                SearchTime = searchResult.SearchTime,
+                TotalTime = DateTime.Now - fileStartTime,
+                Retries = encodeResult.Retries,
+                Success = encodeResult.Success,
+                ErrorMessage = encodeResult.FailReason,
+                PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
+                SourcePixelFormat = encInfo.SourcePixFmt,
+                Mode = _config.AutoSource ? "自适应" : "手动",
+                IsSafeMode = encodeResult.UseSafeMode,
+                AomParamsUsed = encodeResult.ActualAom ?? "",
+                CacheReused = encodeResult.FromCache,
+                CommandLine = encodeResult.FinalCommand ?? "",
+                FinalVMAF = metrics?.VMAF,
+                FinalPSNR_Y = metrics?.PSNR_Y,
+                FinalMSSSIM = metrics?.MS_SSIM,
+                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
+            };
+            MarkProcessed(result);
+            return result;
         }
 
         // ==================== 辅助数据类 ====================
@@ -2199,39 +2195,46 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
             string[] pixFmtsToTry = GetPixelFormatFallbackList(pixFmt, isTrueLossless);
             string lastError = "所有像素格式尝试均失败";
             string fileName = Path.GetFileName(input);
-            string lastAttemptInfo = "";
-            var formatAttempts = new List<string>();
 
-            for (int fmtIdx = 0; fmtIdx < pixFmtsToTry.Length; fmtIdx++)
+            foreach (var currentPixFmt in pixFmtsToTry)
             {
-                string currentPixFmt = pixFmtsToTry[fmtIdx];
-                formatAttempts.Add(currentPixFmt);
-                var paramSets = BuildParamSets(cfg, currentPixFmt, isTrueLossless, tileCols, cpuUsed, allowParamDegrade);
+                var result = await TryEncodeWithPixelFormatFallback(
+                    input, output, crf, tileCols, cpuUsed, cfg, jpeg, currentPixFmt, isTrueLossless,
+                    timeoutMinutes, allowParamDegrade, fileName);
 
-                foreach (var param in paramSets)
-                {
-                    lastAttemptInfo = $"pix={currentPixFmt}, aom={param.aomParams}, tile={param.tilePart}, cpu={param.actualCpu}";
-                    var result = await TryEncodeWithParamSet(input, output, crf, currentPixFmt, param, cfg,
-                                                              isTrueLossless, timeoutMinutes, fileName);
-                    if (result.ok)
-                        return result;
-                    lastError = result.error ?? "未知错误";
-                }
+                if (result.ok)
+                    return result;
 
-                if (fmtIdx < pixFmtsToTry.Length - 1)
+                lastError = result.error ?? "未知错误";
+
+                if (currentPixFmt != pixFmtsToTry.Last())
                 {
-                    string nextFmt = pixFmtsToTry[fmtIdx + 1];
-                    Logger.Log($"像素格式 {currentPixFmt} 编码失败，降级尝试 {nextFmt} ...");
-                    SafeWriteLine($"  [DOWNGRADE] [{fileName}] 像素格式 {currentPixFmt} 失败，降级为 {nextFmt}");
+                    Logger.Log($"像素格式 {currentPixFmt} 编码失败，降级尝试 {pixFmtsToTry[pixFmtsToTry.IndexOf(currentPixFmt) + 1]} ...");
                 }
             }
 
-            // ★ 将降级链、CRF 及最后尝试写入日志，便于离线诊断
-            string chainDesc = string.Join(" → ", formatAttempts);
-            Logger.Log($"编码失败 [CRF={crf}] [{fileName}] 尝试序列: {chainDesc}。最后尝试: {lastAttemptInfo}，错误: {lastError}");
+            string chainDesc = string.Join(" → ", pixFmtsToTry);
+            Logger.Log($"编码失败 [CRF={crf}] [{fileName}] 尝试序列: {chainDesc}。最后错误: {lastError}");
+            return (false, TimeSpan.Zero, _maxRetries, $"编码失败 [序列: {chainDesc}] {lastError}", false, null, null);
+        }
 
-            string enhancedError = $"编码失败 [尝试序列: {chainDesc}] 最后尝试: {lastAttemptInfo} → {lastError}";
-            return (false, TimeSpan.Zero, _maxRetries, enhancedError, false, null, null);
+        private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
+    string? actualAomParams, string? commandLine)>
+TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileCols, int cpuUsed,
+    PresetConfig cfg, bool jpeg, string currentPixFmt, bool isTrueLossless, int timeoutMinutes,
+    bool allowParamDegrade, string fileName)
+        {
+            var paramSets = BuildParamSets(cfg, currentPixFmt, isTrueLossless, tileCols, cpuUsed, allowParamDegrade);
+
+            foreach (var param in paramSets)
+            {
+                var result = await TryEncodeWithParamSet(input, output, crf, currentPixFmt, param, cfg,
+                                                         isTrueLossless, timeoutMinutes, fileName);
+                if (result.ok)
+                    return result;
+            }
+
+            return (false, TimeSpan.Zero, _maxRetries, $"像素格式 {currentPixFmt} 所有参数均失败", false, null, null);
         }
 
         // ---------- 辅助函数 ----------
@@ -2306,35 +2309,42 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
 
         /// <summary> 尝试使用单个参数集编码，返回结果 </summary>
         private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
-            string? actualAomParams, string? commandLine)>
+    string? actualAomParams, string? commandLine)>
 TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt,
                       (string aomParams, string tilePart, int actualCpu, string rowMt) param,
                       PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName)
         {
             string normalizedInput = GetNormalizedPathForCache(input);
-
-            // ★ 获取当前输入图像的分辨率
             var (encW, encH) = await GetResolutionAsync(input);
 
-            string cacheKey = GetEncodeCacheKey(
-                normalizedInput, crf, currentPixFmt,
-                param.tilePart, param.actualCpu, isTrueLossless,
-                param.aomParams, IsJpeg(input),
-                currentPixFmt.Contains("10le") ? 10 : 8,
-                encW, encH);   // ★ 传入分辨率
+            string cacheKey = GetEncodeCacheKey(normalizedInput, crf, currentPixFmt, param.tilePart,
+                                                param.actualCpu, isTrueLossless, param.aomParams,
+                                                IsJpeg(input), currentPixFmt.Contains("10le") ? 10 : 8, encW, encH);
 
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
 
             // 缓存命中
             if (_encodeCache.TryGetValue(cacheKey, out var cached) && File.Exists(cached.file))
             {
-                // ★ 确保输出目录存在（防止极端情况被删除）
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 File.Copy(cached.file, output, true);
                 Logger.Log($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
 
+            // 执行编码重试
+            return await ExecuteEncodingWithRetries(input, output, crf, currentPixFmt, param, cfg,
+                                                    isTrueLossless, timeoutMinutes, fileName, cacheKey, cacheFile);
+        }
+
+
+        private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
+    string? actualAomParams, string? commandLine)>
+ExecuteEncodingWithRetries(string input, string output, int crf, string currentPixFmt,
+                           (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                           PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
+                           string cacheKey, string cacheFile)
+        {
             Logger.Log($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
             try
@@ -2350,10 +2360,9 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 for (int attempt = 0; attempt <= _maxRetries; attempt++)
                 {
                     string ffArgs = BuildFfmpegArgs(input, output, crf, currentPixFmt, param, cfg, isTrueLossless);
-                    Logger.Log($"编码: CRF={crf} {fileName} pix={currentPixFmt} 参数集={param.aomParams}");
-
                     var sw = Stopwatch.StartNew();
-                    (bool success, string stderrLastLine) = await RunFfmpegExAsync(_ffmpegPath, ffArgs, TimeSpan.FromMinutes(timeoutMinutes));
+                    (bool success, string stderrLastLine) = await RunFfmpegExAsync(_ffmpegPath, ffArgs,
+                        TimeSpan.FromMinutes(timeoutMinutes));
                     sw.Stop();
 
                     if (success)
@@ -2366,6 +2375,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
                         }
 
+                        // 保存缓存
                         Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         File.Copy(output, cacheFile, true);
                         _encodeCache[cacheKey] = (cacheFile, sw.Elapsed, ffArgs);
@@ -2377,6 +2387,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     if (File.Exists(output)) File.Delete(output);
                     if (attempt < _maxRetries) await Task.Delay(1000);
                 }
+
                 return (false, TimeSpan.Zero, _maxRetries, $"CRF={crf}, 重试耗尽", false, null, null);
             }
             catch (Exception ex)
@@ -2389,6 +2400,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 if (slotTaken) _ffmpegSlots.Release();
             }
         }
+
+
+
+
+
+
 
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
@@ -2899,20 +2916,31 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
         private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(
-    Func<int, Task<double>> getSSIM, int low, int high,
-    double target, string name, CancellationToken token,
-    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
-    string inputPath)   // ★ 新增完整路径参数
+    Func<int, Task<double>> getSSIM, int low, int high, double target, string name,
+    CancellationToken token, PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
+    string inputPath)
         {
             int best = low;
             bool found = false;
             bool anySuccess = false;
+
+            return await PerformBinarySearchLoop(
+                getSSIM, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg, inputPath,
+                best, found, anySuccess);
+        }
+
+        private async Task<(int best, bool found, bool anySuccess)> PerformBinarySearchLoop(
+    Func<int, Task<double>> getSSIM, int low, int high, double target, string name,
+    CancellationToken token, PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
+    string inputPath, int best, bool found, bool anySuccess)
+        {
             int l = low, r = high;
             while (l <= r)
             {
                 token.ThrowIfCancellationRequested();
                 int mid = (l + r) / 2;
                 double s = await getSSIM(mid);
+
                 if (s < 0)
                 {
                     SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} 计算失败，跳过");
@@ -2922,14 +2950,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 anySuccess = true;
 
-                // ★ 使用完整路径获取原始指标，确保与编码/缓存使用的键一致
-                var m = await GetOrComputeMetrics(inputPath, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                string display = m != null
-                    ? $"VMAF={m.VMAF:F1}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}"
-                    : $"分数={s:F4}";
-
+                // 获取完整指标用于显示
+                var metrics = await GetOrComputeMetrics(inputPath, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                string display = FormatQualityDisplay(metrics, s);
                 SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} -> {display}");
 
+                // 二分区间调整
                 if (s >= target)
                 {
                     best = mid;
@@ -2944,6 +2970,18 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             }
             return (best, found, anySuccess);
         }
+
+
+        private static string FormatQualityDisplay(QualityMetrics? m, double fallbackScore)
+        {
+            if (m != null)
+                return $"VMAF={m.VMAF:F1}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}";
+            return $"分数={fallbackScore:F4}";
+        }
+
+
+
+
 
         /// <summary>
         /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
@@ -2971,17 +3009,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 返回最佳 CRF，若未收敛则返回最佳已知点。
         /// </summary>
         private async Task<(int crf, double score)> SolveCrfBySecant(
-    Func<int, Task<double>> getScore,
-    int low, int high,
-    double vl, double vh,
-    double target,
-    string name,
-    CancellationToken token,
+    Func<int, Task<double>> getScore, int low, int high, double vl, double vh,
+    double target, string name, CancellationToken token,
     PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
         {
-            // 收敛容限
-            const double tolerance = 0.005;  // 相当于 VMAF 0.5 分
-            const int maxIter = 5;
+            const int maxIter = 5;   // 删除未使用的 tolerance
 
             double x0 = low, x1 = high;
             double f0 = vl, f1 = vh;
@@ -2992,56 +3024,91 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 token.ThrowIfCancellationRequested();
 
-                // 使用割线公式预测新的 CRF
-                double slope = (f1 - f0) / (x1 - x0);
-                if (Math.Abs(slope) < 1e-6) break;  // 平坦，无法外推
+                // 获取迭代结果和更新后的区间
+                var iterationResult = await PerformSecantIteration(
+                    getScore, x0, x1, f0, f1, target, low, high, name, iter, token, cfg);
 
-                double xNext = x1 - (f1 - target) / slope;
-                int crfNext = (int)Math.Round(xNext);
-                crfNext = Math.Clamp(crfNext, low, high);
-                // 避免原地踏步
-                if (crfNext == (int)x0 || crfNext == (int)x1) crfNext = (int)(x0 + x1) / 2;
+                // 更新区间值（替代 ref）
+                x0 = iterationResult.newX0;
+                x1 = iterationResult.newX1;
+                f0 = iterationResult.newF0;
+                f1 = iterationResult.newF1;
 
-                // 评估新 CRF
-                double s = await getScore(crfNext);
-                if (s < 0)
-                {
-                    // 评估失败，回退二分
-                    break;
-                }
+                if (iterationResult.converged)
+                    return (iterationResult.crfNext, iterationResult.score);
 
-                // ★ 根据当前度量模式生成正确的显示字符串
-                string display = cfg.MetricMode?.ToLower() switch
+                if (iterationResult.score >= target && iterationResult.crfNext > bestCRF)
                 {
-                    "vmaf" => $"VMAF={s * 100:F1}",
-                    null or "" => $"分数={s:F4}",
-                    _ => $"分数={s:F4}"
-                };
-                SafeWriteLine($"  [{name}] [SECANT] iter={iter + 1}, CRF={crfNext} -> {display}");
-
-                if (Math.Abs(s - target) < tolerance)
-                {
-                    // 收敛，返回当前点
-                    return (crfNext, s);
-                }
-
-                // 更新区间
-                if (s >= target)
-                {
-                    x0 = crfNext;
-                    f0 = s;
-                    if (s >= target && crfNext > bestCRF) { bestCRF = crfNext; bestScore = s; }
-                }
-                else
-                {
-                    x1 = crfNext;
-                    f1 = s;
+                    bestCRF = iterationResult.crfNext;
+                    bestScore = iterationResult.score;
                 }
             }
 
-            // 未收敛，返回当前最佳
             return (bestCRF, bestScore);
         }
+
+
+        private async Task<(int crfNext, double score, bool converged, double newX0, double newX1, double newF0, double newF1)>
+PerformSecantIteration(
+    Func<int, Task<double>> getScore, double x0, double x1,
+    double f0, double f1, double target, int low, int high,
+    string name, int iter, CancellationToken token, PresetConfig cfg)
+        {
+            // 检查斜率有效性
+            double slope = (f1 - f0) / (x1 - x0);
+            if (Math.Abs(slope) < 1e-6)
+                return (crfNext: (int)high, score: f1, converged: false,
+                        newX0: x0, newX1: x1, newF0: f0, newF1: f1);
+
+            // 预测下一个 CRF
+            double xNext = x1 - (f1 - target) / slope;
+            int crfNext = (int)Math.Round(xNext);
+            crfNext = Math.Clamp(crfNext, low, high);
+
+            // 避免原地踏步
+            if (crfNext == (int)x0 || crfNext == (int)x1)
+                crfNext = (int)(x0 + x1) / 2;
+
+            // 评估新点
+            double score = await getScore(crfNext);
+
+            // 日志输出（根据度量模式自适应）
+            string display = cfg.MetricMode?.ToLower() switch
+            {
+                "vmaf" => $"VMAF={score * 100:F1}",
+                null or "" => $"分数={score:F4}",
+                _ => $"分数={score:F4}"
+            };
+            SafeWriteLine($"  [{name}] [SECANT] iter={iter + 1}, CRF={crfNext} -> {display}");
+
+            // 检查收敛
+            const double tolerance = 0.005;
+            bool converged = Math.Abs(score - target) < tolerance;
+
+            // 更新区间（返回新值）
+            double newX0 = x0, newX1 = x1, newF0 = f0, newF1 = f1;
+            if (!converged)
+            {
+                if (score >= target)
+                {
+                    newX0 = crfNext;
+                    newF0 = score;
+                }
+                else
+                {
+                    newX1 = crfNext;
+                    newF1 = score;
+                }
+            }
+
+            return (crfNext, score, converged, newX0, newX1, newF0, newF1);
+        }
+
+
+
+
+
+
 
 
         /// <summary>
@@ -3094,130 +3161,26 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         {
             string name = Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
-            Logger.CRF($"[{name}] 混合搜索(Hybrid) 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
+            Logger.CRF($"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(
                 searchCts.Token, _globalCts?.Token ?? default).Token;
 
-            // 真实评分工厂（优化回退链：同格式降速 → 降级 yuv420p）
-            Func<int, Task<double>> getScore = async crf =>
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    // 1. 正常参数 + 原始格式
-                    QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-
-                    // 2. 降低 cpu‑used，但仍保持原格式（提升稳定性）
-                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-
-                    // 3. 仍失败且当前不是 yuv420p，降级到 yuv420p
-                    if (!pixFmt.StartsWith("yuv420p"))
-                    {
-                        Logger.Log($"[{name}] 真实指标降级 yuv420p CRF={crf}");
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                    }
-
-                    if (i < 2) Logger.Log($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
-                }
-                return -1;
-            };
+            Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
 
             try
             {
-                // ───── Stage A：Proxy 粗定位 ─────
-                int low = cfg.MinCRF, high = cfg.MaxCRF;
+                // Stage A: Proxy 粗定位
+                var (low, high) = await PerformProxyPhaseAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
+                if (low < 0)
+                    return (cfg.BaseCRF, true, false);   // 边界探测完全失败
 
-                // 只用两个点探测区间，降低 proxy 开销
-                int proxyLow = Math.Max(low, 10);
-                int proxyHigh = Math.Min(high, 38);
+                // Stage B: 精搜索
+                (int crf, bool failed, bool insufficient) = await PerformPreciseSearchAsync(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, low, high, getScore, token);
 
-                double plow = await ProxyEvaluateAsync(input, proxyLow, tileCols, cfg, jpeg, pixFmt);
-                double phigh = await ProxyEvaluateAsync(input, proxyHigh, tileCols, cfg, jpeg, pixFmt);
-
-                if (plow >= 0 && phigh >= 0)
-                {
-                    SafeWriteLine($"  [{name}] Proxy: CRF={proxyLow} -> ≈{plow * 100:F1}, CRF={proxyHigh} -> ≈{phigh * 100:F1}");
-
-                    if (plow < target)
-                    {
-                        // 整体质量不足，维持原区间但只信 low
-                        low = proxyLow;
-                    }
-                    else if (phigh >= target)
-                    {
-                        // 高质量区间，缩至[proxyLow, proxyHigh]
-                        low = proxyLow;
-                        high = proxyHigh;
-                    }
-                    else
-                    {
-                        // 目标在区间内，缩窄边界
-                        low = proxyLow;
-                        high = proxyHigh;
-                    }
-                }
-
-                // ───── Stage B：精搜索（真实编码） ─────
-                double lowScore, highScore;
-
-                // 高端
-                highScore = await getScore(high);
-                if (highScore >= target)
-                {
-                    SafeWriteLine($"  [HIGH] [{name}] CRF={high} 已达标 (VMAF≈{highScore * 100:F1})，直接使用");
-                    return (high, false, false);
-                }
-                if (highScore < 0)
-                {
-                    SafeWriteLine($"  [{name}] [WARN] 高端边界失败，回退 BaseCRF");
-                    return (cfg.BaseCRF, true, false);
-                }
-
-                // 低端
-                int tmpLow = await FindLowBoundWithRetry(getScore, low, high, name, token);
-                if (tmpLow < 0)
-                {
-                    SafeWriteLine($"  [{name}] [WARN] 低端边界失败，回退 BaseCRF");
-                    return (cfg.BaseCRF, true, false);
-                }
-                low = tmpLow;
-                lowScore = await getScore(low);
-                if (lowScore < target)
-                {
-                    SafeWriteLine($"  [{name}] [LOW] 最低可用 CRF={low} VMAF={lowScore * 100:F1} 无法达标");
-                    return (low, false, true);
-                }
-
-                // 割线法精求解
-                int bestCrf; double bestScore;
-                (bestCrf, bestScore) = await SolveCrfBySecant(getScore, low, high, lowScore, highScore, target,
-                    name, token, cfg, tileCols, pixFmt, jpeg);
-
-                if (Math.Abs(bestScore - target) > 0.01)
-                {
-                    SafeWriteLine($"  [{name}] 割线未完全收敛，回退二分");
-                    var (bCrf, _, _) = await BinarySearchWithSkip(getScore, low, high, target, name, token,
-                        cfg, tileCols, pixFmt, jpeg, input);
-                    bestCrf = bCrf;
-                }
-
-                // 最终指标
-                QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                if (finalMetrics != null)
-                {
-                    SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | " +
-                                  $"VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} " +
-                                  $"PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
-                }
-                else SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf}");
-
-                return (bestCrf, false, false);
+                return (crf, failed, insufficient);
             }
             catch (OperationCanceledException)
             {
@@ -3225,6 +3188,102 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 return (cfg.BaseCRF, true, false);
             }
         }
+
+
+
+        private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
+        {
+            return async crf =>
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
+                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                    if (!pixFmt.StartsWith("yuv420p"))
+                    {
+                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
+                        if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+                    }
+                    if (i < 2) Logger.Log($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
+                }
+                return -1;
+            };
+        }
+
+
+        private async Task<(int low, int high)> PerformProxyPhaseAsync(
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+    string name, double target, Func<int, Task<double>> getScore, CancellationToken token)
+        {
+            int low = cfg.MinCRF, high = cfg.MaxCRF;
+            int proxyLow = Math.Max(low, 10);
+            int proxyHigh = Math.Min(high, 38);
+
+            double plow = await ProxyEvaluateAsync(input, proxyLow, tileCols, cfg, jpeg, pixFmt);
+            double phigh = await ProxyEvaluateAsync(input, proxyHigh, tileCols, cfg, jpeg, pixFmt);
+
+            if (plow >= 0 && phigh >= 0)
+            {
+                SafeWriteLine($"  [{name}] Proxy: CRF={proxyLow} -> ≈{plow * 100:F1}, CRF={proxyHigh} -> ≈{phigh * 100:F1}");
+                if (plow < target) low = proxyLow;   // 整体不足
+                else if (phigh >= target) { low = proxyLow; high = proxyHigh; }
+                else { low = proxyLow; high = proxyHigh; }
+            }
+
+            // 验证低端可用性
+            low = await FindLowBoundWithRetry(getScore, low, high, name, token);
+            if (low < 0) return (-1, -1);
+
+            return (low, high);
+        }
+
+
+        private async Task<(int crf, bool failed, bool insufficient)> PerformPreciseSearchAsync(
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+    string name, double target, int low, int high,
+    Func<int, Task<double>> getScore, CancellationToken token)
+        {
+            // 高端探测
+            double highScore = await getScore(high);
+            if (highScore >= target)
+            {
+                SafeWriteLine($"  [HIGH] [{name}] CRF={high} 已达标，直接使用");
+                return (high, false, false);
+            }
+            if (highScore < 0)
+                return (cfg.BaseCRF, true, false);
+
+            // 低端探测
+            double lowScore = await getScore(low);
+            if (lowScore < target)
+            {
+                SafeWriteLine($"  [LOW] [{name}] 最低可用 CRF={low} VMAF={lowScore * 100:F1} 无法达标");
+                return (low, false, true);
+            }
+
+            // 割线法求解
+            (int bestCrf, double bestScore) = await SolveCrfBySecant(
+                getScore, low, high, lowScore, highScore, target, name, token, cfg, tileCols, pixFmt, jpeg);
+            if (Math.Abs(bestScore - target) > 0.01)
+            {
+                SafeWriteLine($"  [{name}] 割线未完全收敛，回退二分");
+                var (bCrf, _, _) = await BinarySearchWithSkip(getScore, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg, input);
+                bestCrf = bCrf;
+            }
+
+            // 最终指标输出
+            QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+            if (finalMetrics != null)
+                SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
+            else
+                SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf}");
+
+            return (bestCrf, false, false);
+        }
+
 
 
 
