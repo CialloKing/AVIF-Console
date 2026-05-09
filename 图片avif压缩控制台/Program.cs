@@ -190,14 +190,45 @@ namespace AvifEncoder
 
     public static class Logger
     {
-        private static readonly object _lock = new();
-        private static string _logDir = "";
+        private static FileLogger? _instance;
 
         public static void Init(string outputDir)
+        {
+            _instance = new FileLogger(outputDir);
+        }
+
+        public static void Log(string msg) => _instance?.LogInfo(msg);
+        public static void SSIM(string input, int crf, double ssim)
+        {
+            _instance?.LogMetric("ssim", $"{input} | CRF={crf} | SSIM={ssim}");
+        }
+        public static void CRF(string msg)
+        {
+            _instance?.LogMetric("crf", msg);
+        }
+    }
+
+    /// <summary>日志接口，解耦具体日志实现</summary>
+    public interface ILogger
+    {
+        void LogInfo(string msg);
+        void LogError(string msg);
+        // 用于 SSIM/CRF 等专用轨迹
+        void LogMetric(string metricName, string msg);
+    }
+
+    /// <summary>基于文件的日志实现，兼容原 Logger 行为</summary>
+    public class FileLogger : ILogger
+    {
+        private readonly object _lock = new();
+        private readonly string _logDir;
+
+        public FileLogger(string outputDir)
         {
             _logDir = Path.Combine(outputDir, "log");
             Directory.CreateDirectory(_logDir);
 
+            // 清理30天前的 run 日志
             try
             {
                 var cutoff = DateTime.Now.AddDays(-30);
@@ -207,31 +238,42 @@ namespace AvifEncoder
             }
             catch { }
 
-            Log("===== NEW SESSION START =====");
-            Log($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            LogInfo("===== NEW SESSION START =====");
+            LogInfo($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         }
 
-        public static void Log(string msg)
+        public void LogInfo(string msg)
         {
             lock (_lock)
                 File.AppendAllText(Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
 
-        public static void SSIM(string input, int crf, double ssim)
+        public void LogError(string msg)
         {
+            // 错误也写入同一日志文件，带 ERROR 标记
             lock (_lock)
-                File.AppendAllText(Path.Combine(_logDir, "ssim_trace.log"),
-                    $"{input} | CRF={crf} | SSIM={ssim}\n");
+                File.AppendAllText(Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
+                    $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}\n");
         }
 
-        public static void CRF(string msg)
+        public void LogMetric(string metricName, string msg)
         {
+            // metricName 为 "ssim" 或 "crf" 等
+            string fileName = metricName.ToLower() switch
+            {
+                "ssim" => "ssim_trace.log",
+                "crf" => "crf_search.log",
+                _ => $"metric_{metricName}.log"
+            };
+
             lock (_lock)
-                File.AppendAllText(Path.Combine(_logDir, "crf_search.log"),
+                File.AppendAllText(Path.Combine(_logDir, fileName),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
     }
+
+
 
     public class AvifPipeline : IDisposable
     {
@@ -271,6 +313,8 @@ namespace AvifEncoder
         private int _disposed;
 
         private readonly IProcessRunner _processRunner;
+
+        private readonly ILogger _logger;
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
         private static bool EncoderSupportsStillPicture(string encoderName)
@@ -482,11 +526,11 @@ namespace AvifEncoder
                     _ffmpegPath, args, timeout, _globalCts?.Token ?? default);
 
                 if (!string.IsNullOrWhiteSpace(stderr))
-                    Logger.Log($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
 
                 if (exitCode != 0)
                 {
-                    Logger.Log($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    _logger.LogInfo($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
                     return null;
                 }
 
@@ -494,7 +538,7 @@ namespace AvifEncoder
                 string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
                 if (!File.Exists(physicalPath))
                 {
-                    Logger.Log($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
+                    _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
                     return null;
                 }
 
@@ -519,7 +563,7 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        Logger.Log($"未从 stderr 提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
+                        _logger.LogInfo($"未从 stderr 提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
                     }
                 }
 
@@ -527,7 +571,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                Logger.Log($"ComputeAllMetrics 异常: {ex.Message}");
+                _logger.LogInfo($"ComputeAllMetrics 异常: {ex.Message}");
                 return null;
             }
             finally
@@ -542,7 +586,7 @@ namespace AvifEncoder
             }
         }
 
-        private static QualityMetrics? ParseVmafJson(string json)
+        private QualityMetrics? ParseVmafJson(string json)
         {
             try
             {
@@ -551,7 +595,7 @@ namespace AvifEncoder
 
                 double ssim = pooled.TryGetProperty("float_ssim", out var e) ? e.GetProperty("mean").GetDouble() : 0;
                 double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                double vmaf = pooled.TryGetProperty("vmaf", out e) ? e.GetProperty("mean").GetDouble() : -1; // -1 标记缺失
+                double vmaf = pooled.TryGetProperty("vmaf", out e) ? e.GetProperty("mean").GetDouble() : -1;
                 double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
 
                 return new QualityMetrics
@@ -564,7 +608,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                Logger.Log($"解析 VMAF JSON 失败: {ex.Message}");
+                _logger.LogInfo($"解析 VMAF JSON 失败: {ex.Message}");
                 return null;
             }
         }
@@ -643,7 +687,9 @@ namespace AvifEncoder
         }
 
 
-        public AvifPipeline(string inputDir, string outputDir, PresetConfig config, IProcessRunner? processRunner = null)
+        public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
+                    IProcessRunner? processRunner = null,
+                    ILogger? logger = null)
         {
             // 至少预留 2 个 SSIM 计算并发，避免搜索完全串行
             _inputDir = inputDir; _outputDir = outputDir; _config = config;
@@ -652,6 +698,8 @@ namespace AvifEncoder
 
             // 注入进程运行器（未提供则使用真实实现）
             _processRunner = processRunner ?? new RealProcessRunner();
+
+            _logger = logger ?? new FileLogger(_outputDir);
 
             bool isHardwareEncoder = !config.Encoder.StartsWith("lib");
 
@@ -796,8 +844,10 @@ namespace AvifEncoder
 
             Console.OutputEncoding = Encoding.UTF8;
             _progress.Start(DateTime.Now);
-            Logger.Init(_outputDir);
-            Logger.Log($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
+            // （Init 已由构造函数中的 new FileLogger(_outputDir) 完成，直接删除）
+            //Logger.Init(_outputDir);
+
+            _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
 
             await PrintStartupInfoAsync();
 
@@ -946,7 +996,7 @@ namespace AvifEncoder
             SafeWriteLine($"原始大小: {FormatSize(totalOriginal)}  输出大小: {FormatSize(totalOutput)}");
             SafeWriteLine($"整体压缩率: {overallRatio:P1}  总耗时: {FormatTimeSpan(totalTime)}");
             SafeWriteLine($"SSIM缓存项: {_ssimCache.Count}  编码缓存项: {_encodeCache.Count}");
-            Logger.Log($"Finished. 成功: {successCount}, 失败: {failCount}, 跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
+            _logger.LogInfo($"Finished. 成功: {successCount}, 失败: {failCount}, 跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
 
             ExportCsv(allResults);
         }
@@ -975,8 +1025,8 @@ namespace AvifEncoder
         {
             if (Directory.Exists(dir))
             {
-                try { Directory.Delete(dir, true); Logger.Log($"缓存已清理: {dir}"); }
-                catch (Exception ex) { Logger.Log($"清理失败: {dir} - {ex.Message}"); }
+                try { Directory.Delete(dir, true); _logger.LogInfo($"缓存已清理: {dir}"); }
+                catch (Exception ex) { _logger.LogInfo($"清理失败: {dir} - {ex.Message}"); }
             }
         }
 
@@ -1164,7 +1214,7 @@ namespace AvifEncoder
                     bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
                     if (!acquired)
                     {
-                        Logger.Log($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
+                        _logger.LogInfo($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
                         var failResult = new EncodeResult
                         {
                             Index = file.index,
@@ -1186,7 +1236,7 @@ namespace AvifEncoder
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"文件处理异常: {file.filePath} - {ex.Message}");
+                        _logger.LogInfo($"文件处理异常: {file.filePath} - {ex.Message}");
                         var failResult = new EncodeResult
                         {
                             Index = file.index,
@@ -1208,7 +1258,7 @@ namespace AvifEncoder
                 catch (OperationCanceledException)
                 {
                     // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
-                    Logger.Log($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
+                    _logger.LogInfo($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
                     var cancelResult = new EncodeResult
                     {
                         Index = file.index,
@@ -1263,13 +1313,13 @@ namespace AvifEncoder
             {
                 string workingInputPath = scaling.WorkingPath;
                 if (scaling.WasScaled)
-                    Logger.Log($"预缩放: {name} {scaling.OriginalWidth}x{scaling.OriginalHeight} -> {scaling.ScaledWidth}x{scaling.ScaledHeight}");
+                    _logger.LogInfo($"预缩放: {name} {scaling.OriginalWidth}x{scaling.OriginalHeight} -> {scaling.ScaledWidth}x{scaling.ScaledHeight}");
 
                 // 跳过已存在
                 var skipResult = await TrySkipExistingOutputAsync(workingInputPath, index, config, isRetry);
                 if (skipResult != null) return skipResult;
 
-                Logger.Log($"开始: {name}");
+                _logger.LogInfo($"开始: {name}");
 
                 // 准备编码信息
                 var encInfo = await PrepareEncodingInfoAsync(workingInputPath, config);
@@ -1341,7 +1391,7 @@ namespace AvifEncoder
             // 缓存命中
             if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
             {
-                Logger.Log($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics.VMAF:F2}");
+                _logger.LogInfo($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics.VMAF:F2}");
                 return (cachedMetrics.SSIM, cachedMetrics);
             }
 
@@ -1351,12 +1401,12 @@ namespace AvifEncoder
             {
                 metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
             }
-            catch (Exception ex) { Logger.Log($"多指标计算异常: {ex.Message}"); }
+            catch (Exception ex) { _logger.LogInfo($"多指标计算异常: {ex.Message}"); }
 
             if (metrics != null)
             {
                 _metricsCache[cacheKey] = metrics;
-                Logger.Log($"多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                _logger.LogInfo($"多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                 return (metrics.SSIM, metrics);
             }
 
@@ -1473,7 +1523,7 @@ namespace AvifEncoder
             {
                 string name = Path.GetFileName(inputPath);
                 SafeWriteLine($"[SKIP] {name} (已存在，跳过)");
-                Logger.Log($"跳过: {name}");
+                _logger.LogInfo($"跳过: {name}");
                 var skipResult = new EncodeResult
                 {
                     Index = index,
@@ -1530,7 +1580,7 @@ namespace AvifEncoder
                 alphaDropped = true;
                 actualPixFmt = actualPixFmt.Replace("a", "");
                 SafeWriteLine($" [WARN] [{name}] 硬件编码器不支持 Alpha 通道，透明度将被丢弃");
-                Logger.Log($"Alpha 通道丢弃: {name}，编码器 {config.Encoder} 不支持 yuva 格式");
+                _logger.LogInfo($"Alpha 通道丢弃: {name}，编码器 {config.Encoder} 不支持 yuva 格式");
             }
 
             // ★ 新增：硬件编码器色度采样警告
@@ -1628,7 +1678,7 @@ namespace AvifEncoder
                 catch (Exception ex)
                 {
                     crf = config.BaseCRF;
-                    Logger.Log($"搜索异常，回退直接编码: {name} - {ex.Message}");
+                    _logger.LogInfo($"搜索异常，回退直接编码: {name} - {ex.Message}");
                     SafeWriteLine($" [WARN] [{name}] CRF搜索异常，使用 BaseCRF ({crf}) 直接编码");
                 }
             }
@@ -1789,7 +1839,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     }
 
                     // 回退：多指标失败时用旧版 SSIM
-                    Logger.Log($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
+                    _logger.LogInfo($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
                 }
                 finally
@@ -2149,12 +2199,12 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
 
                 if (currentPixFmt != pixFmtsToTry.Last())
                 {
-                    Logger.Log($"像素格式 {currentPixFmt} 编码失败，降级尝试 {pixFmtsToTry[pixFmtsToTry.IndexOf(currentPixFmt) + 1]} ...");
+                    _logger.LogInfo($"像素格式 {currentPixFmt} 编码失败，降级尝试 {pixFmtsToTry[pixFmtsToTry.IndexOf(currentPixFmt) + 1]} ...");
                 }
             }
 
             string chainDesc = string.Join(" → ", pixFmtsToTry);
-            Logger.Log($"编码失败 [CRF={crf}] [{fileName}] 尝试序列: {chainDesc}。最后错误: {lastError}");
+            _logger.LogInfo($"编码失败 [CRF={crf}] [{fileName}] 尝试序列: {chainDesc}。最后错误: {lastError}");
             return (false, TimeSpan.Zero, _maxRetries, $"编码失败 [序列: {chainDesc}] {lastError}", false, null, null);
         }
 
@@ -2273,7 +2323,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 File.Copy(cached.file, output, true);
-                Logger.Log($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
+                _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
 
@@ -2290,17 +2340,17 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                            PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
                            string cacheKey, string cacheFile)
         {
-            Logger.Log($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
+            _logger.LogInfo($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
             try
             {
                 if (!await _ffmpegSlots.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    Logger.Log($"编码信号量获取超时: {input} CRF={crf}");
+                    _logger.LogInfo($"编码信号量获取超时: {input} CRF={crf}");
                     return (false, TimeSpan.Zero, 0, "编码信号量获取超时", false, null, null);
                 }
                 slotTaken = true;
-                Logger.Log($"  ▶ [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
+                _logger.LogInfo($"  ▶ [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
 
                 for (int attempt = 0; attempt <= _maxRetries; attempt++)
                 {
@@ -2314,7 +2364,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     {
                         if (new FileInfo(output).Length < 100)
                         {
-                            Logger.Log($"编码输出文件过小 ({new FileInfo(output).Length} 字节)，丢弃并重试");
+                            _logger.LogInfo($"编码输出文件过小 ({new FileInfo(output).Length} 字节)，丢弃并重试");
                             if (File.Exists(output)) File.Delete(output);
                             if (attempt < _maxRetries) { await Task.Delay(1000); continue; }
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
@@ -2328,7 +2378,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     }
 
                     string error = $"CRF={crf}, {stderrLastLine}";
-                    Logger.Log($"❌ 编码失败: {input} - {error}");
+                    _logger.LogInfo($"❌ 编码失败: {input} - {error}");
                     if (File.Exists(output)) File.Delete(output);
                     if (attempt < _maxRetries) await Task.Delay(1000);
                 }
@@ -2337,7 +2387,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                Logger.Log($"编码异常: {input} - {ex.Message}");
+                _logger.LogInfo($"编码异常: {input} - {ex.Message}");
                 return (false, TimeSpan.Zero, _maxRetries, $"异常: {ex.Message}", false, null, null);
             }
             finally
@@ -2390,13 +2440,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             if (exitCode != 0)
             {
-                Logger.Log($"ffmpeg 错误(退出码 {exitCode}): {lastLine}");
+                _logger.LogInfo($"ffmpeg 错误(退出码 {exitCode}): {lastLine}");
                 return (false, lastLine);
             }
             return (true, "");
         }
 
-        private static async Task<string> RunProcessAndGetOutputAsync(string file, string args)
+        private async Task<string> RunProcessAndGetOutputAsync(string file, string args)
         {
             using var p = new Process
             {
@@ -2426,9 +2476,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     try { p.Kill(); } catch { }
                     using var finalCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     try { await p.WaitForExitAsync(finalCts.Token); }
-                    catch (OperationCanceledException) { Logger.Log("等待 ffprobe 退出超时，已放弃"); }
+                    catch (OperationCanceledException) { _logger.LogInfo("等待 ffprobe 退出超时，已放弃"); }
                 }
-                Logger.Log($"ffprobe 调用超时: {args}");
+                _logger.LogInfo($"ffprobe 调用超时: {args}");
                 return string.Empty;
             }
         }
@@ -2448,7 +2498,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 // ★ 修复：任意一边分辨率无效则立即返回 -1
                 if (w1 <= 0 || h1 <= 0 || w2 <= 0 || h2 <= 0)
                 {
-                    Logger.Log($"SSIM 分辨率无效: a={Path.GetFileName(a)} ({w1}x{h1}), b={Path.GetFileName(b)} ({w2}x{h2})");
+                    _logger.LogInfo($"SSIM 分辨率无效: a={Path.GetFileName(a)} ({w1}x{h1}), b={Path.GetFileName(b)} ({w2}x{h2})");
                     return -1;
                 }
 
@@ -2458,7 +2508,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                Logger.Log($"SSIM 异常: {Path.GetFileName(a)} vs {Path.GetFileName(b)} - {ex.Message}");
+                _logger.LogInfo($"SSIM 异常: {Path.GetFileName(a)} vs {Path.GetFileName(b)} - {ex.Message}");
                 SafeWriteLine($" [FAIL] SSIM 异常: {ex.Message}");
                 return -1;
             }
@@ -2468,7 +2518,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         {
             if (!File.Exists(a) || !File.Exists(b))
             {
-                Logger.Log($"SSIM 文件缺失: a={Path.GetFileName(a)}, b={Path.GetFileName(b)}");
+                _logger.LogInfo($"SSIM 文件缺失: a={Path.GetFileName(a)}, b={Path.GetFileName(b)}");
                 return false;
             }
 
@@ -2476,7 +2526,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             long sizeB = new FileInfo(b).Length;
             if (sizeA < 100 || sizeB < 100)
             {
-                Logger.Log($"SSIM 文件太小 ({sizeA} / {sizeB} 字节)");
+                _logger.LogInfo($"SSIM 文件太小 ({sizeA} / {sizeB} 字节)");
                 return false;
             }
 
@@ -2531,7 +2581,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return -1;
             }
 
-            Logger.Log($"SSIM output:\n{output}");
+            _logger.LogInfo($"SSIM output:\n{output}");
 
             // 匹配 "All:0.xxxx" （容错空格）
             var m = Regex.Match(output, @"All:\s*([0-9.]+)");
@@ -2557,7 +2607,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         {
             SafeWriteLine($" [WARN] SSIM 解析失败");
             SafeWriteLine($"  ffmpeg 尾部: {tail}");
-            Logger.Log($"SSIM 解析失败: tail:\n{tail}");
+            _logger.LogInfo($"SSIM 解析失败: tail:\n{tail}");
         }
 
 
@@ -2637,7 +2687,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 // 控制并发 ffmpeg 调用
                 if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    Logger.Log($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
+                    _logger.LogInfo($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
                     newTask.SetResult(null);
                     return null;
                 }
@@ -2662,7 +2712,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         if (metrics != null)
                         {
                             _metricsCache[key] = metrics;
-                            Logger.Log($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
+                            _logger.LogInfo($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
                                        $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
                                        $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                         }
@@ -2681,7 +2731,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                Logger.Log($"GetOrComputeMetrics 异常: {ex.Message}");
+                _logger.LogInfo($"GetOrComputeMetrics 异常: {ex.Message}");
                 newTask.TrySetResult(null);
                 return null;
             }
@@ -3044,7 +3094,7 @@ PerformSecantIteration(
         {
             string name = Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
-            Logger.CRF($"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
+            _logger.LogMetric("crf", $"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(
@@ -3145,13 +3195,13 @@ PerformSecantIteration(
                         }
                     }
 
-                    if (i < 2) Logger.Log($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
+                    if (i < 2) _logger.LogInfo($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
                 }
 
                 // 该 CRF 点彻底失败，增加连续失败计数
                 consecutiveFailures++;
                 if (consecutiveFailures >= failThreshold)
-                    Logger.Log($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
+                    _logger.LogInfo($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
 
                 return -1;
             };
@@ -3198,7 +3248,7 @@ PerformSecantIteration(
                 {
                     recommendedFmt = "yuv420p";
                     SafeWriteLine($"  [{name}] 目标格式 {pixFmt} 预探测失败，精搜索将降级为 yuv420p");
-                    Logger.Log($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
+                    _logger.LogInfo($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
                 }
                 // 清理临时文件
                 try { if (File.Exists(probeOutput)) File.Delete(probeOutput); } catch { }
