@@ -308,7 +308,7 @@ namespace AvifEncoder
         private static readonly object _consoleLock = new();
         private CancellationTokenSource? _globalCts;
 
-        private readonly ConcurrentDictionary<string, (int w, int h)> _resolutionCache = new();
+       
 
         private static void SafeWriteLine(string msg) { lock (_consoleLock) Console.WriteLine(msg); }
 
@@ -3222,7 +3222,7 @@ PerformSecantIteration(
             return (bestCrf, false, false);
         }
 
-        
+
 
 
 
@@ -3235,13 +3235,10 @@ PerformSecantIteration(
         /// </summary>
         private async Task<(int w, int h)> GetResolutionAsync(string path)
         {
-            // ★ 优先从统一 Probe 缓存获取
+            // 优先从统一 Probe 缓存获取
             var info = await GetProbeInfoAsync(path);
             if (info != null)
             {
-                // 同步更新旧的分辨率缓存
-                string cacheKey = GetNormalizedPathForCache(path);
-                _resolutionCache[cacheKey] = (info.Width, info.Height);
                 return (info.Width, info.Height);
             }
 
@@ -3251,7 +3248,6 @@ PerformSecantIteration(
             var parts = o.Trim().Split(',');
             if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
             {
-                _resolutionCache[GetNormalizedPathForCache(path)] = (w, h);
                 return (w, h);
             }
             return (0, 0);
