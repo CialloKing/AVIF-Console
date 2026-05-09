@@ -1292,6 +1292,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
 
 
         // ==================== 主调度方法 ====================
+        // ==================== 主调度方法 ====================
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
@@ -1299,136 +1300,157 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
             string outputPath = Path.Combine(_outputDir, outputFileName);
             var fileStartTime = DateTime.Now;
 
-            var skipResult = await TrySkipExistingOutputAsync(inputPath, index, config, isRetry);
-            if (skipResult != null) return skipResult;
-
-            Logger.Log($"开始: {name}");
-
-            var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
-            if (encInfo == null)
+            // ---- 预缩放处理 ----
+            string? scaledTempFile = null;
+            string workingInputPath = inputPath;
+            bool wasScaled = false;
+            try
             {
-                var failResult = new EncodeResult
+                if (config.MaxResolution > 0)
                 {
-                    Index = index,
-                    FileName = outputFileName,
-                    OriginalFileName = name,
-                    UsedCRF = -1,
-                    Success = false,
-                    ErrorMessage = "无法获取分辨率",
-                    TotalTime = DateTime.Now - fileStartTime,
-                    PixelFormat = ""
-                };
-                MarkProcessed(failResult);
-                return failResult;
-            }
-
-            SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
-
-            var searchResult = await RunCRFSearchAsync(inputPath, config, encInfo);
-            var encodeResult = await PerformFinalEncodeAsync(inputPath, outputPath, config, encInfo, searchResult);
-
-            double ssim = 0;
-            // ★ 将 metrics 声明提前到 if 之外
-            QualityMetrics? metrics = null;
-
-            // 在 ProcessSingleFileAsync 方法内，替换原来的指标获取逻辑：
-            if (encodeResult.Success)
-            {
-                // ★ 优先从缓存获取指标（搜索阶段可能已计算）
-                string normalizedInput = GetNormalizedPathForCache(inputPath);
-                string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                string aomParams = config.GetEffectiveAomParams();
-                bool jpeg = IsJpeg(inputPath);
-                int tileCols = encInfo.TileCols;
-                int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-
-                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
-                if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
-                {
-                    metrics = cachedMetrics;
-                    Logger.Log($"最终指标复用缓存: {name} CRF={encodeResult.Crf} VMAF={metrics.VMAF:F2}");
-                }
-                else
-                {
-                    // 缓存未命中，进行完整的 VMAF 计算
-                    try
+                    var (srcW, srcH) = await GetResolutionAsync(inputPath);
+                    int longSide = Math.Max(srcW, srcH);
+                    if (longSide > config.MaxResolution)
                     {
-                        metrics = await ComputeAllMetricsAsync(inputPath, outputPath);
+                        string scaledDir = Path.Combine(_outputDir, "_scaled");
+                        Directory.CreateDirectory(scaledDir);
+                        scaledTempFile = Path.Combine(scaledDir, $"_scaled_{Guid.NewGuid():N}.png");
+                        await ScaleImageAsync(inputPath, scaledTempFile, config.MaxResolution);
+                        workingInputPath = scaledTempFile;
+                        wasScaled = true;
+                        var (sw, sh) = await GetResolutionAsync(workingInputPath);
+                        Logger.Log($"预缩放: {name} {srcW}x{srcH} -> {sw}x{sh}");
                     }
-                    catch (Exception ex)
+                }
+
+                var skipResult = await TrySkipExistingOutputAsync(workingInputPath, index, config, isRetry);
+                if (skipResult != null) return skipResult;
+
+                Logger.Log($"开始: {name}");
+
+                var encInfo = await PrepareEncodingInfoAsync(workingInputPath, config);
+                if (encInfo == null)
+                {
+                    var failResult = new EncodeResult
                     {
-                        Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
+                        Index = index,
+                        FileName = outputFileName,
+                        OriginalFileName = name,
+                        UsedCRF = -1,
+                        Success = false,
+                        ErrorMessage = "无法获取分辨率",
+                        TotalTime = DateTime.Now - fileStartTime,
+                        PixelFormat = ""
+                    };
+                    MarkProcessed(failResult);
+                    return failResult;
+                }
+
+                SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
+
+                var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo);
+                var encodeResult = await PerformFinalEncodeAsync(workingInputPath, outputPath, config, encInfo, searchResult);
+
+                double ssim = 0;
+                QualityMetrics? metrics = null;
+
+                if (encodeResult.Success)
+                {
+                    string normalizedInput = GetNormalizedPathForCache(workingInputPath);
+                    string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+                    int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+                    string aomParams = config.GetEffectiveAomParams();
+                    bool jpeg = IsJpeg(workingInputPath);
+                    int tileCols = encInfo.TileCols;
+                    int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+
+                    string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth);
+                    if (_metricsCache.TryGetValue(cacheKey, out QualityMetrics? cachedMetrics))
+                    {
+                        metrics = cachedMetrics;
+                        Logger.Log($"最终指标复用缓存: {name} CRF={encodeResult.Crf} VMAF={metrics.VMAF:F2}");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"多指标计算异常 [{name}]: {ex.Message}");
+                        }
+
+                        if (metrics != null)
+                        {
+                            _metricsCache[cacheKey] = metrics;
+                            Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
+                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                        }
+                        else
+                        {
+                            if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                            {
+                                ssim = cachedSsim;
+                                Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
+                            }
+                            else
+                            {
+                                ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
+                                if (ssim >= 0)
+                                    _ssimCache[cacheKey] = ssim;
+                            }
+                        }
                     }
 
                     if (metrics != null)
                     {
-                        // 将计算结果写入缓存
-                        _metricsCache[cacheKey] = metrics;
-                        Logger.Log($"多指标 [{name}] CRF={encodeResult.Crf}: " +
-                                   $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                   $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
-                    }
-                    else
-                    {
-                        // 多指标失败，回退到旧版 SSIM 计算
-                        if (_ssimCache.TryGetValue(cacheKey, out double cachedSsim) && cachedSsim >= 0)
-                        {
-                            ssim = cachedSsim;
-                            Logger.Log($"最终 SSIM 复用缓存: {name} CRF={encodeResult.Crf} SSIM={cachedSsim:F4}");
-                        }
-                        else
-                        {
-                            ssim = await CalcSSIMAsync(inputPath, outputPath, encodeResult.ActualPixFmt);
-                            if (ssim >= 0)
-                                _ssimCache[cacheKey] = ssim;
-                        }
+                        ssim = metrics.SSIM;
+                        _ssimCache[cacheKey] = ssim;
                     }
                 }
 
-                // 如果 metrics 仍然为 null（缓存未命中且 VMAF 失败，但可能从旧版 SSIM 获得了值），则继续后续处理
-                // 注：原有的 _ssimCache 更新逻辑在 metrics 成功时也会执行，这里保留
-                if (metrics != null)
+                var result = new EncodeResult
                 {
-                    ssim = metrics.SSIM;
-                    // 同时将 SSIM 存入旧版缓存（保持兼容）
-                    _ssimCache[cacheKey] = ssim;
+                    Index = index,
+                    FileName = outputFileName,
+                    OriginalFileName = name,
+                    OriginalSize = encodeResult.Success ? new FileInfo(inputPath).Length : 0,
+                    OutputSize = encodeResult.Success ? new FileInfo(outputPath).Length : 0,
+                    UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
+                    FinalSSIM = ssim,
+                    EncodeTime = encodeResult.EncodeTime,
+                    SearchTime = searchResult.SearchTime,
+                    TotalTime = DateTime.Now - fileStartTime,
+                    Retries = encodeResult.Retries,
+                    Success = encodeResult.Success,
+                    ErrorMessage = encodeResult.FailReason,
+                    Skipped = false,
+                    PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
+                    SourcePixelFormat = encInfo.SourcePixFmt,
+                    Mode = config.AutoSource ? "自适应" : "手动",
+                    IsSafeMode = encodeResult.UseSafeMode,
+                    AomParamsUsed = encodeResult.ActualAom ?? "",
+                    CacheReused = encodeResult.FromCache,
+                    CommandLine = encodeResult.FinalCommand ?? "",
+
+                    FinalVMAF = metrics?.VMAF,
+                    FinalPSNR_Y = metrics?.PSNR_Y,
+                    FinalMSSSIM = metrics?.MS_SSIM,
+                    FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
+                };
+
+                MarkProcessed(result);
+                return result;
+            }
+            finally
+            {
+                if (wasScaled && !string.IsNullOrEmpty(scaledTempFile))
+                {
+                    try { File.Delete(scaledTempFile); } catch { }
                 }
             }
-
-            var result = new EncodeResult
-            {
-                Index = index,
-                FileName = outputFileName,
-                OriginalFileName = name,
-                OriginalSize = encodeResult.Success ? new FileInfo(inputPath).Length : 0,
-                OutputSize = encodeResult.Success ? new FileInfo(outputPath).Length : 0,
-                UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
-                FinalSSIM = ssim,
-                EncodeTime = encodeResult.EncodeTime,
-                SearchTime = searchResult.SearchTime,
-                TotalTime = DateTime.Now - fileStartTime,
-                Retries = encodeResult.Retries,
-                Success = encodeResult.Success,
-                ErrorMessage = encodeResult.FailReason,
-                Skipped = false,
-                PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
-                SourcePixelFormat = encInfo.SourcePixFmt,
-                Mode = config.AutoSource ? "自适应" : "手动",
-                IsSafeMode = encodeResult.UseSafeMode,
-                AomParamsUsed = encodeResult.ActualAom ?? "",
-                CacheReused = encodeResult.FromCache,
-                CommandLine = encodeResult.FinalCommand ?? "",
-
-                // ★ 填充新指标
-                FinalVMAF = metrics?.VMAF,
-                FinalPSNR_Y = metrics?.PSNR_Y,
-                FinalMSSSIM = metrics?.MS_SSIM,
-                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
-            };
-
-            MarkProcessed(result);
-            return result;
         }
 
         // ==================== 辅助数据类 ====================
