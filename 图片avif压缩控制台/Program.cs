@@ -2740,8 +2740,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(
     Func<int, Task<double>> getSSIM, int low, int high,
     double target, string name, CancellationToken token,
-    // 新增参数：用于获取原始 metrics 显示
-    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
+    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
+    string inputPath)   // ★ 新增完整路径参数
         {
             int best = low;
             bool found = false;
@@ -2761,8 +2761,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 anySuccess = true;
 
-                // ★ 从缓存获取原始 metrics 用于显示（通常直接命中 _metricsCache）
-                var m = await GetOrComputeMetrics(name, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                // ★ 使用完整路径获取原始指标，确保与编码/缓存使用的键一致
+                var m = await GetOrComputeMetrics(inputPath, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
                 string display = m != null
                     ? $"VMAF={m.VMAF:F1}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}"
                     : $"分数={s:F4}";
@@ -2809,14 +2809,14 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
         {
             string name = Path.GetFileName(input);
-            double target = cfg.TargetSSIM + SSIMMargin;   // 目标值仍然沿用 TargetSSIM（现在可以是通用质量目标）
+            double target = cfg.TargetSSIM + SSIMMargin;
             Logger.CRF($"[{name}] 二分搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(
                 searchCts.Token, _globalCts?.Token ?? default).Token;
 
-            // ★ 统一的评分工厂，使用多指标
+            // 统一的评分工厂，使用多指标
             Func<int, Task<double>> getScore = async crf =>
             {
                 for (int i = 0; i < 3; i++)
@@ -2830,10 +2830,9 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     }
                     if (i < 2) Logger.Log($"指标获取失败，重试 ({i + 1}/2): {name} CRF={crf}");
                 }
-                return -1;   // 全部失败
+                return -1;
             };
 
-            // 以下逻辑与原 BinarySearchCRFAsync 完全一致，只是把 getSSIM 换成了 getScore
             try
             {
                 // 1. 低端边界
@@ -2877,8 +2876,11 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     return (high, false, false);
                 }
 
-                // 3. 二分搜索
-                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(getScore, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg);
+                // 3. 二分搜索 ── ★ 传入完整路径 input，保证内部缓存命中
+                (int best, bool found, bool anySuccess) = await BinarySearchWithSkip(
+                    getScore, low, high, target, name, token,
+                    cfg, tileCols, pixFmt, jpeg, input);
+
                 if (!found && !anySuccess)
                     return (cfg.BaseCRF, true, false);
                 if (!found)
@@ -2887,7 +2889,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     return (best, false, true);
                 }
 
-                // ★ 获取最佳 CRF 的实际指标用于日志
+                // 获取最佳 CRF 的实际指标用于日志
                 QualityMetrics? bestMetrics = await GetOrComputeMetrics(input, best, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
                 if (bestMetrics != null)
                 {
