@@ -3195,12 +3195,15 @@ PerformSecantIteration(
                 if (low < 0)
                     return (cfg.BaseCRF, true, false);   // 边界探测完全失败
 
-                // 如果预探测推荐了更稳定的格式，则替换
+                // 如果预探测推荐了更稳定的格式，则切换格式并重建评分函数
                 string searchPixFmt = recommendedFmt ?? pixFmt;
+                Func<int, Task<double>> searchGetScore = getScore;
+                if (recommendedFmt != null)
+                    searchGetScore = BuildGetScoreFunc(input, tileCols, cfg, searchPixFmt, jpeg, name, token);
 
-                // Stage B: 精搜索
-                (int crf, bool failed, bool insufficient) = await PerformPreciseSearchAsync(
-                    input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, getScore, token);
+                // Stage B: 精搜索（调用公共核心）
+                var (crf, failed, insufficient) = await SearchCoreAsync(
+                    input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, searchGetScore, token);
 
                 if (!failed && !insufficient)
                     return (crf, false, false);
@@ -3340,12 +3343,21 @@ PerformSecantIteration(
         }
 
 
-        private async Task<(int crf, bool failed, bool insufficient)> PerformPreciseSearchAsync(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
-    string name, double target, int low, int high,
-    Func<int, Task<double>> getScore, CancellationToken token)
+        
+
+
+        /// <summary>
+        /// 搜索公共核心：在已知区间 [low, high] 内进行精搜索，包含边界验证、割线法、二分回退、最终指标输出。
+        /// 返回 (bestCrf, failed, insufficient)。
+        /// failed: 表示搜索过程本身失败（如无法计算评分），需上层回退。
+        /// insufficient: 表示最低 CRF 仍无法达标，目标无法实现。
+        /// </summary>
+        private async Task<(int crf, bool failed, bool insufficient)> SearchCoreAsync(
+            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+            string name, double target, int low, int high,
+            Func<int, Task<double>> getScore, CancellationToken token)
         {
-            // 高端探测
+            // 1. 高端边界探测
             double highScore = await getScore(high);
             if (highScore >= target)
             {
@@ -3355,7 +3367,7 @@ PerformSecantIteration(
             if (highScore < 0)
                 return (cfg.BaseCRF, true, false);
 
-            // 低端探测
+            // 2. 低端边界探测
             double lowScore = await getScore(low);
             if (lowScore < target)
             {
@@ -3363,9 +3375,11 @@ PerformSecantIteration(
                 return (low, false, true);
             }
 
-            // 割线法求解
+            // 3. 割线法求解
             (int bestCrf, double bestScore) = await SolveCrfBySecant(
                 getScore, low, high, lowScore, highScore, target, name, token, cfg, tileCols, pixFmt, jpeg);
+
+            // 4. 若割线法未收敛，回退二分搜索
             if (Math.Abs(bestScore - target) > 0.01)
             {
                 SafeWriteLine($"  [{name}] 割线未完全收敛，回退二分");
@@ -3373,7 +3387,7 @@ PerformSecantIteration(
                 bestCrf = bCrf;
             }
 
-            // 最终指标输出
+            // 5. 输出最终指标
             QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
             if (finalMetrics != null)
                 SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
@@ -3383,119 +3397,7 @@ PerformSecantIteration(
             return (bestCrf, false, false);
         }
 
-
-
-
-        private async Task<(int crf, bool searchFailed, bool qualityInsufficient)> BinarySearchCRFAsync(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
-        {
-            string name = Path.GetFileName(input);
-            double target = cfg.TargetSSIM + SSIMMargin;
-            Logger.CRF($"[{name}] 割线搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
-
-            using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
-            var token = CancellationTokenSource.CreateLinkedTokenSource(
-                searchCts.Token, _globalCts?.Token ?? default).Token;
-
-            // 创建评分函数（内部包含重试与降格，优先同格式降速再降级）
-            Func<int, Task<double>> getScore = async crf =>
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    // 1. 正常参数 + 原始格式
-                    QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                    if (m != null)
-                        return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-
-                    // 2. 若失败，先尝试降低 cpu‑used 但仍保持原格式
-                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                    if (m != null)
-                        return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-
-                    // 3. 仍失败，且 pixFmt 不是 yuv420p，降级到 yuv420p
-                    if (!pixFmt.StartsWith("yuv420p"))
-                    {
-                        Logger.Log($"指标获取失败 [{name}] CRF={crf}，尝试降级为 yuv420p");
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null)
-                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                    }
-
-                    if (i < 2) Logger.Log($"指标获取失败，重试 ({i + 1}/2): {name} CRF={crf}");
-                }
-                return -1;
-            };
-
-            try
-            {
-                // 1. 高端边界探测：从 MaxCRF 开始
-                int high = cfg.MaxCRF;
-                double highScore = await getScore(high);
-                if (highScore >= target)
-                {
-                    SafeWriteLine($"  [HIGH] [{name}] 最高 CRF({high}) 已达标，VMAF={highScore * 100:F1}");
-                    return (high, false, false);
-                }
-                if (highScore < 0)
-                {
-                    SafeWriteLine($"  [{name}] [WARN] 高端边界探测失败，回退用 BaseCRF");
-                    return (cfg.BaseCRF, true, false);
-                }
-
-                // 2. 低端边界探测：从 MinCRF 开始
-                int low = await FindLowBoundWithRetry(getScore, cfg.MinCRF, high, name, token);
-                if (low < 0)
-                {
-                    SafeWriteLine($"  [{name}] [WARN] 低端边界探测失败，回退用 BaseCRF");
-                    return (cfg.BaseCRF, true, false);
-                }
-                double lowScore = await getScore(low);
-                if (lowScore < target)
-                {
-                    SafeWriteLine($"  [{name}] [LOW] 最低可用 CRF({low}) VMAF={lowScore * 100:F1} 仍不达标，无法达到目标");
-                    return (low, false, true);
-                }
-
-                // 3. 割线法求解
-                int bestCrf; double bestScore;
-                (bestCrf, bestScore) = await SolveCrfBySecant(
-                    getScore, low, high, lowScore, highScore, target,
-                    name, token, cfg, tileCols, pixFmt, jpeg);
-
-                // 4. 若割线法未收敛，回退二分搜索
-                if (Math.Abs(bestScore - target) > 0.01)
-                {
-                    SafeWriteLine($"  [{name}]割线法未完全收敛，回退二分搜索");
-                    var (bCrf, _, _) = await BinarySearchWithSkip(
-                        getScore, low, high, target, name, token,
-                        cfg, tileCols, pixFmt, jpeg, input);
-                    bestCrf = bCrf;
-                }
-
-                // 输出最终结果
-                QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                if (finalMetrics != null)
-                {
-                    SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | " +
-                                  $"VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} " +
-                                  $"PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
-                }
-                else
-                {
-                    SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf}");
-                }
-
-                return (bestCrf, false, false);
-            }
-            catch (OperationCanceledException)
-            {
-                SafeWriteLine($" [{name}] [WARN] 搜索超时/取消，回退用 BaseCRF ({cfg.BaseCRF})");
-                Logger.Log($"搜索超时/取消: {name}");
-                return (cfg.BaseCRF, true, false);
-            }
-        }
+        
 
 
 
