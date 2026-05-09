@@ -2905,28 +2905,27 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 失败返回 -1。
         /// </summary>
         private async Task<double> ProxyEvaluateAsync(string input, int crf,
-            int tileCols, PresetConfig cfg, bool jpeg, string pixFmt)
+    int tileCols, PresetConfig cfg, bool jpeg, string pixFmt)
         {
-            // 构建轻量配置（搜索时不使用复杂 aom‑params，速度优先）
+            // Proxy 始终使用 yuv420p + cpu-used 6 + 最小稳定参数
             var proxyCfg = new PresetConfig
             {
                 Encoder = cfg.Encoder,
                 BaseCRF = crf,
-                FinalCpuUsed = 8,               // 极快
-                SearchCpuUsed = 8,
-                PixelFormat = pixFmt,
+                FinalCpuUsed = 6,                           // ← 从 8 降到 6
+                SearchCpuUsed = 6,
+                PixelFormat = "yuv420p",                    // ← 强制 yuv420p，避免 yuv444p 失败
                 Lossless = false,
-                AomParams = "",                // 去掉复杂参数
+                AomParams = "aq-mode=0:enable-cdef=0",     // ← 最小化但保证稳定
                 MaxJobs = cfg.MaxJobs,
                 BitDepth = cfg.BitDepth
             };
 
-            // 用临时输出文件
             string tmpOutput = Path.Combine(_outputDir, $"_proxy_{Guid.NewGuid():N}.avif");
             try
             {
                 var encResult = await EncodeToFileExAsync(input, tmpOutput, crf,
-                    tileCols, proxyCfg.FinalCpuUsed, proxyCfg, jpeg, pixFmt,
+                    tileCols, proxyCfg.FinalCpuUsed, proxyCfg, jpeg, "yuv420p",   // ← 显式传 yuv420p
                     isTrueLossless: false, timeoutMinutes: cfg.SearchEncodeTimeoutMinutes,
                     allowParamDegrade: false);
 
@@ -2957,21 +2956,29 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             var token = CancellationTokenSource.CreateLinkedTokenSource(
                 searchCts.Token, _globalCts?.Token ?? default).Token;
 
-            // 真实评分工厂（同前）
+            // 真实评分工厂（优化回退链：同格式降速 → 降级 yuv420p）
             Func<int, Task<double>> getScore = async crf =>
             {
                 for (int i = 0; i < 3; i++)
                 {
                     token.ThrowIfCancellationRequested();
+
+                    // 1. 正常参数 + 原始格式
                     QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
                     if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
 
+                    // 2. 降低 cpu‑used，但仍保持原格式（提升稳定性）
+                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
+                    if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+
+                    // 3. 仍失败且当前不是 yuv420p，降级到 yuv420p
                     if (!pixFmt.StartsWith("yuv420p"))
                     {
                         Logger.Log($"[{name}] 真实指标降级 yuv420p CRF={crf}");
                         m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
                         if (m != null) return GetSearchScore(m, cfg.MetricMode ?? "ssim");
                     }
+
                     if (i < 2) Logger.Log($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
                 }
                 return -1;
@@ -2981,7 +2988,6 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 // ───── Stage A：Proxy 粗定位 ─────
                 int low = cfg.MinCRF, high = cfg.MaxCRF;
-                
 
                 // 只用两个点探测区间，降低 proxy 开销
                 int proxyLow = Math.Max(low, 10);
@@ -2992,7 +2998,6 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 if (plow >= 0 && phigh >= 0)
                 {
-
                     SafeWriteLine($"  [{name}] Proxy: CRF={proxyLow} -> ≈{plow * 100:F1}, CRF={proxyHigh} -> ≈{phigh * 100:F1}");
 
                     if (plow < target)
@@ -3090,18 +3095,24 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             var token = CancellationTokenSource.CreateLinkedTokenSource(
                 searchCts.Token, _globalCts?.Token ?? default).Token;
 
-            // 创建评分函数（内部包含重试与降格）
+            // 创建评分函数（内部包含重试与降格，优先同格式降速再降级）
             Func<int, Task<double>> getScore = async crf =>
             {
                 for (int i = 0; i < 3; i++)
                 {
                     token.ThrowIfCancellationRequested();
-                    // 先尝试当前格式
+
+                    // 1. 正常参数 + 原始格式
                     QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
                     if (m != null)
                         return GetSearchScore(m, cfg.MetricMode ?? "ssim");
 
-                    // 若失败且 pixFmt 不是 yuv420p，尝试降级到 yuv420p
+                    // 2. 若失败，先尝试降低 cpu‑used 但仍保持原格式
+                    m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
+                    if (m != null)
+                        return GetSearchScore(m, cfg.MetricMode ?? "ssim");
+
+                    // 3. 仍失败，且 pixFmt 不是 yuv420p，降级到 yuv420p
                     if (!pixFmt.StartsWith("yuv420p"))
                     {
                         Logger.Log($"指标获取失败 [{name}] CRF={crf}，尝试降级为 yuv420p");
