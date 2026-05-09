@@ -2655,16 +2655,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string normalizedInput = GetNormalizedPathForCache(input);
             string effectiveAom = cfg.GetEffectiveAomParams();
 
-            // ★ 获取当前输入图像的分辨率
             var (metricsW, metricsH) = await GetResolutionAsync(input);
-
-            // 使用与 SSIM 缓存一致的键，确保后续可以复用
             string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH);
 
             if (_metricsCache.TryGetValue(key, out QualityMetrics? cached))
                 return cached;
 
-            // 防止重复计算
             var newTask = new TaskCompletionSource<QualityMetrics?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var task = _metricsTasks.GetOrAdd(key, newTask.Task);
             bool isOwner = task == newTask.Task;
@@ -2677,7 +2673,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             try
             {
-                // 控制并发 ffmpeg 调用
                 if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
                     _logger.LogInfo($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
@@ -2687,7 +2682,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 try
                 {
-                    // 生成临时编码文件
                     string tmp = Path.Combine(_outputDir, $"_p_{Guid.NewGuid():N}.avif");
                     try
                     {
@@ -2706,8 +2700,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         {
                             _metricsCache[key] = metrics;
                             _logger.LogInfo($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
-                                       $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                       $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                                           $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                           $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                         }
                         newTask.SetResult(metrics);
                         return metrics;
@@ -2724,8 +2718,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"GetOrComputeMetrics 异常: {ex.Message}");
-                newTask.TrySetResult(null);
+                _logger.LogInfo($"GetOrComputeMetrics 意外异常: [{Path.GetFileName(input)}] CRF={crf} - {ex.Message}");
+                // 将异常传播给所有等待者，避免被静默吞掉
+                newTask.TrySetException(ex);
                 return null;
             }
             finally
@@ -2738,78 +2733,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
-        // ========== 修复后的 GetOrComputeSSIM（信号量超时） ==========
-        private async Task<double> GetOrComputeSSIM(string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg, bool jpeg, string pixFmt)
-        {
-            if (cfg.Lossless) return 1.0;
-
-            int actualDepth = pixFmt.Contains("10le") ? 10 : 8;
-            string normalizedInput = GetNormalizedPathForCache(input);
-            string effectiveAom = cfg.GetEffectiveAomParams();
-
-            // ★ 使用统一缓存键生成方法
-            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth);
-
-            if (_ssimCache.TryGetValue(key, out double cached))
-                return cached;
-
-            var newTask = new TaskCompletionSource<double>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var task = _ssimTasks.GetOrAdd(key, newTask.Task);
-            bool isOwner = task == newTask.Task;
-
-            if (!isOwner)
-            {
-                try { return await task.WaitAsync(TimeSpan.FromMinutes(30)); }
-                catch { return -1; }
-            }
-
-            try
-            {
-                if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
-                {
-                    double fail = -1;
-                    newTask.SetResult(fail);
-                    return fail;
-                }
-
-                try
-                {
-                    string tmp = Path.Combine(_outputDir, $"_p_{Guid.NewGuid():N}.avif");
-                    try
-                    {
-                        int searchCpu = Math.Min(cpuUsed + 2, 8);
-                        (bool ok, TimeSpan _, int retries, string error, bool _, string? _, string? _) =
-                            await EncodeToFileExAsync(input, tmp, crf, tileCols, searchCpu, cfg, jpeg, pixFmt, false, cfg.SearchEncodeTimeoutMinutes, allowParamDegrade: true);
-
-                        if (!ok || !File.Exists(tmp) || new FileInfo(tmp).Length < 100)
-                        {
-                            double fail = -1;
-                            newTask.SetResult(fail);
-                            return fail;
-                        }
-
-                        double s = await SSIMDirect(input, tmp, pixFmt);
-                        if (s >= 0)
-                            _ssimCache[key] = s;
-                        newTask.SetResult(s);
-                        return s;
-                    }
-                    finally { if (File.Exists(tmp)) File.Delete(tmp); }
-                }
-                finally { _ssimConcurrency.Release(); }
-            }
-            catch (Exception)
-            {
-                double fail = -1;
-                newTask.TrySetResult(fail);
-                return fail;
-            }
-            finally
-            {
-                if (isOwner)
-                    _ssimTasks.TryRemove(key, out _);
-            }
-        }
+        
 
         private async Task<int> FindLowBoundWithRetry(
         Func<int, Task<double>> getSSIM, int minCRF, int maxCRF,
@@ -2826,19 +2750,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         }
 
 
-        private async Task<int> FindHighBoundWithRetry(
-        Func<int, Task<double>> getSSIM, int low, int maxCRF,
-        string name, CancellationToken token)
-        {
-            for (int i = maxCRF; i >= low && maxCRF - i < 5; i--)  // ★ 由 3 改为 5
-            {
-                token.ThrowIfCancellationRequested();
-                double s = await getSSIM(i);
-                if (s >= 0) return i;
-            }
-            SafeWriteLine($"  [{name}] [FAIL] 高端 SSIM 连续失败");
-            return -1;
-        }
+
 
 
         private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(
