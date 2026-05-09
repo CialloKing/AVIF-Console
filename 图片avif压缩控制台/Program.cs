@@ -2885,82 +2885,97 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// <param name="high">已知 infeasible 的最大 CRF（不满足 target）</param>
         /// <param name="lowScore">low 处的分数</param>
         /// <param name="highScore">high 处的分数</param>
+        /// <summary>
+        /// 使用 Brent 方法（Dekker-Brent）在整数 CRF 域上搜索满足质量目标的最佳 CRF。
+        /// 解决原方法中区间顺序颠倒导致 Math.Clamp 异常的问题。
+        /// </summary>
+        /// <summary>
+        /// 使用 Brent 方法（Dekker-Brent）在整数 CRF 域上搜索满足质量目标的最佳 CRF。
+        /// 修复：避免因不可行侧函数值接近零而过早退出，现在以区间宽度为主要收敛判据，
+        ///       保证能够探索到满足目标的最大可行 CRF。
+        /// </summary>
+        /// <summary>
+        /// 使用 Brent 方法搜索满足质量目标的最大可行 CRF。
+        /// 优化点：
+        /// 1. 移除所有基于 |fbVal| < tol 或 bestScore 接近 target 的提前退出。
+        /// 2. 仅当区间内无整数点时（xMax - xMin <= 1）或达到最大迭代次数时退出。
+        /// 3. 保证不会漏测区间宽度为 2 时的唯一中间点。
+        /// </summary>
         private async Task<(int crf, double score)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
             double target, string name, CancellationToken token,
             PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
-            // 将分数转换为 f(crf) = score - target，我们要找 f 的根（同时最大化可行 CRF）
             double fa = lowScore - target;
             double fb = highScore - target;
-            int a = low, b = high;
 
-            // Brent 要求 |f(b)| <= |f(a)|，故若不符则交换
-            if (Math.Abs(fa) < Math.Abs(fb))
+            // 保证物理边界 left < right
+            int left = low, right = high;
+            double fLeft = fa, fRight = fb;
+            if (left > right) { Swap(ref left, ref right); Swap(ref fLeft, ref fRight); }
+
+            double a = left, faVal = fLeft;
+            double b = right, fbVal = fRight;
+
+            // 维持 |f(b)| <= |f(a)|
+            if (Math.Abs(faVal) < Math.Abs(fbVal))
             {
                 Swap(ref a, ref b);
-                Swap(ref fa, ref fb);
+                Swap(ref faVal, ref fbVal);
             }
 
-            int c = a;           // 用于插值的历史点
-            double fc = fa;      // c 点的 f 值
-            int? d = null;       // 上一次的 b（用于判断步长）
-            double? fd = null;
-            bool mflag = true;   // 上一步是否为二分
+            double c = a, fc = faVal;
+            double? d = null;
+            bool mflag = true;
 
-            // 记录最佳可行解（满足 target 的最大 CRF）
-            int bestCRF = (fa >= 0) ? a : b;
-            double bestScore = (fa >= 0) ? lowScore : highScore;
-            if (fb >= 0 && b > bestCRF) { bestCRF = b; bestScore = highScore; }
+            // 记录最佳可行解（满足 score >= target 且 CRF 尽可能大）
+            int bestCRF = left;
+            double bestScore = lowScore;
+            if (fb >= 0 && high > bestCRF) { bestCRF = high; bestScore = highScore; }
 
-            const double tol = 0.005;       // 收敛容差
-            const int maxIter = 20;         // 安全上限
+            const double tol = 0.005;    // 容差，仅用于 Brent 内部的步长判断
+            const int maxIter = 25;      // 最大迭代次数
 
             for (int iter = 0; iter < maxIter; iter++)
             {
                 token.ThrowIfCancellationRequested();
 
-                // 退出条件：区间宽度为 0 或 f(b) 已足够接近 0
-                if (a == b || Math.Abs(fb) < tol || Math.Abs(bestScore - target) < tol)
+                int xMin = Math.Min((int)a, (int)b);
+                int xMax = Math.Max((int)a, (int)b);
+
+                // ─────────── 唯一提前退出条件：区间内没有可探索的整数点 ───────────
+                // 当区间退化或端点相邻（xMax - xMin <= 1）时终止，因为已无未测整数。
+                if (xMax - xMin <= 1)
                     break;
 
-                double s = 0;               // 预测的连续 CRF
+                // ─────────── Brent 插值 / 二分逻辑 ───────────
+                double s = 0;
                 bool useBisection = false;
 
                 // 尝试逆二次插值或割线法
-                if (fa != fc && fb != fc)
+                if (faVal != fc && fbVal != fc)
                 {
-                    // 逆二次插值
-                    s = a * fb * fc / ((fa - fb) * (fa - fc))
-                        + b * fa * fc / ((fb - fa) * (fb - fc))
-                        + c * fa * fb / ((fc - fa) * (fc - fb));
+                    s = a * fbVal * fc / ((faVal - fbVal) * (faVal - fc))
+                      + b * faVal * fc / ((fbVal - faVal) * (fbVal - fc))
+                      + c * faVal * fbVal / ((fc - faVal) * (fc - fbVal));
                 }
                 else
                 {
-                    // 割线法
-                    double delta = fb - fa;
+                    double delta = fbVal - faVal;
                     if (Math.Abs(delta) < 1e-8)
-                    {
                         useBisection = true;
-                    }
                     else
-                    {
-                        s = b - fb * (b - a) / delta;
-                    }
+                        s = b - fbVal * (b - a) / delta;
                 }
 
-                // ---- Brent 条件：检查是否必须使用二分 ----
+                // Brent 条件：判断是否必须使用二分
                 if (!useBisection)
                 {
-                    // 若预测点超出当前区间，强制二分
-                    if (s <= a || s >= b)
-                    {
+                    if (s <= xMin || s >= xMax)
                         useBisection = true;
-                    }
                     else if (mflag)
                     {
-                        // 上一步为二分，要求本次步长足够大
                         if (Math.Abs(s - b) >= Math.Abs(b - c) / 2.0)
                             useBisection = true;
                         if (Math.Abs(b - c) < tol)
@@ -2968,7 +2983,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     }
                     else
                     {
-                        // 上一步为插值，步长条件
                         if (d.HasValue && Math.Abs(s - b) >= Math.Abs(c - d.Value) / 2.0)
                             useBisection = true;
                         if (d.HasValue && Math.Abs(c - d.Value) < tol)
@@ -2978,7 +2992,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 if (useBisection)
                 {
-                    s = (a + b) / 2.0;          // 二分点
+                    s = (xMin + xMax) / 2.0;
                     mflag = true;
                 }
                 else
@@ -2986,33 +3000,36 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     mflag = false;
                 }
 
-                // 将连续预测值映射到整数 CRF，并防止原地踏步
+                // 映射到整数 CRF，并确保选择未测过的内点
                 int crfEval = (int)Math.Round(s);
-                crfEval = Math.Clamp(crfEval, a, b);
-                if (crfEval == a || crfEval == b)
+                crfEval = Math.Clamp(crfEval, xMin, xMax);
+                if (crfEval == xMin || crfEval == xMax)
                 {
-                    if (a < b - 1)
-                        crfEval = (crfEval == a) ? a + 1 : b - 1;
+                    if (xMax - xMin >= 2)
+                    {
+                        // 强制选用区间内中间点（避免重复评估端点）
+                        crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
+                    }
                     else
-                        break;   // 区间已无法缩小
-                    mflag = true;   // 强制视为二分，以免后续步长判断出错
+                    {
+                        // 理论上不会进入这里，因退出条件已保证
+                        break;
+                    }
+                    mflag = true;
                 }
 
-                // 评估该 CRF 点
+                // 评估该 CRF
                 double score = await getScore(crfEval);
-                if (score < 0)   // 评估失败
+                if (score < 0)
                 {
                     _logger.LogInfo($"  [{name}] Brent 评估失败 CRF={crfEval}，回退二分收缩区间");
-                    // 无法获得函数值，谨慎地将区间向中间缩小
-                    if (crfEval > a) b = crfEval;
-                    else a = crfEval;
-                    // 重新计算 fb 或 fa？由于无法计算，直接 break 返回当前最佳
+                    if (crfEval > xMin) right = crfEval;
+                    else left = crfEval;
                     break;
                 }
 
                 double fVal = score - target;
 
-                // 日志输出（保持与原有搜索一致的风格）
                 string display = cfg.MetricMode?.ToLower() switch
                 {
                     "vmaf" => $"VMAF={score * 100:F1}",
@@ -3027,36 +3044,44 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     bestScore = score;
                 }
 
-                // 更新 d, c, fc
+                // 更新 d, c, fc（保持三点信息）
                 d = b;
                 c = b;
-                fc = fb;
+                fc = fbVal;
 
-                // 更新区间 [a, b] 保证 f(a) 与 f(b) 异号
-                if (fa * fVal < 0)
+                // 更新区间，保持 f(a) 与 f(b) 异号
+                if (faVal * fVal < 0)
                 {
-                    b = crfEval;
-                    fb = fVal;
+                    b = crfEval; fbVal = fVal;
                 }
                 else
                 {
-                    a = crfEval;
-                    fa = fVal;
+                    a = crfEval; faVal = fVal;
                 }
 
-                // 维护条件：|f(b)| <= |f(a)|
-                if (Math.Abs(fa) < Math.Abs(fb))
+                // 维持 |f(b)| <= |f(a)|
+                if (Math.Abs(faVal) < Math.Abs(fbVal))
                 {
                     Swap(ref a, ref b);
-                    Swap(ref fa, ref fb);
+                    Swap(ref faVal, ref fbVal);
                 }
+
+                // 同步物理边界（维护直观的 left/right）
+                left = Math.Min((int)a, (int)b);
+                right = Math.Max((int)a, (int)b);
             }
 
             return (bestCRF, bestScore);
         }
 
         // 辅助交换方法
-        private static void Swap<T>(ref T left, ref T right) => (left, right) = (right, left);
+        private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
+
+
+
+
+
 
 
         /// <summary>
