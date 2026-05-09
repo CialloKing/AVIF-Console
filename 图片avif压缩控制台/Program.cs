@@ -446,7 +446,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
 
             // 生成唯一临时 JSON 文件
             string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
-                                      .Replace('\\', '/');
+                                          .Replace('\\', '/');
 
             try
             {
@@ -490,6 +490,8 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 catch (OperationCanceledException)
                 {
                     if (!p.HasExited) try { p.Kill(); } catch { }
+                    // ★ 修复：等待异步读取结束，避免未观察异常
+                    try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                     Logger.Log($"ComputeAllMetrics 超时: {Path.GetFileName(refPath)}");
                     return null;
                 }
