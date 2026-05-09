@@ -419,7 +419,86 @@ namespace AvifEncoder
 
         private readonly IFileSystem _fs;
 
+        // ── 第31步新增字段 ──
+        private HashSet<int> _knownBadCrfs = new HashSet<int>();
+        private Dictionary<int, int> _crfFailCount = new Dictionary<int, int>();
+        private const int HardFailThreshold = 2;
+        private const int AvoidRadius = 2;
 
+
+
+
+        /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
+        private void ResetFailTracking()
+        {
+            _knownBadCrfs.Clear();
+            _crfFailCount.Clear();
+        }
+
+        /// <summary> 检查 CRF 是否在黑名单或邻域禁区中 </summary>
+        private bool IsCrfBlacklisted(int crf)
+        {
+            for (int offset = -AvoidRadius; offset <= AvoidRadius; offset++)
+            {
+                if (_knownBadCrfs.Contains(crf + offset))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 在区间 [xMin, xMax] 内寻找一个不在黑名单中的安全 CRF，
+        /// 从中心点向两侧扩展查找。
+        /// </summary>
+        private int FindSafeCrfInInterval(int center, int xMin, int xMax)
+        {
+            for (int offset = 0; offset <= xMax - xMin; offset++)
+            {
+                int tryCrf = center + offset;
+                if (tryCrf >= xMin && tryCrf <= xMax && !IsCrfBlacklisted(tryCrf))
+                    return tryCrf;
+
+                tryCrf = center - offset;
+                if (tryCrf >= xMin && tryCrf <= xMax && !IsCrfBlacklisted(tryCrf))
+                    return tryCrf;
+            }
+            return -1; // 整个区间都被黑名单覆盖
+        }
+
+        /// <summary>
+        /// 记录一次编码失败。同一 CRF 累计失败次数达到阈值后，标记为硬失败并加入黑名单。
+        /// </summary>
+        private void RecordFailedAttempt(int crf)
+        {
+            _crfFailCount.TryGetValue(crf, out int count);
+            count++;
+            _crfFailCount[crf] = count;
+
+            if (count >= HardFailThreshold)
+            {
+                _knownBadCrfs.Add(crf);
+            }
+        }
+
+        /// <summary>
+        /// 安全的 CRF 评估封装：自动跳过黑名单，记录失败，失败时返回正无穷。
+        /// </summary>
+        private async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name)
+        {
+            if (IsCrfBlacklisted(crf))
+                return double.PositiveInfinity;
+
+            double score = await getScore(crf);
+            if (score < 0)
+            {
+                RecordFailedAttempt(crf);
+                return double.PositiveInfinity;
+            }
+
+            // 成功后清除该 CRF 的失败计数（避免误判）
+            _crfFailCount.Remove(crf);
+            return score;
+        }
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
@@ -2901,75 +2980,73 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 2. 仅当区间内无整数点时（xMax - xMin <= 1）或达到最大迭代次数时退出。
         /// 3. 保证不会漏测区间宽度为 2 时的唯一中间点。
         /// </summary>
+        /// <summary>
+        /// 增强版 Brent 搜索：集成硬失败黑名单、动态区间收缩与安全点搜索（第31步）
+        /// </summary>
         private async Task<(int crf, double score)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
             double target, string name, CancellationToken token,
             PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
+            // 重置本次搜索的失败记录
+            ResetFailTracking();
+
+            // 转换为双精度并保证物理区间
+            double a = low, b = high;
             double fa = lowScore - target;
             double fb = highScore - target;
 
-            // 保证物理边界 left < right
-            int left = low, right = high;
-            double fLeft = fa, fRight = fb;
-            if (left > right) { Swap(ref left, ref right); Swap(ref fLeft, ref fRight); }
+            if (a > b) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
 
-            double a = left, faVal = fLeft;
-            double b = right, fbVal = fRight;
-
-            // 维持 |f(b)| <= |f(a)|
-            if (Math.Abs(faVal) < Math.Abs(fbVal))
+            // 保持 |f(b)| <= |f(a)|
+            if (Math.Abs(fa) < Math.Abs(fb))
             {
                 Swap(ref a, ref b);
-                Swap(ref faVal, ref fbVal);
+                Swap(ref fa, ref fb);
             }
 
-            double c = a, fc = faVal;
+            double c = a, fc = fa;
             double? d = null;
             bool mflag = true;
 
-            // 记录最佳可行解（满足 score >= target 且 CRF 尽可能大）
-            int bestCRF = left;
+            int bestCRF = low;
             double bestScore = lowScore;
             if (fb >= 0 && high > bestCRF) { bestCRF = high; bestScore = highScore; }
 
-            const double tol = 0.005;    // 容差，仅用于 Brent 内部的步长判断
-            const int maxIter = 25;      // 最大迭代次数
+            const double tol = 0.005;
+            const int maxIter = 25;
 
             for (int iter = 0; iter < maxIter; iter++)
             {
                 token.ThrowIfCancellationRequested();
 
-                int xMin = Math.Min((int)a, (int)b);
-                int xMax = Math.Max((int)a, (int)b);
+                int xMin = (int)Math.Min(a, b);
+                int xMax = (int)Math.Max(a, b);
 
-                // ─────────── 唯一提前退出条件：区间内没有可探索的整数点 ───────────
-                // 当区间退化或端点相邻（xMax - xMin <= 1）时终止，因为已无未测整数。
-                if (xMax - xMin <= 1)
-                    break;
+                // ─── 唯一正常退出：区间内无未测整数点 ───
+                if (xMax - xMin <= 1) break;
 
-                // ─────────── Brent 插值 / 二分逻辑 ───────────
+                // ─── 预测下一个评估点（Brent 插值 / 二分） ───
                 double s = 0;
                 bool useBisection = false;
 
-                // 尝试逆二次插值或割线法
-                if (faVal != fc && fbVal != fc)
+                if (fa != fc && fb != fc)
                 {
-                    s = a * fbVal * fc / ((faVal - fbVal) * (faVal - fc))
-                      + b * faVal * fc / ((fbVal - faVal) * (fbVal - fc))
-                      + c * faVal * fbVal / ((fc - faVal) * (fc - fbVal));
+                    s = a * fb * fc / ((fa - fb) * (fa - fc))
+                      + b * fa * fc / ((fb - fa) * (fb - fc))
+                      + c * fa * fb / ((fc - fa) * (fc - fb));
                 }
                 else
                 {
-                    double delta = fbVal - faVal;
+                    double delta = fb - fa;
                     if (Math.Abs(delta) < 1e-8)
                         useBisection = true;
                     else
-                        s = b - fbVal * (b - a) / delta;
+                        s = b - fb * (b - a) / delta;
                 }
 
-                // Brent 条件：判断是否必须使用二分
+                // Brent 条件检查
                 if (!useBisection)
                 {
                     if (s <= xMin || s >= xMax)
@@ -3000,36 +3077,51 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     mflag = false;
                 }
 
-                // 映射到整数 CRF，并确保选择未测过的内点
                 int crfEval = (int)Math.Round(s);
                 crfEval = Math.Clamp(crfEval, xMin, xMax);
+
+                // ─── 强制使用未测的内点，避免重复评估端点 ───
                 if (crfEval == xMin || crfEval == xMax)
                 {
                     if (xMax - xMin >= 2)
-                    {
-                        // 强制选用区间内中间点（避免重复评估端点）
                         crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
-                    }
                     else
-                    {
-                        // 理论上不会进入这里，因退出条件已保证
-                        break;
-                    }
+                        break; // 理论上不会到达
                     mflag = true;
                 }
 
-                // 评估该 CRF
-                double score = await getScore(crfEval);
-                if (score < 0)
+                // ─── 安全点检查：若预测点已被黑名单覆盖，寻找替代 ───
+                if (IsCrfBlacklisted(crfEval))
                 {
-                    _logger.LogInfo($"  [{name}] Brent 评估失败 CRF={crfEval}，回退二分收缩区间");
-                    if (crfEval > xMin) right = crfEval;
-                    else left = crfEval;
-                    break;
+                    int safeCrf = FindSafeCrfInInterval(crfEval, xMin, xMax);
+                    if (safeCrf == -1)
+                    {
+                        // 整个区间已无安全点，按靠近哪侧收缩
+                        if (crfEval - xMin < xMax - crfEval)
+                            xMin = Math.Min(crfEval + AvoidRadius + 1, xMax);
+                        else
+                            xMax = Math.Max(crfEval - AvoidRadius - 1, xMin);
+                        continue;
+                    }
+                    crfEval = safeCrf;
+                }
+
+                // ─── 评估 CRF（带失败跟踪） ───
+                double score = await EvaluateCrfSafe(crfEval, getScore, name);
+
+                // 如果评估结果为不可行（正无穷），动态收缩区间
+                if (double.IsInfinity(score))
+                {
+                    if (crfEval - xMin <= xMax - crfEval)
+                        xMin = Math.Min(crfEval + 1, xMax);
+                    else
+                        xMax = Math.Max(crfEval - 1, xMin);
+                    continue;
                 }
 
                 double fVal = score - target;
 
+                // 日志
                 string display = cfg.MetricMode?.ToLower() switch
                 {
                     "vmaf" => $"VMAF={score * 100:F1}",
@@ -3044,31 +3136,25 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     bestScore = score;
                 }
 
-                // 更新 d, c, fc（保持三点信息）
+                // 更新 Brent 历史点
                 d = b;
-                c = b;
-                fc = fbVal;
+                c = b; fc = fb;
 
-                // 更新区间，保持 f(a) 与 f(b) 异号
-                if (faVal * fVal < 0)
+                if (fa * fVal < 0)
                 {
-                    b = crfEval; fbVal = fVal;
+                    b = crfEval; fb = fVal;
                 }
                 else
                 {
-                    a = crfEval; faVal = fVal;
+                    a = crfEval; fa = fVal;
                 }
 
                 // 维持 |f(b)| <= |f(a)|
-                if (Math.Abs(faVal) < Math.Abs(fbVal))
+                if (Math.Abs(fa) < Math.Abs(fb))
                 {
                     Swap(ref a, ref b);
-                    Swap(ref faVal, ref fbVal);
+                    Swap(ref fa, ref fb);
                 }
-
-                // 同步物理边界（维护直观的 left/right）
-                left = Math.Min((int)a, (int)b);
-                right = Math.Max((int)a, (int)b);
             }
 
             return (bestCRF, bestScore);
