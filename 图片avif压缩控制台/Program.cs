@@ -3309,16 +3309,7 @@ PerformSecantIteration(
 
 
 
-        private static string? FindExecutable(string name)
-        {
-            var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
-            foreach (var p in paths ?? Array.Empty<string>())
-            {
-                string full = Path.Combine(p, OperatingSystem.IsWindows() ? $"{name}.exe" : name);
-                if (File.Exists(full)) return full;
-            }
-            return null;
-        }
+
 
 
 
