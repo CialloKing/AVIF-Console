@@ -397,9 +397,9 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
-            // 生成唯一临时 JSON 文件，放在输出目录下，路径使用正斜杠
+            // 生成唯一临时 JSON 文件
             string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
-                                  .Replace('\\', '/');
+                                      .Replace('\\', '/');
 
             try
             {
@@ -410,11 +410,13 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=vmaf:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    // 注意：不再包含 name=vmaf
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=vmaf:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    // 注意：不再包含 name=vmaf
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
@@ -445,7 +447,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                     return null;
                 }
 
-                // 记录 stderr（总是记录，便于调试）
+                // 读取 stderr 完整内容（用于提取 VMAF 分数）
                 string stderr = await stderrTask;
                 if (!string.IsNullOrWhiteSpace(stderr))
                     Logger.Log($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
@@ -457,7 +459,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 }
 
                 // 读取 JSON
-                string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar); // 转回本地路径
+                string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
                 if (!File.Exists(physicalPath))
                 {
                     Logger.Log($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
@@ -465,7 +467,32 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
                 }
 
                 string json = await File.ReadAllTextAsync(physicalPath);
-                return ParseVmafJson(json);
+                QualityMetrics? metrics = ParseVmafJson(json);
+                if (metrics == null) return null;
+
+                // ★ 从 stderr 提取 VMAF 分数（新版 ffmpeg 不会将 vmaf 写入 JSON，而是打印到 stderr）
+                var vmafMatch = Regex.Match(stderr, @"VMAF score:\s*([0-9.]+)");
+                if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
+                        NumberStyles.Float, CultureInfo.InvariantCulture, out double vmafScore))
+                {
+                    metrics.VMAF = vmafScore;
+                }
+                else
+                {
+                    // 如果整个 stderr 都没找到，尝试备用模式（有些版本可能格式不同）
+                    vmafMatch = Regex.Match(stderr, @"vmaf\s*=\s*([0-9.]+)");
+                    if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
+                            NumberStyles.Float, CultureInfo.InvariantCulture, out vmafScore))
+                    {
+                        metrics.VMAF = vmafScore;
+                    }
+                    else
+                    {
+                        Logger.Log($"未从 stderr 提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
+                    }
+                }
+
+                return metrics;
             }
             catch (Exception ex)
             {
@@ -474,7 +501,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
             }
             finally
             {
-                // 清理临时文件
+                // 清理临时 JSON 文件
                 try
                 {
                     string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
@@ -3348,9 +3375,9 @@ AVIF 编码器 CLI -- 帮助手册
                 if (opts.ManualThreads.HasValue) config.MaxJobs = opts.ManualThreads.Value;
                 if (opts.CustomSSIM.HasValue)
                 {
-                    // 用户提供了 -q，根据当前 metricMode 转换原生值到内部 0‑1 目标
-                    string mode = opts.MetricMode ?? "mix";
-                    config.SetQualityTarget(opts.CustomSSIM.Value, mode);
+                    // ★ 修复：优先使用用户通过 --metric 指定的模式，否则使用当前配置（预设）的模式
+                    string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
+                    config.SetQualityTarget(opts.CustomSSIM.Value, effectiveMetric);
                 }
             }
 
