@@ -796,20 +796,39 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
 
             string crfInfo;
             if (_config.UseCRFSearch)
-            {
-                // 搜索模式：同时显示基础 CRF 和搜索范围
                 crfInfo = $"基础CRF: {_config.BaseCRF}, 搜索范围: {_config.MinCRF}-{_config.MaxCRF}";
-            }
             else
-            {
-                // 非搜索模式：仅显示使用的 CRF
                 crfInfo = $"CRF: {_config.BaseCRF}";
-            }
+
+            // 根据 MetricMode 动态生成标签和原生数值
+            string metricMode = (_config.MetricMode ?? "vmaf").ToUpper();
+            string targetDisplay = GetTargetDisplayString(_config.TargetSSIM, metricMode);
 
             SafeWriteLine($"编码器: {_config.Encoder}");
             SafeWriteLine($"同时调用ffmpeg编码数: {_maxFfmpegConcurrency}");
-            SafeWriteLine($"{crfInfo}  SSIM目标: {_config.TargetSSIM}  搜索: {_config.UseCRFSearch}  像素格式: {(_config.AutoSource ? "自适应" : (_config.PixelFormat ?? "动态"))}");
+            SafeWriteLine($"{crfInfo}  {metricMode}目标: {targetDisplay}  搜索: {_config.UseCRFSearch}  像素格式: {(_config.AutoSource ? "自适应" : (_config.PixelFormat ?? "动态"))}");
             SafeWriteLine($"文件名模板: {_config.OutputNameFormat}");
+        }
+
+        // 辅助方法：将内部 0~1 目标值转换为对应模式的原生显示字符串
+        private static string GetTargetDisplayString(double targetSSIM, string metricMode)
+        {
+            switch (metricMode.ToLower())
+            {
+                case "vmaf":
+                    return (targetSSIM * 100).ToString("F0"); // 0.91 -> 91
+                case "psnr":
+                    // PSNR 内部映射：TargetSSIM = (raw - 30) / 20，反推 raw = TargetSSIM * 20 + 30
+                    double rawPsnr = targetSSIM * 20 + 30;
+                    return rawPsnr.ToString("F1") + " dB";
+                case "ssim":
+                case "msssim":
+                    return targetSSIM.ToString("F4");
+                case "mix":
+                    return targetSSIM.ToString("F4");
+                default:
+                    return targetSSIM.ToString("F4");
+            }
         }
 
         /// <summary> 扫描输入目录，返回按文件大小降序排列的文件列表 </summary>
@@ -1518,7 +1537,11 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
 
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
-                SafeWriteLine($"  [SEARCH] [{name}] 开始 CRF 搜索 (目标 SSIM={config.TargetSSIM})，请耐心等待...");
+                // ★ 动态生成目标标签和原生数值
+                string metricModeLabel = (config.MetricMode ?? "vmaf").ToUpper();
+                string targetDisplay = GetTargetDisplayString(config.TargetSSIM, metricModeLabel);
+                SafeWriteLine($"  [SEARCH] [{name}] 开始 CRF 搜索 (目标 {metricModeLabel}={targetDisplay})，请耐心等待...");
+
                 try
                 {
                     var swSearch = Stopwatch.StartNew();
@@ -1573,7 +1596,7 @@ private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
 
         // ---------- 尝试目标格式列表搜索 ----------
         // ---------- 尝试目标格式列表搜索 ----------
-private async Task<(bool ok, int crf, string pixFmt)>
+        private async Task<(bool ok, int crf, string pixFmt)>
     TrySearchWithFormatAttempts(string inputPath, PresetConfig config, EncodingInfo encInfo,
                                 string actualPixFmt, string name)
 {
