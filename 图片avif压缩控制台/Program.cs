@@ -3559,15 +3559,12 @@ PerformSecantIteration(
             int high = globalMax;
             string? recommendedFmt = null;
 
-            // ……（三点采样、单调性判定、低端边界等原有逻辑保持不变）……
-
-            // ─── 目标格式稳定性预探测 ───
+            // ─── 1. 目标格式稳定性预探测（保持原有逻辑） ───
             if (!pixFmt.StartsWith("yuv420p"))
             {
                 int midForTest = (low + high) / 2;
                 string probeOutput = Path.Combine(_outputDir, $"_probe_{Guid.NewGuid():N}.avif");
 
-                // 获取图像宽度，计算合法 tile 列数
                 var (imgW, _) = await GetResolutionAsync(input);
                 int minLegalCols = GetMinLegalTileCols(imgW);
                 int probeTileCols = (imgW >= 256) ? Math.Max(2, minLegalCols) : 0;
@@ -3595,6 +3592,93 @@ PerformSecantIteration(
                 {
                     try { if (_fs.FileExists(probeOutput)) _fs.DeleteFile(probeOutput); } catch { }
                 }
+            }
+
+            // ─── 2. Proxy 三点采样与区间裁剪 ───
+            // 选取三个代表性的 CRF 点
+            int crfLow = globalMin;
+            int crfMid = (globalMin + globalMax) / 2;
+            int crfHigh = globalMax;
+
+            // 并行执行三个 Proxy 评估（容忍单个失败）
+            double scoreLow = -1, scoreMid = -1, scoreHigh = -1;
+            try
+            {
+                var taskLow = ProxyEvaluateAsync(input, crfLow, tileCols, cfg, jpeg, pixFmt);
+                var taskMid = ProxyEvaluateAsync(input, crfMid, tileCols, cfg, jpeg, pixFmt);
+                var taskHigh = ProxyEvaluateAsync(input, crfHigh, tileCols, cfg, jpeg, pixFmt);
+
+                await Task.WhenAll(taskLow, taskMid, taskHigh);
+
+                scoreLow = taskLow.Result;
+                scoreMid = taskMid.Result;
+                scoreHigh = taskHigh.Result;
+            }
+            catch
+            {
+                // 若并行等待异常，保持原区间不变
+                _logger.LogMetric("crf", $"[{name}] Proxy 并行评估异常，保持全区间 [{low}, {high}]");
+                return (low, high, recommendedFmt);
+            }
+
+            // 检查 Proxy 结果有效性
+            bool lowValid = scoreLow >= 0;
+            bool midValid = scoreMid >= 0;
+            bool highValid = scoreHigh >= 0;
+
+            if (!lowValid || !midValid || !highValid)
+            {
+                _logger.LogMetric("crf", $"[{name}] Proxy 部分节点评估失败 (low={lowValid}, mid={midValid}, high={highValid})，保持全区间 [{low}, {high}]");
+                return (low, high, recommendedFmt);
+            }
+
+            _logger.LogSearch($"[{name}] Proxy 分数: CRF={crfLow} → {scoreLow:F4} | CRF={crfMid} → {scoreMid:F4} | CRF={crfHigh} → {scoreHigh:F4}");
+
+            // 如果最高质量点仍不达标，则目标无法实现
+            if (scoreLow < target)
+            {
+                _logger.LogMetric("crf", $"[{name}] Proxy 最低 CRF={crfLow} 质量 {scoreLow:F4} < 目标 {target:F4}，目标无法达成");
+                return (-1, high, recommendedFmt);  // low = -1 表示质量不足
+            }
+
+            // 如果最差点已达标（理论上不会，因 MaxCRF 早停已处理），直接使用
+            if (scoreHigh >= target)
+            {
+                _logger.LogMetric("crf", $"[{name}] Proxy 最高 CRF={crfHigh} 已达目标，无需收缩");
+                return (low, high, recommendedFmt);
+            }
+
+            // 检查单调性：scoreLow >= scoreMid >= scoreHigh (CRF 越小质量越高)
+            if (scoreLow < scoreMid || scoreMid < scoreHigh)
+            {
+                _logger.LogMetric("crf", $"[{name}] Proxy 点非单调，保持全区间 [{low}, {high}]");
+                return (low, high, recommendedFmt);
+            }
+
+            // 安全收缩区间：在满足 low 达标、high 不达标的前提下，尽量缩小范围
+            if (scoreMid >= target)
+            {
+                // 中点达标 → 低点收缩到中点，高点保持 MaxCRF（仍不达标）
+                low = crfMid;
+                high = crfHigh;
+                SafeWriteLine($"  [{name}] Proxy 收缩区间: [{low}, {high}] (中点达标)");
+                _logger.LogSearch($"[{name}] Proxy 区间收缩至 [{low}, {high}]");
+            }
+            else // scoreMid < target
+            {
+                // 中点不达标 → 低点保持 MinCRF（达标），高点收缩到中点
+                low = crfLow;
+                high = crfMid;
+                SafeWriteLine($"  [{name}] Proxy 收缩区间: [{low}, {high}] (中点不达标)");
+                _logger.LogSearch($"[{name}] Proxy 区间收缩至 [{low}, {high}]");
+            }
+
+            // 确保区间至少有两个不同的整数点，否则保持原区间
+            if (high - low < 1)
+            {
+                low = globalMin;
+                high = globalMax;
+                _logger.LogMetric("crf", $"[{name}] Proxy 收缩后区间过窄，恢复全区间");
             }
 
             return (low, high, recommendedFmt);
