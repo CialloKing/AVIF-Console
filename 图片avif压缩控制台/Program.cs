@@ -1060,9 +1060,13 @@ namespace AvifEncoder
             switch (metricMode.ToLower())
             {
                 case "vmaf":
-                    return (targetSSIM * 100).ToString("F0"); // 0.91 -> 91
+                    double vmafTarget = targetSSIM * 100;
+                    // 若小于 0.005 视为整数（消除浮点误差）
+                    if (Math.Abs(vmafTarget - Math.Round(vmafTarget)) < 0.001)
+                        return vmafTarget.ToString("F0");
+                    else
+                        return vmafTarget.ToString("F1");
                 case "psnr":
-                    // PSNR 内部映射：TargetSSIM = (raw - 30) / 20，反推 raw = TargetSSIM * 20 + 30
                     double rawPsnr = targetSSIM * 20 + 30;
                     return rawPsnr.ToString("F1") + " dB";
                 case "ssim":
@@ -2983,6 +2987,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// <summary>
         /// 增强版 Brent 搜索：集成硬失败黑名单、动态区间收缩与安全点搜索（第31步）
         /// </summary>
+        /// <summary>
+        /// 增强版 Brent 搜索：集成硬失败黑名单、动态区间收缩与安全点搜索（第31步）。
+        /// 已修复初始化 bestCRF 时因变量交换导致的逻辑错误。
+        /// </summary>
         private async Task<(int crf, double score)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
@@ -2992,14 +3000,33 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             // 重置本次搜索的失败记录
             ResetFailTracking();
 
-            // 转换为双精度并保证物理区间
+            // 1. 确定初始最佳解（基于真实评分，不受后续交换影响）
+            int bestCRF = -1;
+            double bestScore = -1;
+            if (lowScore >= target)
+            {
+                bestCRF = low;
+                bestScore = lowScore;
+            }
+            if (highScore >= target && high > bestCRF)
+            {
+                bestCRF = high;
+                bestScore = highScore;
+            }
+
+            // 2. Brent 算法预处理
             double a = low, b = high;
             double fa = lowScore - target;
             double fb = highScore - target;
 
-            if (a > b) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
+            // 保证物理区间 a <= b
+            if (a > b)
+            {
+                Swap(ref a, ref b);
+                Swap(ref fa, ref fb);
+            }
 
-            // 保持 |f(b)| <= |f(a)|
+            // 维持 |f(b)| <= |f(a)| 以加速收敛
             if (Math.Abs(fa) < Math.Abs(fb))
             {
                 Swap(ref a, ref b);
@@ -3010,12 +3037,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             double? d = null;
             bool mflag = true;
 
-            int bestCRF = low;
-            double bestScore = lowScore;
-            if (fb >= 0 && high > bestCRF) { bestCRF = high; bestScore = highScore; }
-
-            const double tol = 0.005;
-            const int maxIter = 25;
+            const double tol = 0.005;   // 收敛容忍值（用于 Brent 条件，不影响退出）
+            const int maxIter = 25;     // 最大迭代次数
 
             for (int iter = 0; iter < maxIter; iter++)
             {
@@ -3024,13 +3047,15 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 int xMin = (int)Math.Min(a, b);
                 int xMax = (int)Math.Max(a, b);
 
-                // ─── 唯一正常退出：区间内无未测整数点 ───
-                if (xMax - xMin <= 1) break;
+                // ── 唯一正常退出条件：区间内无未测整数点 ──
+                if (xMax - xMin <= 1)
+                    break;
 
-                // ─── 预测下一个评估点（Brent 插值 / 二分） ───
+                // ── 预测下一个评估点（Brent 插值或二分） ──
                 double s = 0;
                 bool useBisection = false;
 
+                // 尝试逆二次插值
                 if (fa != fc && fb != fc)
                 {
                     s = a * fb * fc / ((fa - fb) * (fa - fc))
@@ -3039,6 +3064,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
                 else
                 {
+                    // 割线法
                     double delta = fb - fa;
                     if (Math.Abs(delta) < 1e-8)
                         useBisection = true;
@@ -3046,7 +3072,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         s = b - fb * (b - a) / delta;
                 }
 
-                // Brent 条件检查
+                // Brent 条件检查：插值点是否在区间内，且步长合适
                 if (!useBisection)
                 {
                     if (s <= xMin || s >= xMax)
@@ -3080,17 +3106,17 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 int crfEval = (int)Math.Round(s);
                 crfEval = Math.Clamp(crfEval, xMin, xMax);
 
-                // ─── 强制使用未测的内点，避免重复评估端点 ───
+                // 强制使用未测内点，避免重复评估端点
                 if (crfEval == xMin || crfEval == xMax)
                 {
                     if (xMax - xMin >= 2)
                         crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
                     else
-                        break; // 理论上不会到达
+                        break;
                     mflag = true;
                 }
 
-                // ─── 安全点检查：若预测点已被黑名单覆盖，寻找替代 ───
+                // ── 安全点检查：若预测点被黑名单覆盖，寻找替代 ──
                 if (IsCrfBlacklisted(crfEval))
                 {
                     int safeCrf = FindSafeCrfInInterval(crfEval, xMin, xMax);
@@ -3106,7 +3132,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     crfEval = safeCrf;
                 }
 
-                // ─── 评估 CRF（带失败跟踪） ───
+                // ── 评估 CRF（带失败跟踪） ──
                 double score = await EvaluateCrfSafe(crfEval, getScore, name);
 
                 // 如果评估结果为不可行（正无穷），动态收缩区间
@@ -3121,7 +3147,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 double fVal = score - target;
 
-                // 日志
+                // 日志输出（根据度量模式自适应）
                 string display = cfg.MetricMode?.ToLower() switch
                 {
                     "vmaf" => $"VMAF={score * 100:F1}",
@@ -3157,11 +3183,28 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
             }
 
+            // 若整个搜索过程中未找到任何可行点，回退为 low（此时 low 是传入区间中较低的可行点，若 low 也不可行则 bestCRF 为 -1）
+            if (bestCRF == -1)
+            {
+                if (lowScore >= target)
+                {
+                    bestCRF = low;
+                    bestScore = lowScore;
+                }
+                else if (highScore >= target)
+                {
+                    bestCRF = high;
+                    bestScore = highScore;
+                }
+            }
+
             return (bestCRF, bestScore);
         }
 
-        // 辅助交换方法
+        // 辅助交换方法（已存在于类中，无需重复定义，若无则保留）
         private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
+
 
 
 
@@ -3482,26 +3525,76 @@ PerformSecantIteration(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, Func<int, Task<double>> getScore, CancellationToken token)
         {
-            int low = cfg.MinCRF, high = cfg.MaxCRF;
-            int proxyLow = Math.Max(low, 10);
-            int proxyHigh = Math.Min(high, 38);
+            int globalMin = cfg.MinCRF;
+            int globalMax = cfg.MaxCRF;
 
-            double plow = await ProxyEvaluateAsync(input, proxyLow, tileCols, cfg, jpeg, pixFmt);
-            double phigh = await ProxyEvaluateAsync(input, proxyHigh, tileCols, cfg, jpeg, pixFmt);
+            // 默认回退到全局范围
+            int low = globalMin;
+            int high = globalMax;
+            string? recommendedFmt = null;
 
-            if (plow >= 0 && phigh >= 0)
+            // ─── 1. 三点采样 ───
+            int pLow = Math.Max(globalMin, 10);          // 低端锚点（经验：10以下编码极慢，且通常质量过高）
+            int pHigh = Math.Min(globalMax, 38);           // 高端锚点（38以上 AV1 质量急剧下降，通常不可行）
+            int pMid = (pLow + pHigh) / 2;                // 中点，用于单调性判断
+
+            double sLow = await ProxyEvaluateAsync(input, pLow, tileCols, cfg, jpeg, pixFmt);
+            double sMid = await ProxyEvaluateAsync(input, pMid, tileCols, cfg, jpeg, pixFmt);
+            double sHigh = await ProxyEvaluateAsync(input, pHigh, tileCols, cfg, jpeg, pixFmt);
+
+            // 任意一点失败 → 放弃本次 Proxy 区间裁剪
+            if (sLow < 0 || sMid < 0 || sHigh < 0)
             {
-                SafeWriteLine($"  [{name}] Proxy: CRF={proxyLow} -> ≈{plow * 100:F1}, CRF={proxyHigh} -> ≈{phigh * 100:F1}");
-                if (plow < target) low = proxyLow;
-                else if (phigh >= target) { low = proxyLow; high = proxyHigh; }
-                else { low = proxyLow; high = proxyHigh; }
+                _logger.LogMetric("crf", $"[{name}] Proxy 三点采样失败，使用全局范围");
+                // 回退到全局范围，但仍保持 Proxy 阶段输出（之后还会调用 FindLowBoundWithRetry）
+                low = globalMin;
+                high = globalMax;
+                return (low, high, recommendedFmt);
             }
 
-            low = await FindLowBoundWithRetry(getScore, low, high, name, token);
-            if (low < 0) return (-1, -1, null);
+            // 日志输出 Proxy 三点（转换为百分比显示，便于阅读）
+            SafeWriteLine($"  [{name}] Proxy 三点 CRF={pLow}->≈{sLow * 100:F1}, CRF={pMid}->≈{sMid * 100:F1}, CRF={pHigh}->≈{sHigh * 100:F1}");
 
-            // ★ 目标格式稳定性预探测（带临时文件清理）
-            string? recommendedFmt = null;
+            // ─── 2. 单调性判定 ───
+            // 在 AV1 中，CRF 增加应导致质量单调下降（允许微小波动）
+            bool monotonic = (sLow >= sMid - 0.02) && (sMid >= sHigh - 0.02);  // 0.02 容差，防止浮点/编码噪声
+
+            if (!monotonic)
+            {
+                SafeWriteLine($"  [{name}] Proxy 检测到非单调 VMAF 曲线，放弃区间裁剪，使用全局范围");
+                _logger.LogMetric("crf", $"[{name}] Proxy 三点非单调，区间回退到全局");
+            }
+            else
+            {
+                // ─── 3. 根据单调区间安全调整搜索边界 ───
+                // 规则：只缩小“已知不可行”的边界，绝不裁剪可行边界
+
+                // 低端：如果 pLow 已经达标，则 low 可以直接设为 pLow（因为更低 CRF 质量更高，没必要搜）
+                //       如果 pLow 不达标，low 保持原样，用 FindLowBoundWithRetry 进一步寻找可行下界
+                if (sLow >= target)
+                {
+                    low = pLow;
+                    _logger.LogMetric("crf", $"[{name}] Proxy: low 设为 {pLow}（pLow 已达标）");
+                }
+                // 否则 low 保持 globalMin，后续 FindLowBoundWithRetry 会负责提升
+
+                // 高端：如果 pHigh 不达标，说明在 pHigh 已经不可行，可以安全地将 high 缩小到 pHigh
+                if (sHigh < target)
+                {
+                    high = pHigh;
+                    _logger.LogMetric("crf", $"[{name}] Proxy: high 缩小至 {pHigh}（pHigh 不达标）");
+                }
+                // ✅ 关键修复：如果 pHigh 达标，我们**不能**缩小 high，因为更高的 CRF 可能也可行！
+                //    保持 high = globalMax，后续搜索会继续向高 CRF 探测。
+                //    （之前的代码错误地将 high 设为 pHigh，导致丢失更优 CRF）
+            }
+
+            // ─── 4. 低端安全确保（原逻辑，保持不变） ───
+            low = await FindLowBoundWithRetry(getScore, low, high, name, token);
+            if (low < 0)
+                return (-1, -1, null);  // 完全失败
+
+            // ─── 5. 目标格式稳定性预探测（原逻辑，保持不变） ───
             if (!pixFmt.StartsWith("yuv420p"))
             {
                 int midForTest = (low + high) / 2;
@@ -3518,12 +3611,11 @@ PerformSecantIteration(
                     {
                         recommendedFmt = "yuv420p";
                         SafeWriteLine($"  [{name}] 目标格式 {pixFmt} 预探测失败，精搜索将降级为 yuv420p");
-                        _logger.LogInfo($"目标格式稳定性预探测失败 [{name}] {pixFmt} → yuv420p");
+                        _logger.LogMetric("crf", $"[{name}] 目标格式稳定性预探测失败 {pixFmt} → yuv420p");
                     }
                 }
                 finally
                 {
-                    // 确保无论成功或异常都删除临时文件
                     try { if (_fs.FileExists(probeOutput)) _fs.DeleteFile(probeOutput); } catch { }
                 }
             }
