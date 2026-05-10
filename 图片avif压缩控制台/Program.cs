@@ -2859,14 +2859,15 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
         // CSV 列名常量，修改这里即可同步表头和数据行
         private static readonly string[] CsvColumnNames = new[]
-        {
+{
     "文件名", "原始文件名", "原始大小", "输出大小", "压缩率",
     "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
     "编码耗时(秒)", "搜索耗时(秒)", "总耗时(秒)", "重试次数",
     "像素格式", "源像素格式", "模式", "安全模式",
-    "完整命令行", "AOM参数", "缓存复用", "状态", "失败原因",
-    "搜索评估次数"   // ★ 新增
-        };
+    "AOM参数", "完整命令行",   // ← 交换后的顺序
+    "缓存复用", "状态", "失败原因",
+    "搜索评估次数"
+};
         /// <summary>
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
@@ -3787,8 +3788,8 @@ PerformSecantIteration(
         CsvEscape(srcFmt),
         CsvEscape(mode),
         CsvEscape(safe),
-        command,
         aomParams,
+        command,
         CsvEscape(cache),
         CsvEscape(status),
         errMsg,
