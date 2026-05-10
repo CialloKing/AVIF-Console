@@ -115,6 +115,8 @@ namespace AvifEncoder
 
         public string MetricMode { get; set; } = "vmaf";
 
+        public bool UserSpecifiedMaxJobs { get; set; } = false; // 新增
+
 
         // ★ 预缩放：长边最大像素数，0 或负数表示禁用
         public int MaxResolution { get; set; } = 2560;
@@ -570,24 +572,33 @@ namespace AvifEncoder
                     ICacheManager? cacheManager = null)
         {
             _fs = fileSystem ?? new RealFileSystem();
-            _inputDir = inputDir; _outputDir = outputDir; _config = config;
+            _inputDir = inputDir;
+            _outputDir = outputDir;
+            _config = config;
             _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
             _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
             _processRunner = processRunner ?? new RealProcessRunner();
             _logger = logger;
-            _cache = cacheManager ?? new CacheManager();      // 关键注入
+            _cache = cacheManager ?? new CacheManager();
 
             bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
             int cpuCount = Environment.ProcessorCount;
             int ssimSlots = Math.Max(2, cpuCount);
+
+            // 计算 ffmpeg 并发池大小：硬件编码器可承受 2×CPU 核数，软件编码器为 ½ 核数
             int ffmpegPoolSize = isHardwareEncoder
-                                     ? Math.Max(2, cpuCount * 2)
-                                     : Math.Max(2, cpuCount / 2);
-            if (isHardwareEncoder && config.MaxJobs <= Math.Max(2, (int)Math.Sqrt(cpuCount)))
+                ? Math.Max(2, cpuCount * 2)
+                : Math.Max(2, cpuCount / 2);
+
+            // 如果是硬件编码器且用户没有通过 -t 手动指定 MaxJobs，则自动提升并发数
+            if (isHardwareEncoder && !config.UserSpecifiedMaxJobs)
             {
                 config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
             }
+
+            // 最终并发数受池大小限制
             _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
+
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
         }
@@ -4577,7 +4588,11 @@ AVIF 编码器 CLI -- 帮助手册
                 if (opts.Force444) config.PixelFormat = "yuv444p10le";
                 else if (opts.Force420) config.PixelFormat = "yuv420p10le";
                 else if (opts.Force422) config.PixelFormat = "yuv422p10le";
-                if (opts.ManualThreads.HasValue) config.MaxJobs = opts.ManualThreads.Value;
+                if (opts.ManualThreads.HasValue)
+                {
+                    config.MaxJobs = opts.ManualThreads.Value;
+                    config.UserSpecifiedMaxJobs = true;   // 标记手动设置
+                }
                 if (opts.CustomSSIM.HasValue)
                 {
                     // ★ 修复：优先使用用户通过 --metric 指定的模式，否则使用当前配置（预设）的模式
