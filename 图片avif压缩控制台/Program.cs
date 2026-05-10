@@ -3130,15 +3130,31 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 3. 保留失败跟踪与黑名单机制，维持鲁棒性。
         /// 4. 后处理探测右端点，确保不漏评。
         /// </summary>
+        /// <summary>
+        /// 使用 Brent 方法搜索满足质量目标的最大可行 CRF。
+        /// 已完全修复遗漏中间整数点的问题。
+        /// </summary>
+        /// <summary>
+        /// 混合搜索：Brent 粗边界定位 + 二分补洞 + 右侧单调校验，
+        /// 保证在 CRF 离散域上返回满足目标的最大可行 CRF。
+        /// </summary>
+        /// <summary>
+        /// 混合搜索：Brent 粗边界定位 + 二分补洞 + 右侧单调校验，
+        /// 保证在 CRF 离散域上返回满足目标的最大可行 CRF。
+        /// </summary>
         private async Task<(int crf, double score, int evalCount)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
             double target, string name, CancellationToken token,
             PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
-            // 文件级跟踪器
             var tracker = _failTrackers.GetOrAdd(GetNormalizedPathForCache(input), _ => new FileScopedFailTracker());
             tracker.Reset();
+
+            // 记录所有已评估的 CRF
+            var evaluatedCrfs = new HashSet<int>();
+            if (lowScore >= 0) evaluatedCrfs.Add(low);
+            if (highScore >= 0) evaluatedCrfs.Add(high);
 
             int brentEvalCount = 0;
             int bestCRF = -1;
@@ -3154,51 +3170,37 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             if (Math.Abs(fa) < Math.Abs(fb)) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
 
             double c = a, fc = fa;
-            double d = b - a;                // 上一步步长
-            const double tol = 0.005;        // 收敛容限，仅用于 Brent 步长判断
+            double d = b - a;
+            const double tol = 0.005;
             const int maxIter = 25;
 
+            // ─── Brent 主循环：快速逼近可行边界 ───
             for (int iter = 0; iter < maxIter; iter++)
             {
                 token.ThrowIfCancellationRequested();
 
                 int xMin = (int)Math.Min(a, b);
                 int xMax = (int)Math.Max(a, b);
-                // ★ 唯一提前退出条件：区间内没有可探索的整数点
-                if (xMax - xMin <= 1) break;
+                if (xMax - xMin <= 1) break;   // 无整数可测，退出
 
-                double s = b;   // 下一个评估点（实数）
-
-                // 尝试逆二次插值或割线法
+                // 预测下一个点
+                double s = b;
                 if (Math.Abs(fc - fb) > 1e-10 && Math.Abs(fc - fa) > 1e-10)
-                {
-                    // 逆二次插值
                     s = a * fb * fc / ((fa - fb) * (fa - fc))
                       + b * fa * fc / ((fb - fa) * (fb - fc))
                       + c * fa * fb / ((fc - fa) * (fc - fb));
-                }
-                else
-                {
-                    // 割线法
-                    if (Math.Abs(fb - fa) > 1e-10)
-                        s = b - fb * (b - a) / (fb - fa);
-                }
+                else if (Math.Abs(fb - fa) > 1e-10)
+                    s = b - fb * (b - a) / (fb - fa);
 
-                // 检查插值/割线点是否合适，否则回退到二分
                 double delta = 2 * tol * Math.Abs(b) + 0.5 * tol;
                 if (s < xMin || s > xMax || Math.Abs(s - b) >= 0.5 * (Math.Abs(b - c) < delta ? Math.Abs(b - c) : delta))
-                {
-                    s = (a + b) / 2.0;   // 二分
-                }
+                    s = (a + b) / 2.0;
 
-                // 将 s 舍入到最近的整数 CRF
                 int crfEval = (int)Math.Round(Math.Clamp(s, xMin, xMax));
 
-                // ★ 如果预测的是端点且区间宽度>=2，则强制跳到内部未测点
+                // 若预测点落在端点且区间宽度≥2，则强制跳至内部点
                 if ((crfEval == xMin || crfEval == xMax) && xMax - xMin >= 2)
-                {
                     crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
-                }
 
                 // 黑名单检查
                 if (tracker.IsBlacklisted(crfEval))
@@ -3206,22 +3208,28 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     int safeCrf = tracker.FindSafeCrfInInterval(crfEval, xMin, xMax);
                     if (safeCrf == -1)
                     {
-                        // 收缩区间：将该侧移至 crfEval-1
                         if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
                         continue;
                     }
                     crfEval = safeCrf;
                 }
 
-                // 评估
-                double score = await EvaluateCrfSafe(crfEval, getScore, name, tracker);
-                if (double.IsInfinity(score))
+                if (evaluatedCrfs.Contains(crfEval))
                 {
-                    // 评估失败，收缩区间
+                    // 已评估过，直接收缩区间
                     if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
                     continue;
                 }
 
+                // 评估新点
+                double score = await EvaluateCrfSafe(crfEval, getScore, name, tracker);
+                if (double.IsInfinity(score))
+                {
+                    if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
+                    continue;
+                }
+
+                evaluatedCrfs.Add(crfEval);
                 brentEvalCount++;
                 double fVal = score - target;
 
@@ -3235,8 +3243,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 if (score >= target && crfEval > bestCRF) { bestCRF = crfEval; bestScore = score; }
 
-                // 更新 Brent 历史点
-                if (fVal * fa > 0) // fVal 与 fa 同号
+                // 更新区间
+                if (fVal * fa > 0)
                 {
                     c = a; fc = fa;
                     d = b - a;
@@ -3245,34 +3253,119 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 b = crfEval; fb = fVal;
             }
 
+            // ─── 后处理 1：二分补洞，确保整个可行区间无遗漏 ───
+            int lo = bestCRF == -1 ? low : bestCRF;
+            int hi = high;
+            var (gapBest, gapScore, gapEvals) = await FillGapsAsync(
+                lo, hi, bestCRF, bestScore,
+                getScore, target, evaluatedCrfs, tracker, name, token);
+
+            if (gapBest > bestCRF)
+            {
+                bestCRF = gapBest;
+                bestScore = gapScore;
+            }
+            brentEvalCount += gapEvals;
+
+            // ─── 后处理 2：右侧单调扫描，确认 bestCRF 之后连续可行段 ───
+            if (bestCRF != -1 && bestScore >= target)
+            {
+                for (int nextCrf = bestCRF + 1; nextCrf <= high; nextCrf++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (evaluatedCrfs.Contains(nextCrf) || tracker.IsBlacklisted(nextCrf))
+                        break;   // 已评估过且不达标或失败
+
+                    double score = await EvaluateCrfSafe(nextCrf, getScore, name, tracker);
+                    if (double.IsInfinity(score) || score < target)
+                        break;   // 第一个不可行点即停止
+
+                    evaluatedCrfs.Add(nextCrf);
+                    brentEvalCount++;
+                    bestCRF = nextCrf;
+                    bestScore = score;
+                    _logger.LogSearch($"[{name}] [BRENT] 右侧单调扫描 CRF={nextCrf} 达标，更新最优");
+                }
+            }
+
             if (bestCRF == -1)
             {
                 if (lowScore >= target) { bestCRF = low; bestScore = lowScore; }
                 else if (highScore >= target) { bestCRF = high; bestScore = highScore; }
             }
 
-            // ★ 后处理：确保区间右端点的 CRF 未被漏评
-            int finalXMax = (int)Math.Ceiling(Math.Max(a, b));
-            if (bestCRF != -1 && bestScore >= target && finalXMax > bestCRF)
-            {
-                if (!tracker.IsBlacklisted(finalXMax))
-                {
-                    double finalCheckScore = await EvaluateCrfSafe(finalXMax, getScore, name, tracker);
-                    if (!double.IsInfinity(finalCheckScore) && finalCheckScore >= target)
-                    {
-                        bestCRF = finalXMax;
-                        bestScore = finalCheckScore;
-                        brentEvalCount++;
-                        _logger.LogSearch($"[{name}] [BRENT] 后处理探测 CRF={finalXMax} 达标，更新最优");
-                    }
-                }
-            }
-
             return (bestCRF, bestScore, brentEvalCount);
         }
 
-        // 辅助交换方法（确保在类中存在）
+        /// <summary>
+        /// 二分补洞：在 [l, r] 范围内快速探查未评估的整数 CRF，
+        /// 确保没有因 Brent 跳跃而遗漏的可行点。
+        /// </summary>
+        /// <summary>
+        /// 二分补洞：在 [l, r] 范围内快速探查未评估的整数 CRF，
+        /// 确保没有因 Brent 跳跃而遗漏的可行点。
+        /// 返回：发现的更优 CRF、对应分数、新增评估次数。
+        /// </summary>
+        private async Task<(int bestCRF, double bestScore, int additionalEvals)> FillGapsAsync(
+            int l, int r,
+            int currentBestCRF, double currentBestScore,
+            Func<int, Task<double>> getScore,
+            double target,
+            HashSet<int> evaluated,
+            FileScopedFailTracker tracker,
+            string name,
+            CancellationToken token)
+        {
+            int bestCRF = currentBestCRF;
+            double bestScore = currentBestScore;
+            int evalCount = 0;
+
+            var stack = new Stack<(int left, int right)>();
+            stack.Push((l, r));
+
+            while (stack.Count > 0)
+            {
+                token.ThrowIfCancellationRequested();
+                var (left, right) = stack.Pop();
+                if (right - left <= 1) continue;
+
+                int mid = (left + right) / 2;
+                if (evaluated.Contains(mid) || tracker.IsBlacklisted(mid))
+                {
+                    // 若中点不可用，分左右继续
+                    stack.Push((left, mid));
+                    stack.Push((mid, right));
+                    continue;
+                }
+
+                double score = await EvaluateCrfSafe(mid, getScore, name, tracker);
+                if (double.IsInfinity(score)) continue;
+
+                evaluated.Add(mid);
+                evalCount++;
+
+                if (score >= target)
+                {
+                    if (mid > bestCRF) { bestCRF = mid; bestScore = score; }
+                    // 中点达标，右侧可能还有更高可行点
+                    stack.Push((mid, right));
+                }
+                else
+                {
+                    // 不达标，左侧可能还有更好的可行点
+                    stack.Push((left, mid));
+                }
+            }
+
+            return (bestCRF, bestScore, evalCount);
+        }
+
+        // 辅助交换方法
         private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
+
+
+
 
 
 
