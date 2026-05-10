@@ -284,26 +284,15 @@ namespace AvifEncoder
     {
         private static FileLogger? _instance;
 
-        public static void Init(string outputDir)
-        {
-            _instance = new FileLogger(outputDir);
-        }
-
-        // ★ 新增：允许外部注入已创建的 FileLogger 实例
-        public static void SetInstance(FileLogger logger)
-        {
-            _instance = logger;
-        }
+        public static void Init(string outputDir) => _instance = new FileLogger(outputDir);
+        public static void SetInstance(FileLogger logger) => _instance = logger;
 
         public static void Log(string msg) => _instance?.LogInfo(msg);
         public static void SSIM(string input, int crf, double ssim)
-        {
-            _instance?.LogMetric("ssim", $"{input} | CRF={crf} | SSIM={ssim}");
-        }
-        public static void CRF(string msg)
-        {
-            _instance?.LogMetric("crf", msg);
-        }
+            => _instance?.LogMetric("ssim", $"{input} | CRF={crf} | SSIM={ssim}");
+        public static void CRF(string msg) => _instance?.LogMetric("crf", msg);
+        public static void Error(string msg) => _instance?.LogError(msg);
+        public static void Search(string msg) => _instance?.LogSearch(msg);
     }
 
     /// <summary>日志接口，解耦具体日志实现</summary>
@@ -311,8 +300,8 @@ namespace AvifEncoder
     {
         void LogInfo(string msg);
         void LogError(string msg);
-        // 用于 SSIM/CRF 等专用轨迹
         void LogMetric(string metricName, string msg);
+        void LogSearch(string msg);   // 新增：搜索阶段专用日志
     }
 
     /// <summary>基于文件的日志实现，兼容原 Logger 行为</summary>
@@ -328,7 +317,7 @@ namespace AvifEncoder
             _logDir = Path.Combine(outputDir, "log");
             _fs.CreateDirectory(_logDir);
 
-            // 清理30天前的 run 日志
+            // 清理30天前的 run 日志（原有逻辑不变）
             try
             {
                 var cutoff = DateTime.Now.AddDays(-30);
@@ -355,9 +344,15 @@ namespace AvifEncoder
         public void LogError(string msg)
         {
             lock (_lock)
+            {
+                // 错误日志同时写入 run 日志和 error.log
                 _fs.AppendAllText(
                     Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
                     $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}\n");
+                _fs.AppendAllText(
+                    Path.Combine(_logDir, "error.log"),
+                    $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+            }
         }
 
         public void LogMetric(string metricName, string msg)
@@ -374,9 +369,15 @@ namespace AvifEncoder
                     Path.Combine(_logDir, fileName),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
+
+        // 搜索专用日志：写入 crf_search.log
+        public void LogSearch(string msg)
+        {
+            LogMetric("crf", msg);
+        }
     }
 
-    
+
 
     public class AvifPipeline : IDisposable
     {
@@ -1633,7 +1634,7 @@ namespace AvifEncoder
             // 缓存命中
             if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
-                _logger.LogInfo($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F2}");
+                _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F2}");
                 return (cachedMetrics!.SSIM, cachedMetrics);
             }
 
@@ -1643,12 +1644,12 @@ namespace AvifEncoder
             {
                 metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
             }
-            catch (Exception ex) { _logger.LogInfo($"多指标计算异常: {ex.Message}"); }
+            catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
 
             if (metrics != null)
             {
                 _cache.SetMetrics(cacheKey, metrics);
-                _logger.LogInfo($"多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                 return (metrics.SSIM, metrics);
             }
 
@@ -2585,7 +2586,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             if (_cache.TryGetEncode(cacheKey, out var cached) && File.Exists(cached.file))
             {
                 _fs.CreateDirectory(Path.GetDirectoryName(output)!);
-                _fs.CopyFile(cached.file, output, true);
+                _fs.CopyFile(cached.file!, output, true);
                 _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
@@ -2603,18 +2604,17 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                            PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
                            string cacheKey, string cacheFile)
         {
-            _logger.LogInfo($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
+            _logger.LogSearch($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
             try
             {
-                // 增加更详细的超时日志，若超时直接返回
                 if (!await _ffmpegSlots.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    _logger.LogInfo($"❌ 编码信号量获取超时: {input} CRF={crf}");
+                    _logger.LogSearch($"❌ 编码信号量获取超时: {input} CRF={crf}");
                     return (false, TimeSpan.Zero, 0, "编码信号量获取超时", false, null, null);
                 }
                 slotTaken = true;
-                _logger.LogInfo($"  ▶ [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
+                _logger.LogSearch($"  ▶ [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
 
                 for (int attempt = 0; attempt <= _maxRetries; attempt++)
                 {
@@ -2628,7 +2628,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     {
                         if (_fs.GetFileLength(output) < 100)
                         {
-                            _logger.LogInfo($"编码输出文件过小 ({_fs.GetFileLength(output)} 字节)，丢弃并重试");
+                            _logger.LogSearch($"编码输出文件过小 ({_fs.GetFileLength(output)} 字节)，丢弃并重试");
                             if (_fs.FileExists(output)) _fs.DeleteFile(output);
                             if (attempt < _maxRetries) { await Task.Delay(1000); continue; }
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
@@ -2638,19 +2638,20 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         _fs.CopyFile(output, cacheFile, true);
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
+                        _logger.LogSearch($"✅ 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F1}s");
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
                     }
 
                     string error = $"CRF={crf}, {stderrLastLine}";
-                    _logger.LogInfo($"❌ 编码失败: {input} - {error}");
+                    _logger.LogSearch($"❌ 编码失败: {input} 尝试{attempt + 1}/{_maxRetries + 1} - {error}");
 
                     // 清理失败输出
                     if (_fs.FileExists(output)) _fs.DeleteFile(output);
 
-                    // 致命错误：编码器没写出任何数据，立即停止重试（避免无效循环占用槽位）
+                    // 致命错误：立即停止重试
                     if (stderrLastLine.Contains("Nothing was written", StringComparison.OrdinalIgnoreCase))
                     {
-                        _logger.LogInfo($"检测到致命错误，放弃重试: {input} CRF={crf}");
+                        _logger.LogSearch($"检测到致命错误，放弃重试: {input} CRF={crf}");
                         return (false, TimeSpan.Zero, attempt, error, false, null, null);
                     }
 
@@ -2661,7 +2662,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"编码异常: {input} - {ex.Message}");
+                _logger.LogError($"编码异常: {input} - {ex.Message}");
                 return (false, TimeSpan.Zero, _maxRetries, $"异常: {ex.Message}", false, null, null);
             }
             finally
@@ -2712,7 +2713,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 file, args, timeout, _globalCts?.Token ?? default);
 
-            // ── 诊断增强：记录完整 stderr ──
+            // 记录完整 stderr
             if (!string.IsNullOrWhiteSpace(stderr))
             {
                 _logger.LogInfo($"ffmpeg stderr:\n{stderr.Trim()}");
@@ -2722,7 +2723,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             if (exitCode != 0)
             {
-                _logger.LogInfo($"ffmpeg 错误(退出码 {exitCode}): {lastLine}");
+                _logger.LogError($"ffmpeg 错误(退出码 {exitCode}): {lastLine}");
                 return (false, lastLine);
             }
             return (true, "");
@@ -2922,7 +2923,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH);
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
-                return cached;
+            {
+                _logger.LogSearch($"指标缓存命中: CRF={crf} [{Path.GetFileName(input)}] VMAF={cached!.VMAF:F2}");
+                return cached!;
+            }
 
             var newTask = new TaskCompletionSource<QualityMetrics?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var task = _metricsTasks.GetOrAdd(key, newTask.Task);
@@ -2938,7 +2942,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             {
                 if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    _logger.LogInfo($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
+                    _logger.LogSearch($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
                     newTask.SetResult(null);
                     return null;
                 }
@@ -2954,6 +2958,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                         if (!encResult.ok || !_fs.FileExists(tmp) || _fs.GetFileLength(tmp) < 100)
                         {
+                            _logger.LogSearch($"临时编码失败: CRF={crf} [{Path.GetFileName(input)}]");
                             newTask.SetResult(null);
                             return null;
                         }
@@ -2962,10 +2967,15 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         if (metrics != null)
                         {
                             _cache.SetMetrics(key, metrics);
-                            _logger.LogInfo($"GetOrComputeMetrics [CRF={crf}] [{Path.GetFileName(input)}]: " +
-                                           $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                           $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                            _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
+                                             $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
+                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
                         }
+                        else
+                        {
+                            _logger.LogSearch($"指标计算失败: CRF={crf} [{Path.GetFileName(input)}]");
+                        }
+
                         newTask.SetResult(metrics);
                         return metrics;
                     }
@@ -2981,7 +2991,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"GetOrComputeMetrics 意外异常: [{Path.GetFileName(input)}] CRF={crf} - {ex.Message}");
+                _logger.LogError($"GetOrComputeMetrics 意外异常: [{Path.GetFileName(input)}] CRF={crf} - {ex.Message}");
                 newTask.TrySetException(ex);
                 return null;
             }
@@ -3118,48 +3128,27 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
     double target, string name, CancellationToken token,
     PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
-            // ── 文件级隔离的失败跟踪器 ──
+            // 文件级跟踪器
             var tracker = _failTrackers.GetOrAdd(GetNormalizedPathForCache(input), _ => new FileScopedFailTracker());
-            tracker.Reset();   // 每次搜索前清空该文件的失败记录
+            tracker.Reset();
 
             int brentEvalCount = 0;
-
-            // 1. 确定初始最佳解（基于真实评分）
             int bestCRF = -1;
             double bestScore = -1;
-            if (lowScore >= target)
-            {
-                bestCRF = low;
-                bestScore = lowScore;
-            }
-            if (highScore >= target && high > bestCRF)
-            {
-                bestCRF = high;
-                bestScore = highScore;
-            }
+            if (lowScore >= target) { bestCRF = low; bestScore = lowScore; }
+            if (highScore >= target && high > bestCRF) { bestCRF = high; bestScore = highScore; }
 
-            // 2. Brent 算法预处理
             double a = low, b = high;
             double fa = lowScore - target;
             double fb = highScore - target;
 
-            if (a > b)
-            {
-                Swap(ref a, ref b);
-                Swap(ref fa, ref fb);
-            }
-
-            if (Math.Abs(fa) < Math.Abs(fb))
-            {
-                Swap(ref a, ref b);
-                Swap(ref fa, ref fb);
-            }
+            if (a > b) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
+            if (Math.Abs(fa) < Math.Abs(fb)) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
 
             double c = a, fc = fa;
-            double? d = null;
-            bool mflag = true;
-
-            const double tol = 0.005;
+            double d = b - a;                // 上一步步长
+            
+            const double tol = 0.005;        // 收敛容限
             const int maxIter = 25;
 
             for (int iter = 0; iter < maxIter; iter++)
@@ -3168,95 +3157,57 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 int xMin = (int)Math.Min(a, b);
                 int xMax = (int)Math.Max(a, b);
+                if (xMax - xMin <= 1) break;   // 区间内已无整数 CRF
 
-                if (xMax - xMin <= 1)
-                    break;
+                
+                double s = b;   // 下一个评估点（实数）
 
-                // 预测下一个评估点
-                double s = 0;
-                bool useBisection = false;
-
-                if (fa != fc && fb != fc)
+                // 尝试逆二次插值或割线法
+                if (Math.Abs(fc - fb) > 1e-10 && Math.Abs(fc - fa) > 1e-10)
                 {
+                    // 逆二次插值
                     s = a * fb * fc / ((fa - fb) * (fa - fc))
                       + b * fa * fc / ((fb - fa) * (fb - fc))
                       + c * fa * fb / ((fc - fa) * (fc - fb));
                 }
                 else
                 {
-                    double delta = fb - fa;
-                    if (Math.Abs(delta) < 1e-8)
-                        useBisection = true;
-                    else
-                        s = b - fb * (b - a) / delta;
+                    // 割线法
+                    if (Math.Abs(fb - fa) > 1e-10)
+                        s = b - fb * (b - a) / (fb - fa);
                 }
 
-                if (!useBisection)
+                // 检查插值/割线点是否合适，否则回退到二分
+                double delta = 2 * tol * Math.Abs(b) + 0.5 * tol;
+                if (s < xMin || s > xMax || Math.Abs(s - b) >= 0.5 * (Math.Abs(b - c) < delta ? Math.Abs(b - c) : delta))
                 {
-                    if (s <= xMin || s >= xMax)
-                        useBisection = true;
-                    else if (mflag)
-                    {
-                        if (Math.Abs(s - b) >= Math.Abs(b - c) / 2.0)
-                            useBisection = true;
-                        if (Math.Abs(b - c) < tol)
-                            useBisection = true;
-                    }
-                    else
-                    {
-                        if (d.HasValue && Math.Abs(s - b) >= Math.Abs(c - d.Value) / 2.0)
-                            useBisection = true;
-                        if (d.HasValue && Math.Abs(c - d.Value) < tol)
-                            useBisection = true;
-                    }
+                    s = (a + b) / 2.0;   // 二分
+                 
                 }
 
-                if (useBisection)
-                {
-                    s = (xMin + xMax) / 2.0;
-                    mflag = true;
-                }
-                else
-                {
-                    mflag = false;
-                }
 
-                int crfEval = (int)Math.Round(s);
-                crfEval = Math.Clamp(crfEval, xMin, xMax);
+                // 将 s 舍入到最近的整数 CRF
+                int crfEval = (int)Math.Round(Math.Clamp(s, xMin, xMax));
 
-                if (crfEval == xMin || crfEval == xMax)
-                {
-                    if (xMax - xMin >= 2)
-                        crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
-                    else
-                        break;
-                    mflag = true;
-                }
-
-                // ── 使用文件级黑名单检查 ──
+                // 黑名单检查
                 if (tracker.IsBlacklisted(crfEval))
                 {
                     int safeCrf = tracker.FindSafeCrfInInterval(crfEval, xMin, xMax);
                     if (safeCrf == -1)
                     {
-                        if (crfEval - xMin < xMax - crfEval)
-                            xMin = Math.Min(crfEval + FileScopedFailTracker.AvoidRadius + 1, xMax);
-                        else
-                            xMax = Math.Max(crfEval - FileScopedFailTracker.AvoidRadius - 1, xMin);
+                        // 收缩区间：将该侧移至 crfEval-1
+                        if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
                         continue;
                     }
                     crfEval = safeCrf;
                 }
 
-                // ── 评估 CRF，传入文件级跟踪器 ──
+                // 评估
                 double score = await EvaluateCrfSafe(crfEval, getScore, name, tracker);
-
                 if (double.IsInfinity(score))
                 {
-                    if (crfEval - xMin <= xMax - crfEval)
-                        xMin = Math.Min(crfEval + 1, xMax);
-                    else
-                        xMax = Math.Max(crfEval - 1, xMin);
+                    // 评估失败，收缩区间
+                    if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
                     continue;
                 }
 
@@ -3269,44 +3220,24 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     _ => $"分数={score:F4}"
                 };
                 SafeWriteLine($"  [{name}] [BRENT] iter={iter + 1}, CRF={crfEval} -> {display}");
+                _logger.LogSearch($"[{name}] [BRENT] iter={iter + 1}, CRF={crfEval} -> {display}");
 
-                if (score >= target && crfEval > bestCRF)
-                {
-                    bestCRF = crfEval;
-                    bestScore = score;
-                }
+                if (score >= target && crfEval > bestCRF) { bestCRF = crfEval; bestScore = score; }
 
-                d = b;
-                c = b; fc = fb;
-
-                if (fa * fVal < 0)
+                // 更新 Brent 历史点
+                if (fVal * fa > 0) // fVal 与 fa 同号
                 {
-                    b = crfEval; fb = fVal;
+                    c = a; fc = fa;
+                    d = b - a;
                 }
-                else
-                {
-                    a = crfEval; fa = fVal;
-                }
-
-                if (Math.Abs(fa) < Math.Abs(fb))
-                {
-                    Swap(ref a, ref b);
-                    Swap(ref fa, ref fb);
-                }
+                a = b; fa = fb;
+                b = crfEval; fb = fVal;
             }
 
             if (bestCRF == -1)
             {
-                if (lowScore >= target)
-                {
-                    bestCRF = low;
-                    bestScore = lowScore;
-                }
-                else if (highScore >= target)
-                {
-                    bestCRF = high;
-                    bestScore = highScore;
-                }
+                if (lowScore >= target) { bestCRF = low; bestScore = lowScore; }
+                else if (highScore >= target) { bestCRF = high; bestScore = highScore; }
             }
 
             return (bestCRF, bestScore, brentEvalCount);
@@ -3507,57 +3438,56 @@ PerformSecantIteration(
         {
             string name = Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
-            _logger.LogMetric("crf", $"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "ssim"}");
+            _logger.LogSearch($"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "vmaf"}");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
-            var token = CancellationTokenSource.CreateLinkedTokenSource(
-                searchCts.Token, _globalCts?.Token ?? default).Token;
+            var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
 
             Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
+            int totalEvalCount = 0;
 
             try
             {
-                // === MaxCRF 提前早停（不参与计数） ===
+                // 1. MaxCRF 提前早停
                 double maxScore = await getScore(cfg.MaxCRF);
+                totalEvalCount++;
                 if (maxScore >= target)
                 {
                     SafeWriteLine($"  [{name}] MaxCRF={cfg.MaxCRF} 已达目标，直接使用");
-                    return (cfg.MaxCRF, false, false, 0);
+                    _logger.LogSearch($"[{name}] MaxCRF 早停，CRF={cfg.MaxCRF}");
+                    return (cfg.MaxCRF, false, false, totalEvalCount);
                 }
                 if (maxScore < 0)
-                    _logger.LogInfo($"MaxCRF 早停评估失败 [{name}]，继续正常搜索");
+                    _logger.LogSearch($"[{name}] MaxCRF 早停评估失败，继续搜索");
 
-                // Stage A: Proxy 粗定位（不参与计数）
-                var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
-                if (low < 0)
-                    return (cfg.BaseCRF, true, false, 0);
+                // 2. Proxy 粗定位
+                var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
+                if (low < 0) return (cfg.BaseCRF, true, false, totalEvalCount);
+                _logger.LogSearch($"[{name}] Proxy 粗定位后区间: [{low}, {high}]");
 
-                string searchPixFmt = recommendedFmt ?? pixFmt;
-                Func<int, Task<double>> searchGetScore = getScore;
-                if (recommendedFmt != null)
-                    searchGetScore = BuildGetScoreFunc(input, tileCols, cfg, searchPixFmt, jpeg, name, token);
+                // 3. 精搜索（Brent/Secant）
+                var (crf, failed, insufficient, brentEvalCount) = await SearchCoreAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, low, high, getScore, token);
+                totalEvalCount += brentEvalCount;
+                if (!failed && !insufficient) return (crf, false, false, totalEvalCount);
 
-                // Stage B: 精搜索（Brent 迭代次数由 SearchCoreAsync 返回）
-                var (crf, failed, insufficient, brentEvalCount) = await SearchCoreAsync(
-                    input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, searchGetScore, token);
-
-                if (!failed && !insufficient)
-                    return (crf, false, false, brentEvalCount);
-
-                // 精搜索失败，进行安全扫描（不参与计数）
-                SafeWriteLine($"  [RETRY] [{name}] 精搜索未达成目标，启动安全扫描 (区间 {low}-{high})...");
-                (bool safeOk, int safeCrf, string safeFmt, bool safeMode) = await RunSafeModeScan(
-                    input, cfg, name, low, high);
+                // 4. 若精搜失败或质量不足，尝试安全模式全扫描（yuv420p）
+                SafeWriteLine($" [RETRY] [{name}] 精搜索失败，开始安全模式全扫描 (yuv420p)...");
+                var (safeOk, safeCrf, safePixFmt, safeMode) = await RunSafeModeScan(input, cfg, name, cfg.MinCRF, cfg.MaxCRF);
                 if (safeOk)
-                    return (safeCrf, true, false, brentEvalCount);
+                {
+                    _logger.LogSearch($"[{name}] 安全扫描成功，CRF={safeCrf}");
+                    return (safeCrf, false, false, totalEvalCount);   // 安全模式不计入额外评估次数
+                }
 
-                return (cfg.BaseCRF, true, true, brentEvalCount);
+                // 全部失败
+                _logger.LogSearch($"[{name}] 所有搜索策略失败，回退到 BaseCRF={cfg.BaseCRF}");
+                return (cfg.BaseCRF, true, false, totalEvalCount);
             }
             catch (OperationCanceledException)
             {
                 SafeWriteLine($" [{name}] [WARN] 搜索超时/取消，用 BaseCRF {cfg.BaseCRF}");
-                return (cfg.BaseCRF, true, false, 0);
+                _logger.LogSearch($"[{name}] 搜索被取消");
+                return (cfg.BaseCRF, true, false, totalEvalCount);
             }
         }
 
@@ -3685,30 +3615,38 @@ PerformSecantIteration(
     string name, double target, int low, int high,
     Func<int, Task<double>> getScore, CancellationToken token)
         {
-            // 1. 高端边界探测
+            // 高端边界探测
             double highScore = await getScore(high);
             if (highScore >= target)
             {
                 SafeWriteLine($"  [HIGH] [{name}] CRF={high} 已达标，直接使用");
-                return (high, false, false, 0);   // 未进入 Brent，返回 0
+                _logger.LogSearch($"[{name}] 高端边界 CRF={high} 达标，直接使用");
+                return (high, false, false, 0);
             }
             if (highScore < 0)
+            {
+                _logger.LogSearch($"[{name}] 高端边界 CRF={high} 评估失败，搜索失败");
                 return (cfg.BaseCRF, true, false, 0);
+            }
+            _logger.LogSearch($"[{name}] 高端边界 CRF={high} 不达标，继续搜索");
 
-            // 2. 低端边界探测
+            // 低端边界探测
             double lowScore = await getScore(low);
             if (lowScore < target)
             {
                 SafeWriteLine($"  [LOW] [{name}] 最低可用 CRF={low} VMAF={lowScore * 100:F1} 无法达标");
+                _logger.LogSearch($"[{name}] 低端边界 CRF={low} 无法达标");
                 return (low, false, true, 0);
             }
+            _logger.LogSearch($"[{name}] 低端边界 CRF={low} 达标");
 
-            // 3. Brent 方法求解
+            // Brent 求解
             (int bestCrf, double bestScore, int brentEvalCount) = await SolveCrfBrent(
-                getScore, low, high, lowScore, highScore, target, name, token,
-                cfg, input, tileCols, pixFmt, jpeg);
+                getScore, low, high, lowScore, highScore, target, name, token, cfg, input, tileCols, pixFmt, jpeg);
 
-            // 4. 输出最终指标（不增加计数）
+            _logger.LogSearch($"[{name}] Brent 完成，最佳CRF={bestCrf}，分数={bestScore:F4}，评估次数={brentEvalCount}");
+
+            // 输出最终指标
             QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
             if (finalMetrics != null)
                 SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
