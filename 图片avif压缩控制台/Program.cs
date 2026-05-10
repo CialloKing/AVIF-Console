@@ -265,6 +265,9 @@ namespace AvifEncoder
         public double? FinalMSSSIM { get; set; }
         public double? FinalMixScore { get; set; }
 
+
+        public int SearchEvaluations { get; set; }   // ★ 新增：搜索阶段实际成功评估CRF点的次数
+
     }
 
     /// <summary> 一次 libvmaf 计算得到的全部常用指标 </summary>
@@ -1610,6 +1613,8 @@ namespace AvifEncoder
                 Success = false,
                 ErrorMessage = error,
                 TotalTime = DateTime.Now - fileStartTime
+
+
             };
             MarkProcessed(result);
             return result;
@@ -1643,7 +1648,8 @@ namespace AvifEncoder
                 FinalVMAF = metrics?.VMAF,
                 FinalPSNR_Y = metrics?.PSNR_Y,
                 FinalMSSSIM = metrics?.MS_SSIM,
-                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics)
+                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics),
+                SearchEvaluations = searchResult.SearchEvalCount   // ★ 新增
             };
             MarkProcessed(result);
             return result;
@@ -1673,6 +1679,7 @@ namespace AvifEncoder
             public TimeSpan SearchTime;
             public bool SearchBasedCRF;
             public bool UseSafeModeFinalEncode;
+            public int SearchEvalCount;    // ★ 新增：搜索评估次数
         }
 
         private class FinalEncodeResult
@@ -1804,11 +1811,11 @@ namespace AvifEncoder
             string actualPixFmt = encInfo.ActualPixFmt;
             var searchTime = TimeSpan.Zero;
             bool searchBasedCRF = false, useSafeModeFinalEncode = false;
+            int totalEvaluations = 0;    // ★ 搜索评估次数
             string name = Path.GetFileName(inputPath);
 
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
-                // ★ 动态生成目标标签和原生数值
                 string metricModeLabel = (config.MetricMode ?? "vmaf").ToUpper();
                 string targetDisplay = GetTargetDisplayString(config.TargetSSIM, metricModeLabel);
                 SafeWriteLine($"  [SEARCH] [{name}] 开始 CRF 搜索 (目标 {metricModeLabel}={targetDisplay})，请耐心等待...");
@@ -1820,16 +1827,14 @@ namespace AvifEncoder
                     int finalCrf;
                     string usedPixFmt;
 
-                    // 先尝试目标格式搜索
-                    (searchOk, finalCrf, usedPixFmt) = await TrySearchWithFormatAttempts(
+                    (searchOk, finalCrf, usedPixFmt, totalEvaluations) = await TrySearchWithFormatAttempts(
                         inputPath, config, encInfo, actualPixFmt, name);
 
-                    // 安全模式全扫描
                     if (!searchOk)
                     {
                         SafeWriteLine($" [RETRY] [{name}] 普通搜索失败，开始安全模式全扫描 (yuv420p, cpu‑used 0)...");
-                        // 此时普通搜索已失败，但 proxy 阶段未提供区间，回退使用全范围
-                        (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(inputPath, config, name, config.MinCRF, config.MaxCRF);
+                        (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(
+                            inputPath, config, name, config.MinCRF, config.MaxCRF);
                     }
 
                     swSearch.Stop();
@@ -1861,46 +1866,42 @@ namespace AvifEncoder
                 ActualPixFmt = actualPixFmt,
                 SearchTime = searchTime,
                 SearchBasedCRF = searchBasedCRF,
-                UseSafeModeFinalEncode = useSafeModeFinalEncode
+                UseSafeModeFinalEncode = useSafeModeFinalEncode,
+                SearchEvalCount = totalEvaluations    // ★ 赋值
             };
         }
 
         // ---------- 尝试目标格式列表搜索 ----------
         // ---------- 尝试目标格式列表搜索 ----------
-        private async Task<(bool ok, int crf, string pixFmt)>
-    TrySearchWithFormatAttempts(string inputPath, PresetConfig config, EncodingInfo encInfo,
-                                string actualPixFmt, string name)
-{
-    var attempts = BuildPixFmtAttempts(config, actualPixFmt, encInfo.HasAlpha);
-    foreach (var fmt in attempts)
-    {
-        if (fmt != actualPixFmt && !config.AutoSource)
+        private async Task<(bool ok, int crf, string pixFmt, int totalEvalCount)> TrySearchWithFormatAttempts(
+    string inputPath, PresetConfig config, EncodingInfo encInfo,
+    string actualPixFmt, string name)
         {
-            string desc = fmt.Contains("422") ? "422" :
-                          (fmt.Contains("420") && !actualPixFmt.Contains("420") ? "420" : "");
-            if (!string.IsNullOrEmpty(desc))
-                SafeWriteLine($"  [RETRY] [{name}] 尝试 {desc} {fmt} ...");
-        }
+            var attempts = BuildPixFmtAttempts(config, actualPixFmt, encInfo.HasAlpha);
+            int totalEvalCount = 0;
 
-                (int crfResult, bool failed, bool qualityInsufficient) =
+            foreach (var fmt in attempts)
+            {
+                if (fmt != actualPixFmt && !config.AutoSource)
+                {
+                    string desc = fmt.Contains("422") ? "422" :
+                                  (fmt.Contains("420") && !actualPixFmt.Contains("420") ? "420" : "");
+                    if (!string.IsNullOrEmpty(desc))
+                        SafeWriteLine($"  [RETRY] [{name}] 尝试 {desc} {fmt} ...");
+                }
+
+                (int crfResult, bool failed, bool qualityInsufficient, int evalCount) =
                     await HybridSearchCRFAsync(inputPath, encInfo.TileCols, config, fmt, IsJpeg(inputPath));
+                totalEvalCount += evalCount;
 
-                // 🔧 修复：先检查质量不足，避免误将极低 CRF 当作搜索结果
                 if (qualityInsufficient)
-        {
-            // 所有尝试的 CRF 均达不到目标 SSIM，停止对该格式的搜索
-            break;
-        }
+                    break;
 
-        if (!failed)
-        {
-            return (true, crfResult, fmt);
+                if (!failed)
+                    return (true, crfResult, fmt, totalEvalCount);
+            }
+            return (false, config.BaseCRF, actualPixFmt, totalEvalCount);
         }
-        // 若 failed 为 true，继续尝试下一个像素格式
-    }
-    // 所有格式均失败或质量不足
-    return (false, config.BaseCRF, actualPixFmt);
-}
 
         // ---------- 安全模式全扫描 ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
@@ -2791,8 +2792,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
     "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
     "编码耗时(秒)", "搜索耗时(秒)", "总耗时(秒)", "重试次数",
     "像素格式", "源像素格式", "模式", "安全模式",
-    "完整命令行", "AOM参数", "缓存复用", "状态", "失败原因"
-};
+    "完整命令行", "AOM参数", "缓存复用", "状态", "失败原因",
+    "搜索评估次数"   // ★ 新增
+        };
         /// <summary>
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
@@ -3037,14 +3039,16 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 增强版 Brent 搜索：集成硬失败黑名单、动态区间收缩与安全点搜索（第31步）。
         /// 已修复初始化 bestCRF 时因变量交换导致的逻辑错误。
         /// </summary>
-        private async Task<(int crf, double score)> SolveCrfBrent(
-            Func<int, Task<double>> getScore,
-            int low, int high, double lowScore, double highScore,
-            double target, string name, CancellationToken token,
-            PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
+        private async Task<(int crf, double score, int evalCount)> SolveCrfBrent(
+    Func<int, Task<double>> getScore,
+    int low, int high, double lowScore, double highScore,
+    double target, string name, CancellationToken token,
+    PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
             // 重置本次搜索的失败记录
             ResetFailTracking();
+
+            int brentEvalCount = 0; // ★ 局部 Brent 计数器
 
             // 1. 确定初始最佳解（基于真实评分，不受后续交换影响）
             int bestCRF = -1;
@@ -3191,6 +3195,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     continue;
                 }
 
+                // ★ 成功评估，Brent 计数器加一
+                brentEvalCount++;
+
                 double fVal = score - target;
 
                 // 日志输出（根据度量模式自适应）
@@ -3244,7 +3251,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
             }
 
-            return (bestCRF, bestScore);
+            return (bestCRF, bestScore, brentEvalCount);
         }
 
         // 辅助交换方法（已存在于类中，无需重复定义，若无则保留）
@@ -3437,7 +3444,7 @@ PerformSecantIteration(
 
 
 
-        private async Task<(int crf, bool searchFailed, bool qualityInsufficient)> HybridSearchCRFAsync(
+        private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
         {
             string name = Path.GetFileName(input);
@@ -3452,49 +3459,47 @@ PerformSecantIteration(
 
             try
             {
-                // === MaxCRF 提前早停 ===
+                // === MaxCRF 提前早停（不参与计数） ===
                 double maxScore = await getScore(cfg.MaxCRF);
                 if (maxScore >= target)
                 {
                     SafeWriteLine($"  [{name}] MaxCRF={cfg.MaxCRF} 已达目标，直接使用");
-                    return (cfg.MaxCRF, false, false);
+                    return (cfg.MaxCRF, false, false, 0);
                 }
                 if (maxScore < 0)
                     _logger.LogInfo($"MaxCRF 早停评估失败 [{name}]，继续正常搜索");
-                // ======================
 
-                // Stage A: Proxy 粗定位（含格式稳定性预探测）
+                // Stage A: Proxy 粗定位（不参与计数）
                 var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
                 if (low < 0)
-                    return (cfg.BaseCRF, true, false);
+                    return (cfg.BaseCRF, true, false, 0);
 
                 string searchPixFmt = recommendedFmt ?? pixFmt;
                 Func<int, Task<double>> searchGetScore = getScore;
                 if (recommendedFmt != null)
                     searchGetScore = BuildGetScoreFunc(input, tileCols, cfg, searchPixFmt, jpeg, name, token);
 
-                // Stage B: 精搜索
-                var (crf, failed, insufficient) = await SearchCoreAsync(
+                // Stage B: 精搜索（Brent 迭代次数由 SearchCoreAsync 返回）
+                var (crf, failed, insufficient, brentEvalCount) = await SearchCoreAsync(
                     input, tileCols, cfg, searchPixFmt, jpeg, name, target, low, high, searchGetScore, token);
 
                 if (!failed && !insufficient)
-                    return (crf, false, false);
+                    return (crf, false, false, brentEvalCount);
 
-                // 精搜索失败，进行安全扫描
+                // 精搜索失败，进行安全扫描（不参与计数）
                 SafeWriteLine($"  [RETRY] [{name}] 精搜索未达成目标，启动安全扫描 (区间 {low}-{high})...");
                 (bool safeOk, int safeCrf, string safeFmt, bool safeMode) = await RunSafeModeScan(
                     input, cfg, name, low, high);
-
                 if (safeOk)
-                    return (safeCrf, true, false);
+                    return (safeCrf, true, false, brentEvalCount);
 
-                return (cfg.BaseCRF, true, true);
+                return (cfg.BaseCRF, true, true, brentEvalCount);
             }
             catch (OperationCanceledException)
             {
                 SafeWriteLine($" [{name}] [WARN] 搜索超时/取消，用 BaseCRF {cfg.BaseCRF}");
-                return (cfg.BaseCRF, true, false);
+                return (cfg.BaseCRF, true, false, 0);
             }
         }
 
@@ -3668,7 +3673,7 @@ PerformSecantIteration(
         /// failed: 表示搜索过程本身失败（如无法计算评分），需上层回退。
         /// insufficient: 表示最低 CRF 仍无法达标，目标无法实现。
         /// </summary>
-        private async Task<(int crf, bool failed, bool insufficient)> SearchCoreAsync(
+        private async Task<(int crf, bool failed, bool insufficient, int brentEvalCount)> SearchCoreAsync(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, int low, int high,
     Func<int, Task<double>> getScore, CancellationToken token)
@@ -3678,31 +3683,32 @@ PerformSecantIteration(
             if (highScore >= target)
             {
                 SafeWriteLine($"  [HIGH] [{name}] CRF={high} 已达标，直接使用");
-                return (high, false, false);
+                return (high, false, false, 0);   // 未进入 Brent，返回 0
             }
             if (highScore < 0)
-                return (cfg.BaseCRF, true, false);
+                return (cfg.BaseCRF, true, false, 0);
 
             // 2. 低端边界探测
             double lowScore = await getScore(low);
             if (lowScore < target)
             {
                 SafeWriteLine($"  [LOW] [{name}] 最低可用 CRF={low} VMAF={lowScore * 100:F1} 无法达标");
-                return (low, false, true);
+                return (low, false, true, 0);
             }
-            // 3. Brent 方法求解（内部自动融合割线与二分，无需回退）
-            (int bestCrf, double bestScore) = await SolveCrfBrent(
+
+            // 3. Brent 方法求解
+            (int bestCrf, double bestScore, int brentEvalCount) = await SolveCrfBrent(
                 getScore, low, high, lowScore, highScore, target, name, token,
                 cfg, input, tileCols, pixFmt, jpeg);
 
-            // 5. 输出最终指标
+            // 4. 输出最终指标（不增加计数）
             QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
             if (finalMetrics != null)
                 SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
             else
                 SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf}");
 
-            return (bestCrf, false, false);
+            return (bestCrf, false, false, brentEvalCount);
         }
 
 
@@ -3779,7 +3785,8 @@ PerformSecantIteration(
         aomParams,
         CsvEscape(cache),
         CsvEscape(status),
-        errMsg
+        errMsg,
+        r.SearchEvaluations.ToString(CultureInfo.InvariantCulture)   // ★ 新增
     };
 
             return string.Join(",", values);
