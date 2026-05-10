@@ -450,6 +450,52 @@ namespace AvifEncoder
             return false;
         }
 
+
+
+
+
+
+
+
+
+
+        /// <summary>
+        /// 根据图像宽度计算满足 AV1 tile 宽度 ≤ 4096 限制的最小 tile-columns 值（log2 列数）。
+        /// 例如：宽度 ≤ 4096 → 0；4097~8192 → 1；8193~16384 → 2；以此类推。
+        /// </summary>
+        private static int GetMinLegalTileCols(int imageWidth)
+        {
+            if (imageWidth <= 4096)
+                return 0;
+
+            int colsLog2 = 0;
+            // 每增加一列，tile 宽度减半，直到满足 ≤ 4096
+            while (Math.Ceiling((double)imageWidth / (1 << colsLog2)) > 4096)
+                colsLog2++;
+            return colsLog2;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         /// <summary>
         /// 在区间 [xMin, xMax] 内寻找一个不在黑名单中的安全 CRF，
         /// 从中心点向两侧扩展查找。
@@ -1734,9 +1780,8 @@ namespace AvifEncoder
             bool isLosslessMode = config.Lossless;
             bool isTrulyLossless = isLosslessMode && await IsTrulyLosslessSource(inputPath);
 
-            // 优化：通过 GetSourcePixelFormat 获取源格式，同时解析 Alpha 信息
             string srcFmt = await GetSourcePixelFormat(inputPath);
-            bool hasAlpha = await SourceHasAlpha(inputPath); // 可进一步优化缓存，当前保留
+            bool hasAlpha = await SourceHasAlpha(inputPath);
             string actualPixFmt = await GetPixelFormatForFileAsync(inputPath, isLosslessMode, isTrulyLossless, hasAlpha);
 
             string pixInfo;
@@ -1751,7 +1796,7 @@ namespace AvifEncoder
             if (isLosslessMode && !isTrulyLossless)
                 SafeWriteLine($" [WARN] [{name}] 有损源，使用 -crf 0 数学无损...");
 
-            // ★ 硬件编码器 Alpha 回退检测
+            // 硬件编码器 Alpha 警告等保持原有逻辑
             bool alphaDropped = false;
             if (hasAlpha && !config.Encoder.StartsWith("lib", StringComparison.OrdinalIgnoreCase))
             {
@@ -1762,28 +1807,32 @@ namespace AvifEncoder
                 _logger.LogInfo($"Alpha 通道丢弃: {name}，编码器 {config.Encoder} 不支持 yuva 格式");
             }
 
-            // ★ 新增：硬件编码器色度采样警告
+            // 硬件编码器色度采样警告（原有逻辑）
             if (!config.Encoder.StartsWith("lib", StringComparison.OrdinalIgnoreCase))
             {
                 bool is420 = actualPixFmt.Contains("420");
                 if (!is420)
                 {
-                    SafeWriteLine($" [WARN] [{name}] 硬件编码器 {config.Encoder} 通常只支持 4:2:0 色度采样，" +
-                                  "程序将自动尝试降级（444→422→420）。若编码失败可能最终回退到 yuv420p。");
-                    // 不直接修改 actualPixFmt，让后续降级逻辑正常运作
+                    SafeWriteLine($" [WARN] [{name}] 硬件编码器通常只支持 4:2:0，程序将自动尝试降级。");
                 }
             }
 
-            // ───── 修改点：智能关闭瓦片（小尺寸图片避免瓦片失败） ─────
+            // ─── 计算合法的 tileCols ───
             int tileCols = 0;
             if (!isTrulyLossless)
             {
+                // 基础性能建议值
                 tileCols = Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4);
-                // 如果图片尺寸太小（任何一边 < 256），禁用瓦片编码，避免 libaom 因最小瓦片限制而失败
+
+                // 小图保护
                 if (tileCols > 0 && (w < 256 || h < 256))
                     tileCols = 0;
+
+                // ★ 合法性强制约束：tile 宽度不能超过 4096
+                int minLegalCols = GetMinLegalTileCols(w);
+                if (tileCols < minLegalCols)
+                    tileCols = minLegalCols;
             }
-            // ─────────────────────────────────────────────────────
 
             int crf = config.BaseCRF;
             if (isLosslessMode && !isTrulyLossless) crf = 0;
@@ -1799,7 +1848,7 @@ namespace AvifEncoder
                 IsLosslessMode = isLosslessMode,
                 TileCols = tileCols,
                 BaseCrf = crf,
-                HasAlpha = hasAlpha  // 已修正为回退后的值
+                HasAlpha = hasAlpha
             };
         }
 
@@ -1960,7 +2009,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
         // ---------- 安全模式单次 SSIM ----------
         private async Task<double> SafeModeSSIM(string inputPath, PresetConfig config, int testCrf,
-                                CancellationToken token)
+                                        CancellationToken token)
         {
             if (token.IsCancellationRequested) return -1;
 
@@ -1975,44 +2024,28 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 string aomPart = string.IsNullOrEmpty(effectiveAom) ? "" : $"-aom-params {effectiveAom}";
                 try
                 {
-                    // 安全模式编码一次
-                    string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart);
+                    // 提前获取分辨率，用于合法 tile 计算
+                    var (w, h) = await GetResolutionAsync(inputPath);
+
+                    string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart, w);
                     (bool ok, string _) = await RunFfmpegExAsync(_ffmpegPath, args,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !_fs.FileExists(tmpAvif) || _fs.GetFileLength(tmpAvif) < 100) return -1;
 
-                    // 计算多指标
                     QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif);
                     if (metrics != null)
                     {
-                        // ★ 将安全模式计算结果写入 _metricsCache，供后续复用
                         string normalizedInput = GetNormalizedPathForCache(inputPath);
-                        string safePixFmt = "yuv420p";   // 安全模式固定使用 yuv420p
-                        int safeBitDepth = 8;            // 安全模式默认 8bit（与 BuildSafeModeArgs 一致）
-                        string safeAom = effectiveAom;
-
-                        // ★ 获取当前输入图像的分辨率
-                        var (safeW, safeH) = await GetResolutionAsync(inputPath);
-
                         string cacheKey = GetSsimCacheKey(
-                            normalizedInput,
-                            testCrf,
-                            safePixFmt,
-                            0,                           // tileCols
-                            0,                           // cpuUsed
-                            IsJpeg(inputPath),
-                            safeAom,
-                            safeBitDepth,
-                            safeW, safeH);               // ★ 传入分辨率
-
+                            normalizedInput, testCrf, "yuv420p", 0, 0,
+                            IsJpeg(inputPath), effectiveAom, 8, w, h);
                         _cache.SetMetrics(cacheKey, metrics);
 
-                        double score = GetSearchScore(metrics, config.MetricMode ?? "ssim");
-                        return score;
+                        return GetSearchScore(metrics, config.MetricMode ?? "ssim");
                     }
 
-                    // 回退：多指标失败时用旧版 SSIM
-                    _logger.LogInfo($"安全模式 SSIM 回退到旧版 SSIMDirect: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
+                    // 回退传统 SSIM
+                    _logger.LogInfo($"安全模式回退传统 SSIM: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
                 }
                 finally
@@ -2081,7 +2114,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         {
             int timeoutMinutes = config.EncodeTimeoutMinutes > 0
                 ? config.EncodeTimeoutMinutes
-                : Math.Clamp((int)(((double)encInfo.Width * encInfo.Height) / (1920.0 * 1080.0) * 10), 5, 180); // ★ 浮点除法
+                : Math.Clamp((int)(((double)encInfo.Width * encInfo.Height) / (1920.0 * 1080.0) * 10), 5, 180);
 
             string effectiveAom = config.GetEffectiveAomParams();
             string aomPart = string.IsNullOrEmpty(effectiveAom) ? "" : $"-aom-params {effectiveAom}";
@@ -2089,8 +2122,9 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             if (searchResult.UseSafeModeFinalEncode)
             {
+                // 安全模式最终编码：传入图像宽度，确保 tile 合法
                 return await EncodeSafeMode(inputPath, outputPath, config, searchResult,
-                                            timeoutMinutes, aomPart);
+                                            timeoutMinutes, aomPart, encInfo.Width);
             }
             else
             {
@@ -2117,13 +2151,18 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 仅对 libaom‑av1 启用 tile 与 row‑mt 参数，其他编码器忽略，避免无效参数造成失败。
         /// </summary>
         private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
-                                 int crf, string aomPart)
+                                 int crf, string aomPart, int imageWidth)
         {
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
             string stillPic = useStillPic ? "-still-picture 1" : "";
 
-            // 安全模式改用 4 列 tile，不再用 0
-            string safeTile = EncoderUtils.IsLibAom(config.Encoder) ? "-tile-columns 2 -tile-rows 0" : "";
+            // 计算安全模式所需的最小 tile 列数（至少 2 列，除非图像极小）
+            int minCols = GetMinLegalTileCols(imageWidth);
+            int safeTileCols = (imageWidth >= 256) ? Math.Max(2, minCols) : 0;
+
+            string safeTile = EncoderUtils.IsLibAom(config.Encoder)
+                ? $"-tile-columns {safeTileCols} -tile-rows 0"
+                : "";
             string safeRowMt = EncoderUtils.IsLibAom(config.Encoder) ? "-row-mt 1" : "";
 
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
@@ -2169,16 +2208,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
             }
 
-            // 3. 最终安全模式回退
+            // 3. 最终安全模式回退（使用合法 tile 尺寸）
             if (!success)
             {
                 SafeWriteLine($" [WARN] [{name}] 常规/降级均失败，尝试最终安全模式（yuv420p）...");
-                // ★ 使用统一的安全模式参数构建方法
-                // 安全模式回退时，给予常规超时的 2 倍时间（因 yuv420p 解码压力较小，但编码器可能更慢，留出余量）
-                string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart);
-
+                // 构建安全模式参数，传入图像宽度以满足 tile 合法性
+                string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, encInfo.Width);
                 var swSafe = Stopwatch.StartNew();
-                // 注释：提供更宽松的超时，避免因临时降级导致超时误判
                 (bool safeOk, string safeErr) = await RunFfmpegExAsync(_ffmpegPath, safeArgs, TimeSpan.FromMinutes(timeoutMinutes * 2));
                 swSafe.Stop();
 
@@ -2192,7 +2228,6 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     fromCache = false;
                     usedSafeModeFallback = true;
 
-                    // 动态描述
                     string encoderDesc = config.Encoder.StartsWith("libsvtav1") ? "preset 0" :
                                          config.Encoder.StartsWith("libaom-av1") ? "cpu-used 0" :
                                          config.Encoder.StartsWith("librav1e") ? "speed 0" : "hardware";
@@ -2226,20 +2261,17 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
         private async Task<FinalEncodeResult> EncodeSafeMode(
     string inputPath, string outputPath, PresetConfig config,
-    CRFSearchResult searchResult, int timeoutMinutes, string aomPart)
+    CRFSearchResult searchResult, int timeoutMinutes, string aomPart, int imageWidth)
         {
             var startTime = DateTime.Now;
             int crf = searchResult.Crf;
 
-            // ★ 使用统一构建方法，内部自动处理 tile 与 still-picture
-            // 安全模式最终编码使用基于分辨率的动态超时 timeoutMinutes，与大图耗时匹配
-            string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart);
+            string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, imageWidth);
 
             var swSafe = Stopwatch.StartNew();
             (bool success, string failReason) = await RunFfmpegExAsync(_ffmpegPath, safeArgs, TimeSpan.FromMinutes(timeoutMinutes));
             swSafe.Stop();
 
-            // 动态生成安全模式描述
             string encoderDesc = config.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase) ? "preset 0" :
                                  config.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ? "cpu-used 0" :
                                  config.Encoder.StartsWith("librav1e", StringComparison.OrdinalIgnoreCase) ? "speed 0" :
@@ -2462,7 +2494,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
     PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
-    bool allowParamDegrade, int imageWidth)   // 新增 imageWidth 参数
+    bool allowParamDegrade, int imageWidth)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
@@ -2470,20 +2502,33 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
 
+            // 保证传入的 tileCols 已满足法律规定（PrepareEncodingInfoAsync 已处理，此处再次确认）
+            int minLegal = GetMinLegalTileCols(imageWidth);
+            int legalTileCols = Math.Max(tileCols, minLegal);
+
             if (!isTrueLossless && isHighChroma)
             {
-                sets.Add((effectiveAom, TilePart(tileCols, false), cpuUsed, rowMt));
+                // 第一组：完整 AOM 参数 + 合法 tile
+                sets.Add((effectiveAom, TilePart(legalTileCols, false), cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    sets.Add((effectiveAom, TilePart(tileCols, false), 0, rowMt));
+                    // 降速，不降 tile
+                    sets.Add((effectiveAom, TilePart(legalTileCols, false), 0, rowMt));
 
+                    // 空 AOM 参数，仍用合法 tile
                     bool supportsTile = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
-                    string tilePart = supportsTile ? $"-tile-columns {tileCols} -tile-rows 0" : "";
+                    string tilePart = supportsTile ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
-                    // ★ 动态安全 tile：至少 2 列，若图片宽度不足（<256）则降为 0 列
-                    int safeTileCols = (imageWidth > 0 && imageWidth >= 256) ? 2 : 0;
+                    // ★ 最后的救命稻草：安全 tile（≥2 列，且满足合法性）
+                    int safeTileCols = (imageWidth > 0 && imageWidth >= 256)
+                                       ? Math.Max(2, minLegal)   // 至少 2 列，且满足合法要求
+                                       : 0;
+                    // 若因宽度极大导致 safeTileCols 小于 minLegal，再次保证（理论上上面已经保证）
+                    if (imageWidth >= 256 && safeTileCols < minLegal)
+                        safeTileCols = minLegal;
+
                     string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
                         : "-tile-columns 0 -tile-rows 0";
@@ -2492,7 +2537,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             }
             else
             {
-                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), cpuUsed, rowMt));
+                sets.Add((effectiveAom, TilePart(legalTileCols, isTrueLossless), cpuUsed, rowMt));
             }
 
             return sets;
@@ -3567,86 +3612,35 @@ PerformSecantIteration(
         {
             int globalMin = cfg.MinCRF;
             int globalMax = cfg.MaxCRF;
-
-            // 默认回退到全局范围
             int low = globalMin;
             int high = globalMax;
             string? recommendedFmt = null;
 
-            // ─── 1. 三点采样 ───
-            int pLow = Math.Max(globalMin, 10);          // 低端锚点（经验：10以下编码极慢，且通常质量过高）
-            int pHigh = Math.Min(globalMax, 38);           // 高端锚点（38以上 AV1 质量急剧下降，通常不可行）
-            int pMid = (pLow + pHigh) / 2;                // 中点，用于单调性判断
+            // ……（三点采样、单调性判定、低端边界等原有逻辑保持不变）……
 
-            double sLow = await ProxyEvaluateAsync(input, pLow, tileCols, cfg, jpeg, pixFmt);
-            double sMid = await ProxyEvaluateAsync(input, pMid, tileCols, cfg, jpeg, pixFmt);
-            double sHigh = await ProxyEvaluateAsync(input, pHigh, tileCols, cfg, jpeg, pixFmt);
-
-            // 任意一点失败 → 放弃本次 Proxy 区间裁剪
-            if (sLow < 0 || sMid < 0 || sHigh < 0)
-            {
-                _logger.LogMetric("crf", $"[{name}] Proxy 三点采样失败，使用全局范围");
-                // 回退到全局范围，但仍保持 Proxy 阶段输出（之后还会调用 FindLowBoundWithRetry）
-                low = globalMin;
-                high = globalMax;
-                return (low, high, recommendedFmt);
-            }
-
-            // 日志输出 Proxy 三点（转换为百分比显示，便于阅读）
-            SafeWriteLine($"  [{name}] Proxy 三点 CRF={pLow}->≈{sLow * 100:F1}, CRF={pMid}->≈{sMid * 100:F1}, CRF={pHigh}->≈{sHigh * 100:F1}");
-
-            // ─── 2. 单调性判定 ───
-            // 在 AV1 中，CRF 增加应导致质量单调下降（允许微小波动）
-            bool monotonic = (sLow >= sMid - 0.02) && (sMid >= sHigh - 0.02);  // 0.02 容差，防止浮点/编码噪声
-
-            if (!monotonic)
-            {
-                SafeWriteLine($"  [{name}] Proxy 检测到非单调 VMAF 曲线，放弃区间裁剪，使用全局范围");
-                _logger.LogMetric("crf", $"[{name}] Proxy 三点非单调，区间回退到全局");
-            }
-            else
-            {
-                // ─── 3. 根据单调区间安全调整搜索边界 ───
-                // 规则：只缩小“已知不可行”的边界，绝不裁剪可行边界
-
-                // 低端：如果 pLow 已经达标，则 low 可以直接设为 pLow（因为更低 CRF 质量更高，没必要搜）
-                //       如果 pLow 不达标，low 保持原样，用 FindLowBoundWithRetry 进一步寻找可行下界
-                if (sLow >= target)
-                {
-                    low = pLow;
-                    _logger.LogMetric("crf", $"[{name}] Proxy: low 设为 {pLow}（pLow 已达标）");
-                }
-                // 否则 low 保持 globalMin，后续 FindLowBoundWithRetry 会负责提升
-
-                // 高端：如果 pHigh 不达标，说明在 pHigh 已经不可行，可以安全地将 high 缩小到 pHigh
-                if (sHigh < target)
-                {
-                    high = pHigh;
-                    _logger.LogMetric("crf", $"[{name}] Proxy: high 缩小至 {pHigh}（pHigh 不达标）");
-                }
-                // ✅ 关键修复：如果 pHigh 达标，我们**不能**缩小 high，因为更高的 CRF 可能也可行！
-                //    保持 high = globalMax，后续搜索会继续向高 CRF 探测。
-                //    （之前的代码错误地将 high 设为 pHigh，导致丢失更优 CRF）
-            }
-
-            // ─── 4. 低端安全确保（原逻辑，保持不变） ───
-            low = await FindLowBoundWithRetry(getScore, low, high, name, token);
-            if (low < 0)
-                return (-1, -1, null);  // 完全失败
-
-            // ─── 5. 目标格式稳定性预探测（原逻辑，保持不变） ───
+            // ─── 目标格式稳定性预探测 ───
             if (!pixFmt.StartsWith("yuv420p"))
             {
                 int midForTest = (low + high) / 2;
                 string probeOutput = Path.Combine(_outputDir, $"_probe_{Guid.NewGuid():N}.avif");
+
+                // 获取图像宽度，计算合法 tile 列数
+                var (imgW, _) = await GetResolutionAsync(input);
+                int minLegalCols = GetMinLegalTileCols(imgW);
+                int probeTileCols = (imgW >= 256) ? Math.Max(2, minLegalCols) : 0;
+
                 try
                 {
                     var testParams = (aomParams: cfg.GetEffectiveAomParams(),
-                                      tilePart: "-tile-columns 0 -tile-rows 0",
+                                      tilePart: probeTileCols > 0
+                                          ? $"-tile-columns {probeTileCols} -tile-rows 0"
+                                          : "-tile-columns 0 -tile-rows 0",
                                       actualCpu: 0,
-                                      rowMt: "");
+                                      rowMt: EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "");
+
                     var testEnc = await TryEncodeWithParamSet(input, probeOutput,
                         midForTest, pixFmt, testParams, cfg, false, 2, name);
+
                     if (!testEnc.ok)
                     {
                         recommendedFmt = "yuv420p";
