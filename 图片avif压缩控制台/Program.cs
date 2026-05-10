@@ -3151,6 +3151,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 最终通过二分与右侧扫描保证返回全局最大可行 CRF。
         /// 已修复 _scoreCache 写入缺失问题。
         /// </summary>
+        /// <summary>
+        /// 自适应搜索：当区间宽度 ≤ 40 时采用哨兵探测，否则采用指数扩展。
+        /// 窄区间（≤20）直接二分，避免冗余哨兵；
+        /// 哨兵点不足时自动改为四分位点。
+        /// 最终通过二分与右侧扫描保证返回全局最大可行 CRF。
+        /// </summary>
         private async Task<(int crf, double score, int evalCount)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
@@ -3164,12 +3170,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             if (lowScore >= 0)
             {
                 evaluated.Add(low);
-                _scoreCache[low] = lowScore;      // ✅ 写入初始低端分数
+                _scoreCache[low] = lowScore;
             }
             if (highScore >= 0)
             {
                 evaluated.Add(high);
-                _scoreCache[high] = highScore;    // ✅ 写入初始高端分数
+                _scoreCache[high] = highScore;
             }
 
             int totalEvals = 0;
@@ -3178,63 +3184,71 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             if (lowScore >= target) { bestCRF = low; bestScore = lowScore; }
             if (highScore >= target && high > bestCRF) { bestCRF = high; bestScore = highScore; }
 
-            // 如果 high 直接达标，直接返回
             if (highScore >= target)
                 return (high, highScore, 0);
 
-            // 如果 low 不达标，返回失败标志
             if (lowScore < target)
                 return (-1, lowScore, 0);
 
-            // 自适应阈值：区间宽度超过 40 则使用指数扩展策略
             const int widthThreshold = 40;
+            const int narrowThreshold = 20;   // 窄区间直接二分，避免无效哨兵
             int searchLow, searchHigh;
 
             if (high - low <= widthThreshold)
             {
-                // ========== 窄区间：哨兵探测 + 二分 ==========
-                var rawSentinels = new[] { 12, 20, 28 };
-                var sentinels = rawSentinels.Where(c => c >= low && c <= high).ToList();
-
-                if (sentinels.Count < 2)
+                // ========== 窄区间策略 ==========
+                if (high - low <= narrowThreshold)
                 {
-                    int q = (high - low) / 4;
-                    sentinels = new List<int>
-            {
-                low + q,
-                low + q * 2,
-                low + q * 3
-            }.Where(c => c >= low && c <= high).Distinct().OrderBy(x => x).ToList();
+                    // 区间极窄，直接使用二分，不再探测哨兵
+                    searchLow = bestCRF > 0 ? bestCRF : low;
+                    searchHigh = high;
                 }
-
-                // 哨兵探测
-                foreach (int crf in sentinels)
+                else
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (evaluated.Contains(crf) || tracker.IsBlacklisted(crf))
-                        continue;
+                    // 哨兵探测：先尝试固定经验哨兵
+                    var rawSentinels = new[] { 12, 20, 28 };
+                    var sentinels = rawSentinels.Where(c => c >= low && c <= high).ToList();
 
-                    double score = await EvaluateCrfSafe(crf, getScore, name, tracker);
-                    if (double.IsInfinity(score)) continue;
-
-                    evaluated.Add(crf);
-                    _scoreCache[crf] = score;       // ✅ 写入缓存
-                    totalEvals++;
-                    LogEvaluation(name, cfg, crf, score, "SENTINEL");
-
-                    if (score >= target && crf > bestCRF) { bestCRF = crf; bestScore = score; }
-                }
-
-                searchLow = bestCRF > 0 ? bestCRF : low;
-                searchHigh = high;
-                // 利用哨兵进一步修剪 searchHigh
-                for (int i = 0; i < sentinels.Count; i++)
-                {
-                    int crf = sentinels[i];
-                    if (evaluated.Contains(crf) && getCachedScore(crf) < target)
+                    // 若可用哨兵太少，改用均匀四分位点
+                    if (sentinels.Count < 3)
                     {
-                        searchHigh = crf;
-                        break;
+                        int q = (high - low) / 4;
+                        sentinels = new List<int>
+                {
+                    low + q,
+                    low + q * 2,
+                    low + q * 3
+                }.Where(c => c >= low && c <= high).Distinct().OrderBy(x => x).ToList();
+                    }
+
+                    // 哨兵评估
+                    foreach (int crf in sentinels)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (evaluated.Contains(crf) || tracker.IsBlacklisted(crf))
+                            continue;
+
+                        double score = await EvaluateCrfSafe(crf, getScore, name, tracker);
+                        if (double.IsInfinity(score)) continue;
+
+                        evaluated.Add(crf);
+                        _scoreCache[crf] = score;
+                        totalEvals++;
+                        LogEvaluation(name, cfg, crf, score, "SENTINEL");
+
+                        if (score >= target && crf > bestCRF) { bestCRF = crf; bestScore = score; }
+                    }
+
+                    // 根据哨兵收缩 searchHigh
+                    searchLow = bestCRF > 0 ? bestCRF : low;
+                    searchHigh = high;
+                    foreach (int crf in sentinels)
+                    {
+                        if (evaluated.Contains(crf) && getCachedScore(crf) < target)
+                        {
+                            searchHigh = crf;
+                            break;
+                        }
                     }
                 }
             }
@@ -3255,7 +3269,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                     if (evaluated.Contains(next) || tracker.IsBlacklisted(next))
                     {
-                        // 若 next 不达标，上界已找到；否则继续加倍
                         if (evaluated.Contains(next) && getCachedScore(next) < target)
                             break;
                         step *= 2;
@@ -3270,7 +3283,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     }
 
                     evaluated.Add(next);
-                    _scoreCache[next] = score;       // ✅ 写入缓存
+                    _scoreCache[next] = score;
                     totalEvals++;
                     LogEvaluation(name, cfg, next, score, "EXP");
 
@@ -3311,7 +3324,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
 
                 evaluated.Add(mid);
-                _scoreCache[mid] = score;           // ✅ 写入缓存
+                _scoreCache[mid] = score;
                 totalEvals++;
                 LogEvaluation(name, cfg, mid, score, "BINARY");
 
@@ -3338,7 +3351,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     if (double.IsInfinity(score) || score < target)
                         break;
                     evaluated.Add(next);
-                    _scoreCache[next] = score;       // ✅ 写入缓存
+                    _scoreCache[next] = score;
                     totalEvals++;
                     bestCRF = next;
                     bestScore = score;
@@ -3355,14 +3368,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             return (bestCRF, bestScore, totalEvals);
         }
 
-        // 辅助方法：获取已缓存分数（不再需要 evaluated 和 target 参数）
+        // 辅助字段和方法（确保只保留一份）
         private Dictionary<int, double> _scoreCache = new();
         private double getCachedScore(int crf)
         {
             return _scoreCache.TryGetValue(crf, out double score) ? score : 0;
         }
 
-        // 辅助方法：统一评估日志
         private void LogEvaluation(string name, PresetConfig cfg, int crf, double score, string phase)
         {
             string display = cfg.MetricMode?.ToLower() switch
@@ -3373,6 +3385,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             SafeWriteLine($"  [{name}] [{phase}] CRF={crf} -> {display}");
             _logger.LogSearch($"[{name}] [{phase}] CRF={crf} -> {display}");
         }
+
+
+
+
+        // 辅助方法：统一评估日志
+
 
         private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
 
