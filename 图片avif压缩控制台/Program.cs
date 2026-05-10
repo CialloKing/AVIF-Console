@@ -3018,79 +3018,14 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
-        private async Task<int> FindLowBoundWithRetry(
-        Func<int, Task<double>> getSSIM, int minCRF, int maxCRF,
-        string name, CancellationToken token)
-        {
-            for (int i = minCRF; i <= maxCRF && i - minCRF < 5; i++)  // ★ 由 3 改为 5
-            {
-                token.ThrowIfCancellationRequested();
-                double s = await getSSIM(i);
-                if (s >= 0) return i;
-            }
-            SafeWriteLine($"  [{name}] [FAIL] 低端指标连续失败");
-            return -1;
-        }
 
 
 
 
 
-        private async Task<(int bestCRF, bool found, bool anySuccess)> BinarySearchWithSkip(
-    Func<int, Task<double>> getSSIM, int low, int high, double target, string name,
-    CancellationToken token, PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
-    string inputPath)
-        {
-            int best = low;
-            bool found = false;
-            bool anySuccess = false;
 
-            return await PerformBinarySearchLoop(
-                getSSIM, low, high, target, name, token, cfg, tileCols, pixFmt, jpeg, inputPath,
-                best, found, anySuccess);
-        }
 
-        private async Task<(int best, bool found, bool anySuccess)> PerformBinarySearchLoop(
-    Func<int, Task<double>> getSSIM, int low, int high, double target, string name,
-    CancellationToken token, PresetConfig cfg, int tileCols, string pixFmt, bool jpeg,
-    string inputPath, int best, bool found, bool anySuccess)
-        {
-            int l = low, r = high;
-            while (l <= r)
-            {
-                token.ThrowIfCancellationRequested();
-                int mid = (l + r) / 2;
-                double s = await getSSIM(mid);
-
-                if (s < 0)
-                {
-                    SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} 计算失败，跳过");
-                    l = mid + 1;
-                    continue;
-                }
-
-                anySuccess = true;
-
-                // 获取完整指标用于显示
-                var metrics = await GetOrComputeMetrics(inputPath, mid, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                string display = FormatQualityDisplay(metrics, s);
-                SafeWriteLine($"  [{name}] [SEARCH] CRF={mid} -> {display}");
-
-                // 二分区间调整
-                if (s >= target)
-                {
-                    best = mid;
-                    found = true;
-                    l = mid + 1;
-                }
-                else
-                {
-                    r = mid - 1;
-                    if (!found) best = mid;
-                }
-            }
-            return (best, found, anySuccess);
-        }
+       
 
 
         private static string FormatQualityDisplay(QualityMetrics? m, double fallbackScore)
@@ -3441,54 +3376,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
         }
 
-        /// <summary>
-        /// 割线法求解 CRF，使得质量指标接近目标值 (target ∈ [0,1])。
-        /// 需要传入已经确认有效的区间 [low, high] 且 f(low) >= target, f(high) < target。
-        /// 返回最佳 CRF，若未收敛则返回最佳已知点。
-        /// </summary>
-        private async Task<(int crf, double score)> SolveCrfBySecant(
-    Func<int, Task<double>> getScore, int low, int high, double vl, double vh,
-    double target, string name, CancellationToken token,
-    PresetConfig cfg, int tileCols, string pixFmt, bool jpeg)
-        {
-            const int maxIter = 3;   // 原5→3
-
-            double x0 = low, x1 = high;
-            double f0 = vl, f1 = vh;
-            int bestCRF = low;
-            double bestScore = vl;
-
-            for (int iter = 0; iter < maxIter; iter++)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var iterationResult = await PerformSecantIteration(
-                    getScore, x0, x1, f0, f1, target, low, high, name, iter, token, cfg);
-
-                // 处理评估失败（返回 -1）
-                if (iterationResult.score < 0)
-                {
-                    _logger.LogInfo($"割线法迭代 {iter + 1} 评分失败(score<0)，提前终止");
-                    break;
-                }
-
-                x0 = iterationResult.newX0;
-                x1 = iterationResult.newX1;
-                f0 = iterationResult.newF0;
-                f1 = iterationResult.newF1;
-
-                if (iterationResult.converged)
-                    return (iterationResult.crfNext, iterationResult.score);
-
-                if (iterationResult.score >= target && iterationResult.crfNext > bestCRF)
-                {
-                    bestCRF = iterationResult.crfNext;
-                    bestScore = iterationResult.score;
-                }
-            }
-
-            return (bestCRF, bestScore);
-        }
+        
 
 
         private async Task<(int crfNext, double score, bool converged, double newX0, double newX1, double newF0, double newF1)>
