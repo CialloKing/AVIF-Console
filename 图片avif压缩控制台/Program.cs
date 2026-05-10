@@ -3389,86 +3389,11 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
-        // 辅助方法：统一评估日志
-
-
-        private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
-
-
-        private double getCachedScore(int crf, HashSet<int> evaluated, double target)
-        {
-            // 实际使用中，需要在每次评估后记录分数到 _scoreCache 中，
-            // 此处示意：若未记录，返回 0（需根据实际情况调整）。
-            return _scoreCache.TryGetValue(crf, out double score) ? score : 0;
-        }
 
 
 
 
-        /// <summary>
-        /// 二分补洞：在 [l, r] 范围内快速探查未评估的整数 CRF，
-        /// 确保没有因 Brent 跳跃而遗漏的可行点。
-        /// </summary>
-        /// <summary>
-        /// 二分补洞：在 [l, r] 范围内快速探查未评估的整数 CRF，
-        /// 确保没有因 Brent 跳跃而遗漏的可行点。
-        /// 返回：发现的更优 CRF、对应分数、新增评估次数。
-        /// </summary>
-        private async Task<(int bestCRF, double bestScore, int additionalEvals)> FillGapsAsync(
-            int l, int r,
-            int currentBestCRF, double currentBestScore,
-            Func<int, Task<double>> getScore,
-            double target,
-            HashSet<int> evaluated,
-            FileScopedFailTracker tracker,
-            string name,
-            CancellationToken token)
-        {
-            int bestCRF = currentBestCRF;
-            double bestScore = currentBestScore;
-            int evalCount = 0;
 
-            var stack = new Stack<(int left, int right)>();
-            stack.Push((l, r));
-
-            while (stack.Count > 0)
-            {
-                token.ThrowIfCancellationRequested();
-                var (left, right) = stack.Pop();
-                if (right - left <= 1) continue;
-
-                int mid = (left + right) / 2;
-                if (evaluated.Contains(mid) || tracker.IsBlacklisted(mid))
-                {
-                    // 若中点不可用，分左右继续
-                    stack.Push((left, mid));
-                    stack.Push((mid, right));
-                    continue;
-                }
-
-                double score = await EvaluateCrfSafe(mid, getScore, name, tracker);
-                if (double.IsInfinity(score)) continue;
-
-                evaluated.Add(mid);
-                evalCount++;
-
-                if (score >= target)
-                {
-                    if (mid > bestCRF) { bestCRF = mid; bestScore = score; }
-                    // 中点达标，右侧可能还有更高可行点
-                    stack.Push((mid, right));
-                }
-                else
-                {
-                    // 不达标，左侧可能还有更好的可行点
-                    stack.Push((left, mid));
-                }
-            }
-
-            return (bestCRF, bestScore, evalCount);
-        }
-
-        // 辅助交换方法
 
 
 
