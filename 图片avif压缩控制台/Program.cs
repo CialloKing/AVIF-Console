@@ -376,7 +376,7 @@ namespace AvifEncoder
         }
     }
 
-
+    
 
     public class AvifPipeline : IDisposable
     {
@@ -422,9 +422,14 @@ namespace AvifEncoder
 
         private readonly IFileSystem _fs;
 
-        // ── 第31步新增字段 ──
-        private HashSet<int> _knownBadCrfs = new HashSet<int>();
-        private Dictionary<int, int> _crfFailCount = new Dictionary<int, int>();
+        // 删除原有字段：
+        // private HashSet<int> _knownBadCrfs = new HashSet<int>();
+        // private Dictionary<int, int> _crfFailCount = new Dictionary<int, int>();
+
+        // 新增文件级隔离字典
+        private readonly ConcurrentDictionary<string, FileScopedFailTracker> _failTrackers = new();
+
+
         private const int HardFailThreshold = 2;
         private const int AvoidRadius = 2;
 
@@ -433,28 +438,74 @@ namespace AvifEncoder
         private readonly ConcurrentDictionary<string, HashSet<string>> _fatalFmts = new();
 
         /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
-        private void ResetFailTracking()
-        {
-            _knownBadCrfs.Clear();
-            _crfFailCount.Clear();
-        }
 
-        /// <summary> 检查 CRF 是否在黑名单或邻域禁区中 </summary>
-        private bool IsCrfBlacklisted(int crf)
+
+
+
+
+        private sealed class FileScopedFailTracker
         {
-            for (int offset = -AvoidRadius; offset <= AvoidRadius; offset++)
+            public HashSet<int> KnownBadCrfs { get; } = new();
+            public Dictionary<int, int> CrfFailCount { get; } = new();
+            public const int HardFailThreshold = 2;
+            public const int AvoidRadius = 2;
+
+            public void Reset()
             {
-                if (_knownBadCrfs.Contains(crf + offset))
-                    return true;
+                KnownBadCrfs.Clear();
+                CrfFailCount.Clear();
             }
-            return false;
+
+            public bool IsBlacklisted(int crf)
+            {
+                for (int offset = -AvoidRadius; offset <= AvoidRadius; offset++)
+                    if (KnownBadCrfs.Contains(crf + offset))
+                        return true;
+                return false;
+            }
+
+            public void RecordFailedAttempt(int crf)
+            {
+                CrfFailCount.TryGetValue(crf, out int count);
+                count++;
+                CrfFailCount[crf] = count;
+                if (count >= HardFailThreshold)
+                    KnownBadCrfs.Add(crf);
+            }
+
+            public void ClearCrf(int crf) => CrfFailCount.Remove(crf);
+
+            public int FindSafeCrfInInterval(int center, int xMin, int xMax)
+            {
+                for (int offset = 0; offset <= xMax - xMin; offset++)
+                {
+                    int tryCrf = center + offset;
+                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
+                        return tryCrf;
+                    tryCrf = center - offset;
+                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
+                        return tryCrf;
+                }
+                return -1;
+            }
         }
 
 
+        private async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name, FileScopedFailTracker tracker)
+        {
+            if (tracker.IsBlacklisted(crf))
+                return double.PositiveInfinity;
 
+            double score = await getScore(crf);
+            if (score < 0)
+            {
+                tracker.RecordFailedAttempt(crf);
+                return double.PositiveInfinity;
+            }
 
-
-
+            tracker.ClearCrf(crf);
+            return score;
+        }
 
 
 
@@ -496,59 +547,9 @@ namespace AvifEncoder
 
 
 
-        /// <summary>
-        /// 在区间 [xMin, xMax] 内寻找一个不在黑名单中的安全 CRF，
-        /// 从中心点向两侧扩展查找。
-        /// </summary>
-        private int FindSafeCrfInInterval(int center, int xMin, int xMax)
-        {
-            for (int offset = 0; offset <= xMax - xMin; offset++)
-            {
-                int tryCrf = center + offset;
-                if (tryCrf >= xMin && tryCrf <= xMax && !IsCrfBlacklisted(tryCrf))
-                    return tryCrf;
 
-                tryCrf = center - offset;
-                if (tryCrf >= xMin && tryCrf <= xMax && !IsCrfBlacklisted(tryCrf))
-                    return tryCrf;
-            }
-            return -1; // 整个区间都被黑名单覆盖
-        }
 
-        /// <summary>
-        /// 记录一次编码失败。同一 CRF 累计失败次数达到阈值后，标记为硬失败并加入黑名单。
-        /// </summary>
-        private void RecordFailedAttempt(int crf)
-        {
-            _crfFailCount.TryGetValue(crf, out int count);
-            count++;
-            _crfFailCount[crf] = count;
 
-            if (count >= HardFailThreshold)
-            {
-                _knownBadCrfs.Add(crf);
-            }
-        }
-
-        /// <summary>
-        /// 安全的 CRF 评估封装：自动跳过黑名单，记录失败，失败时返回正无穷。
-        /// </summary>
-        private async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name)
-        {
-            if (IsCrfBlacklisted(crf))
-                return double.PositiveInfinity;
-
-            double score = await getScore(crf);
-            if (score < 0)
-            {
-                RecordFailedAttempt(crf);
-                return double.PositiveInfinity;
-            }
-
-            // 成功后清除该 CRF 的失败计数（避免误判）
-            _crfFailCount.Remove(crf);
-            return score;
-        }
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
@@ -2663,16 +2664,18 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                                (string aomParams, string tilePart, int actualCpu, string rowMt) param,
                                PresetConfig cfg, bool isTrueLossless)
         {
+            // 临时提升日志级别以获取详细错误（例如 tile sizing 错误）
+            string logLevel = "-loglevel info -hide_banner";
+
             string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
             string crfPart = isTrueLossless ? "-lossless 1" : $"-crf {crf}";
             string range = "-color_range pc";
             string colorMeta = "-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709";
             string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
 
-            // ★ 编码器特定的速度、分块、以及相应的极致参数
             string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
 
-            return $"-loglevel error -hide_banner -i \"{input}\" " +
+            return $"{logLevel} -i \"{input}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {range} {colorMeta} " +
                    $"{crfPart} {encoderSpecific} " +
                    $"{stillPic} -frames:v 1 {aom} -y \"{output}\"";
@@ -2691,6 +2694,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 file, args, timeout, _globalCts?.Token ?? default);
 
+            // ── 诊断增强：记录完整 stderr ──
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                _logger.LogInfo($"ffmpeg stderr:\n{stderr.Trim()}");
+            }
+
             string lastLine = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";
 
             if (exitCode != 0)
@@ -2701,7 +2710,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             return (true, "");
         }
 
-        
+
 
         // ── 核心 SSIM 计算（已整合色彩空间归一化 + 时间轴同步） ──
         private async Task<double> SSIMDirect(string a, string b, string? targetPixFmt = null)
@@ -3090,12 +3099,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
     double target, string name, CancellationToken token,
     PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
-            // 重置本次搜索的失败记录
-            ResetFailTracking();
+            // ── 文件级隔离的失败跟踪器 ──
+            var tracker = _failTrackers.GetOrAdd(GetNormalizedPathForCache(input), _ => new FileScopedFailTracker());
+            tracker.Reset();   // 每次搜索前清空该文件的失败记录
 
-            int brentEvalCount = 0; // ★ 局部 Brent 计数器
+            int brentEvalCount = 0;
 
-            // 1. 确定初始最佳解（基于真实评分，不受后续交换影响）
+            // 1. 确定初始最佳解（基于真实评分）
             int bestCRF = -1;
             double bestScore = -1;
             if (lowScore >= target)
@@ -3114,14 +3124,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             double fa = lowScore - target;
             double fb = highScore - target;
 
-            // 保证物理区间 a <= b
             if (a > b)
             {
                 Swap(ref a, ref b);
                 Swap(ref fa, ref fb);
             }
 
-            // 维持 |f(b)| <= |f(a)| 以加速收敛
             if (Math.Abs(fa) < Math.Abs(fb))
             {
                 Swap(ref a, ref b);
@@ -3132,8 +3140,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             double? d = null;
             bool mflag = true;
 
-            const double tol = 0.005;   // 收敛容忍值（用于 Brent 条件，不影响退出）
-            const int maxIter = 25;     // 最大迭代次数
+            const double tol = 0.005;
+            const int maxIter = 25;
 
             for (int iter = 0; iter < maxIter; iter++)
             {
@@ -3142,15 +3150,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 int xMin = (int)Math.Min(a, b);
                 int xMax = (int)Math.Max(a, b);
 
-                // ── 唯一正常退出条件：区间内无未测整数点 ──
                 if (xMax - xMin <= 1)
                     break;
 
-                // ── 预测下一个评估点（Brent 插值或二分） ──
+                // 预测下一个评估点
                 double s = 0;
                 bool useBisection = false;
 
-                // 尝试逆二次插值
                 if (fa != fc && fb != fc)
                 {
                     s = a * fb * fc / ((fa - fb) * (fa - fc))
@@ -3159,7 +3165,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
                 else
                 {
-                    // 割线法
                     double delta = fb - fa;
                     if (Math.Abs(delta) < 1e-8)
                         useBisection = true;
@@ -3167,7 +3172,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         s = b - fb * (b - a) / delta;
                 }
 
-                // Brent 条件检查：插值点是否在区间内，且步长合适
                 if (!useBisection)
                 {
                     if (s <= xMin || s >= xMax)
@@ -3201,7 +3205,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 int crfEval = (int)Math.Round(s);
                 crfEval = Math.Clamp(crfEval, xMin, xMax);
 
-                // 强制使用未测内点，避免重复评估端点
                 if (crfEval == xMin || crfEval == xMax)
                 {
                     if (xMax - xMin >= 2)
@@ -3211,26 +3214,24 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     mflag = true;
                 }
 
-                // ── 安全点检查：若预测点被黑名单覆盖，寻找替代 ──
-                if (IsCrfBlacklisted(crfEval))
+                // ── 使用文件级黑名单检查 ──
+                if (tracker.IsBlacklisted(crfEval))
                 {
-                    int safeCrf = FindSafeCrfInInterval(crfEval, xMin, xMax);
+                    int safeCrf = tracker.FindSafeCrfInInterval(crfEval, xMin, xMax);
                     if (safeCrf == -1)
                     {
-                        // 整个区间已无安全点，按靠近哪侧收缩
                         if (crfEval - xMin < xMax - crfEval)
-                            xMin = Math.Min(crfEval + AvoidRadius + 1, xMax);
+                            xMin = Math.Min(crfEval + FileScopedFailTracker.AvoidRadius + 1, xMax);
                         else
-                            xMax = Math.Max(crfEval - AvoidRadius - 1, xMin);
+                            xMax = Math.Max(crfEval - FileScopedFailTracker.AvoidRadius - 1, xMin);
                         continue;
                     }
                     crfEval = safeCrf;
                 }
 
-                // ── 评估 CRF（带失败跟踪） ──
-                double score = await EvaluateCrfSafe(crfEval, getScore, name);
+                // ── 评估 CRF，传入文件级跟踪器 ──
+                double score = await EvaluateCrfSafe(crfEval, getScore, name, tracker);
 
-                // 如果评估结果为不可行（正无穷），动态收缩区间
                 if (double.IsInfinity(score))
                 {
                     if (crfEval - xMin <= xMax - crfEval)
@@ -3240,12 +3241,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     continue;
                 }
 
-                // ★ 成功评估，Brent 计数器加一
                 brentEvalCount++;
-
                 double fVal = score - target;
 
-                // 日志输出（根据度量模式自适应）
                 string display = cfg.MetricMode?.ToLower() switch
                 {
                     "vmaf" => $"VMAF={score * 100:F1}",
@@ -3253,14 +3251,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 };
                 SafeWriteLine($"  [{name}] [BRENT] iter={iter + 1}, CRF={crfEval} -> {display}");
 
-                // 更新最佳可行解
                 if (score >= target && crfEval > bestCRF)
                 {
                     bestCRF = crfEval;
                     bestScore = score;
                 }
 
-                // 更新 Brent 历史点
                 d = b;
                 c = b; fc = fb;
 
@@ -3273,7 +3269,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     a = crfEval; fa = fVal;
                 }
 
-                // 维持 |f(b)| <= |f(a)|
                 if (Math.Abs(fa) < Math.Abs(fb))
                 {
                     Swap(ref a, ref b);
@@ -3281,7 +3276,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
             }
 
-            // 若整个搜索过程中未找到任何可行点，回退为 low（此时 low 是传入区间中较低的可行点，若 low 也不可行则 bestCRF 为 -1）
             if (bestCRF == -1)
             {
                 if (lowScore >= target)
