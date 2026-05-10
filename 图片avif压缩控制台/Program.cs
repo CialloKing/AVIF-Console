@@ -3122,11 +3122,19 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 增强版 Brent 搜索：集成硬失败黑名单、动态区间收缩与安全点搜索（第31步）。
         /// 已修复初始化 bestCRF 时因变量交换导致的逻辑错误。
         /// </summary>
+        /// <summary>
+        /// 使用 Brent 方法搜索满足质量目标的最大可行 CRF。
+        /// 优化点：
+        /// 1. 移除所有基于评分接近目标的提前退出，仅以区间宽度作为收敛判据。
+        /// 2. 当预测点落于端点且区间宽度 ≥2 时，强制跳至内部未测点，避免浪费迭代。
+        /// 3. 保留失败跟踪与黑名单机制，维持鲁棒性。
+        /// 4. 后处理探测右端点，确保不漏评。
+        /// </summary>
         private async Task<(int crf, double score, int evalCount)> SolveCrfBrent(
-    Func<int, Task<double>> getScore,
-    int low, int high, double lowScore, double highScore,
-    double target, string name, CancellationToken token,
-    PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
+            Func<int, Task<double>> getScore,
+            int low, int high, double lowScore, double highScore,
+            double target, string name, CancellationToken token,
+            PresetConfig cfg, string input, int tileCols, string pixFmt, bool jpeg)
         {
             // 文件级跟踪器
             var tracker = _failTrackers.GetOrAdd(GetNormalizedPathForCache(input), _ => new FileScopedFailTracker());
@@ -3147,8 +3155,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             double c = a, fc = fa;
             double d = b - a;                // 上一步步长
-            
-            const double tol = 0.005;        // 收敛容限
+            const double tol = 0.005;        // 收敛容限，仅用于 Brent 步长判断
             const int maxIter = 25;
 
             for (int iter = 0; iter < maxIter; iter++)
@@ -3157,9 +3164,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 int xMin = (int)Math.Min(a, b);
                 int xMax = (int)Math.Max(a, b);
-                if (xMax - xMin <= 1) break;   // 区间内已无整数 CRF
+                // ★ 唯一提前退出条件：区间内没有可探索的整数点
+                if (xMax - xMin <= 1) break;
 
-                
                 double s = b;   // 下一个评估点（实数）
 
                 // 尝试逆二次插值或割线法
@@ -3182,12 +3189,16 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 if (s < xMin || s > xMax || Math.Abs(s - b) >= 0.5 * (Math.Abs(b - c) < delta ? Math.Abs(b - c) : delta))
                 {
                     s = (a + b) / 2.0;   // 二分
-                 
                 }
-
 
                 // 将 s 舍入到最近的整数 CRF
                 int crfEval = (int)Math.Round(Math.Clamp(s, xMin, xMax));
+
+                // ★ 如果预测的是端点且区间宽度>=2，则强制跳到内部未测点
+                if ((crfEval == xMin || crfEval == xMax) && xMax - xMin >= 2)
+                {
+                    crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
+                }
 
                 // 黑名单检查
                 if (tracker.IsBlacklisted(crfEval))
@@ -3240,11 +3251,29 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 else if (highScore >= target) { bestCRF = high; bestScore = highScore; }
             }
 
+            // ★ 后处理：确保区间右端点的 CRF 未被漏评
+            int finalXMax = (int)Math.Ceiling(Math.Max(a, b));
+            if (bestCRF != -1 && bestScore >= target && finalXMax > bestCRF)
+            {
+                if (!tracker.IsBlacklisted(finalXMax))
+                {
+                    double finalCheckScore = await EvaluateCrfSafe(finalXMax, getScore, name, tracker);
+                    if (!double.IsInfinity(finalCheckScore) && finalCheckScore >= target)
+                    {
+                        bestCRF = finalXMax;
+                        bestScore = finalCheckScore;
+                        brentEvalCount++;
+                        _logger.LogSearch($"[{name}] [BRENT] 后处理探测 CRF={finalXMax} 达标，更新最优");
+                    }
+                }
+            }
+
             return (bestCRF, bestScore, brentEvalCount);
         }
 
-        // 辅助交换方法（已存在于类中，无需重复定义，若无则保留）
+        // 辅助交换方法（确保在类中存在）
         private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
 
 
 
