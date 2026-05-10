@@ -2402,9 +2402,13 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
     PresetConfig cfg, bool jpeg, string currentPixFmt, bool isTrueLossless, int timeoutMinutes,
     bool allowParamDegrade, string fileName)
         {
-            var paramSets = BuildParamSets(cfg, currentPixFmt, isTrueLossless, tileCols, cpuUsed, allowParamDegrade);
+            // 获取图片宽度（只取宽度，高度不需要）
+            var (w, _) = await GetResolutionAsync(input);
+            var paramSets = BuildParamSets(cfg, currentPixFmt, isTrueLossless, tileCols, cpuUsed,
+                                           allowParamDegrade, w);   // 传入宽度
+
             string lastError = "";
-            bool allNothingWritten = true;   // 是否所有参数集都失败且都是 Nothing was written
+            bool allNothingWritten = true;
 
             foreach (var param in paramSets)
             {
@@ -2418,12 +2422,8 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                     allNothingWritten = false;
             }
 
-            // 所有参数集都失败
             if (allNothingWritten)
-            {
-                // 使用特殊前缀标记，告知外层此格式完全无法输出
                 return (false, TimeSpan.Zero, _maxRetries, $"FATAL_NOTHING:{lastError}", false, null, null);
-            }
 
             return (false, TimeSpan.Zero, _maxRetries, $"像素格式 {currentPixFmt} 所有参数均失败", false, null, null);
         }
@@ -2460,7 +2460,8 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
+    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
+    bool allowParamDegrade, int imageWidth)   // 新增 imageWidth 参数
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
@@ -2470,21 +2471,22 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
 
             if (!isTrueLossless && isHighChroma)
             {
-                // 原有三个参数集
                 sets.Add((effectiveAom, TilePart(tileCols, false), cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // 参数集 2：降速不降 tile
                     sets.Add((effectiveAom, TilePart(tileCols, false), 0, rowMt));
 
-                    // 参数集 3：空 AOM + 当前 tile
                     bool supportsTile = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
                     string tilePart = supportsTile ? $"-tile-columns {tileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
-                    // ★ 参数集 4：空 AOM + cpu‑used 0 + 无 tile（最后的救命稻草）
-                    sets.Add(("", "-tile-columns 0 -tile-rows 0", 0, rowMt));
+                    // ★ 动态安全 tile：至少 2 列，若图片宽度不足（<256）则降为 0 列
+                    int safeTileCols = (imageWidth > 0 && imageWidth >= 256) ? 2 : 0;
+                    string safeTilePart = safeTileCols > 0
+                        ? $"-tile-columns {safeTileCols} -tile-rows 0"
+                        : "-tile-columns 0 -tile-rows 0";
+                    sets.Add(("", safeTilePart, 0, rowMt));
                 }
             }
             else
