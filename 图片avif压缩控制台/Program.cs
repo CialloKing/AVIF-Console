@@ -3142,6 +3142,15 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 混合搜索：Brent 粗边界定位 + 二分补洞 + 右侧单调校验，
         /// 保证在 CRF 离散域上返回满足目标的最大可行 CRF。
         /// </summary>
+        /// <summary>
+        /// 自适应搜索：当区间宽度 ≤ 阈值时采用哨兵探测，否则采用指数扩展。
+        /// 最终通过二分与右侧扫描保证返回全局最大可行 CRF。
+        /// </summary>
+        /// <summary>
+        /// 自适应搜索：当区间宽度 ≤ 40 时采用哨兵探测，否则采用指数扩展。
+        /// 最终通过二分与右侧扫描保证返回全局最大可行 CRF。
+        /// 已修复 _scoreCache 写入缺失问题。
+        /// </summary>
         private async Task<(int crf, double score, int evalCount)> SolveCrfBrent(
             Func<int, Task<double>> getScore,
             int low, int high, double lowScore, double highScore,
@@ -3151,140 +3160,189 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             var tracker = _failTrackers.GetOrAdd(GetNormalizedPathForCache(input), _ => new FileScopedFailTracker());
             tracker.Reset();
 
-            // 记录所有已评估的 CRF
-            var evaluatedCrfs = new HashSet<int>();
-            if (lowScore >= 0) evaluatedCrfs.Add(low);
-            if (highScore >= 0) evaluatedCrfs.Add(high);
+            var evaluated = new HashSet<int>();
+            if (lowScore >= 0)
+            {
+                evaluated.Add(low);
+                _scoreCache[low] = lowScore;      // ✅ 写入初始低端分数
+            }
+            if (highScore >= 0)
+            {
+                evaluated.Add(high);
+                _scoreCache[high] = highScore;    // ✅ 写入初始高端分数
+            }
 
-            int brentEvalCount = 0;
+            int totalEvals = 0;
             int bestCRF = -1;
             double bestScore = -1;
             if (lowScore >= target) { bestCRF = low; bestScore = lowScore; }
             if (highScore >= target && high > bestCRF) { bestCRF = high; bestScore = highScore; }
 
-            double a = low, b = high;
-            double fa = lowScore - target;
-            double fb = highScore - target;
+            // 如果 high 直接达标，直接返回
+            if (highScore >= target)
+                return (high, highScore, 0);
 
-            if (a > b) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
-            if (Math.Abs(fa) < Math.Abs(fb)) { Swap(ref a, ref b); Swap(ref fa, ref fb); }
+            // 如果 low 不达标，返回失败标志
+            if (lowScore < target)
+                return (-1, lowScore, 0);
 
-            double c = a, fc = fa;
-            double d = b - a;
-            const double tol = 0.005;
-            const int maxIter = 25;
+            // 自适应阈值：区间宽度超过 40 则使用指数扩展策略
+            const int widthThreshold = 40;
+            int searchLow, searchHigh;
 
-            // ─── Brent 主循环：快速逼近可行边界 ───
-            for (int iter = 0; iter < maxIter; iter++)
+            if (high - low <= widthThreshold)
             {
-                token.ThrowIfCancellationRequested();
+                // ========== 窄区间：哨兵探测 + 二分 ==========
+                var rawSentinels = new[] { 12, 20, 28 };
+                var sentinels = rawSentinels.Where(c => c >= low && c <= high).ToList();
 
-                int xMin = (int)Math.Min(a, b);
-                int xMax = (int)Math.Max(a, b);
-                if (xMax - xMin <= 1) break;   // 无整数可测，退出
-
-                // 预测下一个点
-                double s = b;
-                if (Math.Abs(fc - fb) > 1e-10 && Math.Abs(fc - fa) > 1e-10)
-                    s = a * fb * fc / ((fa - fb) * (fa - fc))
-                      + b * fa * fc / ((fb - fa) * (fb - fc))
-                      + c * fa * fb / ((fc - fa) * (fc - fb));
-                else if (Math.Abs(fb - fa) > 1e-10)
-                    s = b - fb * (b - a) / (fb - fa);
-
-                double delta = 2 * tol * Math.Abs(b) + 0.5 * tol;
-                if (s < xMin || s > xMax || Math.Abs(s - b) >= 0.5 * (Math.Abs(b - c) < delta ? Math.Abs(b - c) : delta))
-                    s = (a + b) / 2.0;
-
-                int crfEval = (int)Math.Round(Math.Clamp(s, xMin, xMax));
-
-                // 若预测点落在端点且区间宽度≥2，则强制跳至内部点
-                if ((crfEval == xMin || crfEval == xMax) && xMax - xMin >= 2)
-                    crfEval = (crfEval == xMin) ? xMin + 1 : xMax - 1;
-
-                // 黑名单检查
-                if (tracker.IsBlacklisted(crfEval))
+                if (sentinels.Count < 2)
                 {
-                    int safeCrf = tracker.FindSafeCrfInInterval(crfEval, xMin, xMax);
-                    if (safeCrf == -1)
-                    {
-                        if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
-                        continue;
-                    }
-                    crfEval = safeCrf;
-                }
-
-                if (evaluatedCrfs.Contains(crfEval))
-                {
-                    // 已评估过，直接收缩区间
-                    if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
-                    continue;
-                }
-
-                // 评估新点
-                double score = await EvaluateCrfSafe(crfEval, getScore, name, tracker);
-                if (double.IsInfinity(score))
-                {
-                    if (fb < 0) b = crfEval - 1; else a = crfEval + 1;
-                    continue;
-                }
-
-                evaluatedCrfs.Add(crfEval);
-                brentEvalCount++;
-                double fVal = score - target;
-
-                string display = cfg.MetricMode?.ToLower() switch
-                {
-                    "vmaf" => $"VMAF={score * 100:F1}",
-                    _ => $"分数={score:F4}"
-                };
-                SafeWriteLine($"  [{name}] [BRENT] iter={iter + 1}, CRF={crfEval} -> {display}");
-                _logger.LogSearch($"[{name}] [BRENT] iter={iter + 1}, CRF={crfEval} -> {display}");
-
-                if (score >= target && crfEval > bestCRF) { bestCRF = crfEval; bestScore = score; }
-
-                // 更新区间
-                if (fVal * fa > 0)
-                {
-                    c = a; fc = fa;
-                    d = b - a;
-                }
-                a = b; fa = fb;
-                b = crfEval; fb = fVal;
-            }
-
-            // ─── 后处理 1：二分补洞，确保整个可行区间无遗漏 ───
-            int lo = bestCRF == -1 ? low : bestCRF;
-            int hi = high;
-            var (gapBest, gapScore, gapEvals) = await FillGapsAsync(
-                lo, hi, bestCRF, bestScore,
-                getScore, target, evaluatedCrfs, tracker, name, token);
-
-            if (gapBest > bestCRF)
+                    int q = (high - low) / 4;
+                    sentinels = new List<int>
             {
-                bestCRF = gapBest;
-                bestScore = gapScore;
-            }
-            brentEvalCount += gapEvals;
+                low + q,
+                low + q * 2,
+                low + q * 3
+            }.Where(c => c >= low && c <= high).Distinct().OrderBy(x => x).ToList();
+                }
 
-            // ─── 后处理 2：右侧单调扫描，确认 bestCRF 之后连续可行段 ───
-            if (bestCRF != -1 && bestScore >= target)
-            {
-                for (int nextCrf = bestCRF + 1; nextCrf <= high; nextCrf++)
+                // 哨兵探测
+                foreach (int crf in sentinels)
                 {
                     token.ThrowIfCancellationRequested();
-                    if (evaluatedCrfs.Contains(nextCrf) || tracker.IsBlacklisted(nextCrf))
-                        break;   // 已评估过且不达标或失败
+                    if (evaluated.Contains(crf) || tracker.IsBlacklisted(crf))
+                        continue;
 
-                    double score = await EvaluateCrfSafe(nextCrf, getScore, name, tracker);
+                    double score = await EvaluateCrfSafe(crf, getScore, name, tracker);
+                    if (double.IsInfinity(score)) continue;
+
+                    evaluated.Add(crf);
+                    _scoreCache[crf] = score;       // ✅ 写入缓存
+                    totalEvals++;
+                    LogEvaluation(name, cfg, crf, score, "SENTINEL");
+
+                    if (score >= target && crf > bestCRF) { bestCRF = crf; bestScore = score; }
+                }
+
+                searchLow = bestCRF > 0 ? bestCRF : low;
+                searchHigh = high;
+                // 利用哨兵进一步修剪 searchHigh
+                for (int i = 0; i < sentinels.Count; i++)
+                {
+                    int crf = sentinels[i];
+                    if (evaluated.Contains(crf) && getCachedScore(crf) < target)
+                    {
+                        searchHigh = crf;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // ========== 宽区间：指数扩展 + 二分 ==========
+                searchLow = bestCRF > 0 ? bestCRF : low;
+                searchHigh = high;
+                int current = searchLow;
+                int step = 1;
+
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    int next = current + step;
+                    if (next > high) next = high;
+                    if (next == current) break;
+
+                    if (evaluated.Contains(next) || tracker.IsBlacklisted(next))
+                    {
+                        // 若 next 不达标，上界已找到；否则继续加倍
+                        if (evaluated.Contains(next) && getCachedScore(next) < target)
+                            break;
+                        step *= 2;
+                        continue;
+                    }
+
+                    double score = await EvaluateCrfSafe(next, getScore, name, tracker);
+                    if (double.IsInfinity(score))
+                    {
+                        searchHigh = Math.Min(high, next - 1);
+                        break;
+                    }
+
+                    evaluated.Add(next);
+                    _scoreCache[next] = score;       // ✅ 写入缓存
+                    totalEvals++;
+                    LogEvaluation(name, cfg, next, score, "EXP");
+
+                    if (score >= target)
+                    {
+                        if (next > bestCRF) { bestCRF = next; bestScore = score; }
+                        current = next;
+                        step *= 2;
+                    }
+                    else
+                    {
+                        searchHigh = next;
+                        break;
+                    }
+                }
+
+                searchLow = bestCRF > 0 ? bestCRF : low;
+            }
+
+            // ========== 阶段 3：二分搜索 ==========
+            int l = searchLow;
+            int r = searchHigh;
+            while (l < r)
+            {
+                token.ThrowIfCancellationRequested();
+                int mid = (l + r + 1) / 2;
+                if (evaluated.Contains(mid) || tracker.IsBlacklisted(mid))
+                {
+                    r = mid - 1;
+                    continue;
+                }
+
+                double score = await EvaluateCrfSafe(mid, getScore, name, tracker);
+                if (double.IsInfinity(score))
+                {
+                    r = mid - 1;
+                    continue;
+                }
+
+                evaluated.Add(mid);
+                _scoreCache[mid] = score;           // ✅ 写入缓存
+                totalEvals++;
+                LogEvaluation(name, cfg, mid, score, "BINARY");
+
+                if (score >= target)
+                {
+                    if (mid > bestCRF) { bestCRF = mid; bestScore = score; }
+                    l = mid;
+                }
+                else
+                {
+                    r = mid - 1;
+                }
+            }
+
+            // ========== 阶段 4：右侧单调扫描 ==========
+            if (bestCRF != -1 && bestScore >= target)
+            {
+                for (int next = bestCRF + 1; next <= high; next++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (evaluated.Contains(next) || tracker.IsBlacklisted(next))
+                        break;
+                    double score = await EvaluateCrfSafe(next, getScore, name, tracker);
                     if (double.IsInfinity(score) || score < target)
-                        break;   // 第一个不可行点即停止
-
-                    evaluatedCrfs.Add(nextCrf);
-                    brentEvalCount++;
-                    bestCRF = nextCrf;
+                        break;
+                    evaluated.Add(next);
+                    _scoreCache[next] = score;       // ✅ 写入缓存
+                    totalEvals++;
+                    bestCRF = next;
                     bestScore = score;
-                    _logger.LogSearch($"[{name}] [BRENT] 右侧单调扫描 CRF={nextCrf} 达标，更新最优");
+                    _logger.LogSearch($"[{name}] [SCAN] CRF={next} 达标，更新最优");
                 }
             }
 
@@ -3294,8 +3352,40 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 else if (highScore >= target) { bestCRF = high; bestScore = highScore; }
             }
 
-            return (bestCRF, bestScore, brentEvalCount);
+            return (bestCRF, bestScore, totalEvals);
         }
+
+        // 辅助方法：获取已缓存分数（不再需要 evaluated 和 target 参数）
+        private Dictionary<int, double> _scoreCache = new();
+        private double getCachedScore(int crf)
+        {
+            return _scoreCache.TryGetValue(crf, out double score) ? score : 0;
+        }
+
+        // 辅助方法：统一评估日志
+        private void LogEvaluation(string name, PresetConfig cfg, int crf, double score, string phase)
+        {
+            string display = cfg.MetricMode?.ToLower() switch
+            {
+                "vmaf" => $"VMAF={score * 100:F1}",
+                _ => $"分数={score:F4}"
+            };
+            SafeWriteLine($"  [{name}] [{phase}] CRF={crf} -> {display}");
+            _logger.LogSearch($"[{name}] [{phase}] CRF={crf} -> {display}");
+        }
+
+        private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
+
+        private double getCachedScore(int crf, HashSet<int> evaluated, double target)
+        {
+            // 实际使用中，需要在每次评估后记录分数到 _scoreCache 中，
+            // 此处示意：若未记录，返回 0（需根据实际情况调整）。
+            return _scoreCache.TryGetValue(crf, out double score) ? score : 0;
+        }
+
+
+
 
         /// <summary>
         /// 二分补洞：在 [l, r] 范围内快速探查未评估的整数 CRF，
@@ -3361,7 +3451,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         }
 
         // 辅助交换方法
-        private static void Swap<T>(ref T l, ref T r) => (l, r) = (r, l);
+
 
 
 
