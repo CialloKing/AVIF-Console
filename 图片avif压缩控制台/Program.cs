@@ -426,7 +426,8 @@ namespace AvifEncoder
         private const int AvoidRadius = 2;
 
 
-
+        // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
+        private readonly ConcurrentDictionary<string, HashSet<string>> _fatalFmts = new();
 
         /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
         private void ResetFailTracking()
@@ -2115,17 +2116,16 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 仅对 libaom‑av1 启用 tile 与 row‑mt 参数，其他编码器忽略，避免无效参数造成失败。
         /// </summary>
         private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
-                                         int crf, string aomPart)
+                                 int crf, string aomPart)
         {
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
             string stillPic = useStillPic ? "-still-picture 1" : "";
 
-            // 仅对 libaom-av1 传入单 tile 和 -row-mt
-            string safeTile = EncoderUtils.IsLibAom(config.Encoder) ? "-tile-columns 0 -tile-rows 0" : "";
+            // 安全模式改用 4 列 tile，不再用 0
+            string safeTile = EncoderUtils.IsLibAom(config.Encoder) ? "-tile-columns 2 -tile-rows 0" : "";
             string safeRowMt = EncoderUtils.IsLibAom(config.Encoder) ? "-row-mt 1" : "";
 
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
-
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt yuv420p " +
                    $"-crf {crf} {encArgs} " +
@@ -2352,9 +2352,18 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
             string[] pixFmtsToTry = GetPixelFormatFallbackList(pixFmt, isTrueLossless);
             string lastError = "所有像素格式尝试均失败";
             string fileName = Path.GetFileName(input);
+            string normalizedKey = GetNormalizedPathForCache(input);
+            var fatalSet = _fatalFmts.GetOrAdd(normalizedKey, _ => new HashSet<string>());
 
             foreach (var currentPixFmt in pixFmtsToTry)
             {
+                // 若该格式之前已被标记为“无法生成任何输出”，直接跳过
+                if (fatalSet.Contains(currentPixFmt))
+                {
+                    _logger.LogInfo($"致命格式 {currentPixFmt} 已禁用，跳过 [{fileName}]");
+                    continue;
+                }
+
                 var result = await TryEncodeWithPixelFormatFallback(
                     input, output, crf, tileCols, cpuUsed, cfg, jpeg, currentPixFmt, isTrueLossless,
                     timeoutMinutes, allowParamDegrade, fileName);
@@ -2364,9 +2373,21 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
 
                 lastError = result.error ?? "未知错误";
 
+                // 在 EncodeToFileExAsync 的循环内，替换原有的致命标记逻辑：
+                if (result.error?.StartsWith("FATAL_NOTHING:", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    // 只有所有参数集都 Nothing 才标记
+                    fatalSet.Add(currentPixFmt);
+                    _logger.LogInfo($"致命格式 {currentPixFmt} 已记录 [{fileName}]，将不再重试");
+                }
+                // 原有的降级日志保留
+
+                // 仅当还有后续格式时才输出降级日志
                 if (currentPixFmt != pixFmtsToTry.Last())
                 {
-                    _logger.LogInfo($"像素格式 {currentPixFmt} 编码失败，降级尝试 {pixFmtsToTry[pixFmtsToTry.IndexOf(currentPixFmt) + 1]} ...");
+                    string nextFmt = pixFmtsToTry[Array.IndexOf(pixFmtsToTry, currentPixFmt) + 1];
+                    if (!fatalSet.Contains(nextFmt))
+                        _logger.LogInfo($"像素格式 {currentPixFmt} 编码失败，降级尝试 {nextFmt} ...");
                 }
             }
 
@@ -2382,6 +2403,8 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
     bool allowParamDegrade, string fileName)
         {
             var paramSets = BuildParamSets(cfg, currentPixFmt, isTrueLossless, tileCols, cpuUsed, allowParamDegrade);
+            string lastError = "";
+            bool allNothingWritten = true;   // 是否所有参数集都失败且都是 Nothing was written
 
             foreach (var param in paramSets)
             {
@@ -2389,6 +2412,17 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                                                          isTrueLossless, timeoutMinutes, fileName);
                 if (result.ok)
                     return result;
+
+                lastError = result.error ?? "未知错误";
+                if (!lastError.Contains("Nothing was written", StringComparison.OrdinalIgnoreCase))
+                    allNothingWritten = false;
+            }
+
+            // 所有参数集都失败
+            if (allNothingWritten)
+            {
+                // 使用特殊前缀标记，告知外层此格式完全无法输出
+                return (false, TimeSpan.Zero, _maxRetries, $"FATAL_NOTHING:{lastError}", false, null, null);
             }
 
             return (false, TimeSpan.Zero, _maxRetries, $"像素格式 {currentPixFmt} 所有参数均失败", false, null, null);
@@ -2426,7 +2460,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
+    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed, bool allowParamDegrade)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
@@ -2436,27 +2470,26 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
 
             if (!isTrueLossless && isHighChroma)
             {
-                // 1. 正常配置（完整 AOM + 正常 cpu + 正常 tile）
-                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
+                // 原有三个参数集
+                sets.Add((effectiveAom, TilePart(tileCols, false), cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // 2. 降速保格式（完整 AOM + cpu-used=0 + 正常 tile）
-                    sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), 0, rowMt));
+                    // 参数集 2：降速不降 tile
+                    sets.Add((effectiveAom, TilePart(tileCols, false), 0, rowMt));
 
-                    // 3. 【新增】完整 AOM + cpu-used=0 + 关闭瓦片（解决小尺寸图片瓦片失败问题）
-                    sets.Add((effectiveAom, "-tile-columns 0 -tile-rows 0", 0, ""));
+                    // 参数集 3：空 AOM + 当前 tile
+                    bool supportsTile = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
+                    string tilePart = supportsTile ? $"-tile-columns {tileCols} -tile-rows 0" : "";
+                    sets.Add(("", tilePart, 0, rowMt));
 
-                    // 4. 最终兜底（空 AOM + tile-columns 0 + cpu-used 0）
-                    bool encoderSupportsTileParams = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
-                    string downgradeTile = encoderSupportsTileParams ? "-tile-columns 0 -tile-rows 0" : "";
-                    sets.Add(("", downgradeTile, 0, ""));
+                    // ★ 参数集 4：空 AOM + cpu‑used 0 + 无 tile（最后的救命稻草）
+                    sets.Add(("", "-tile-columns 0 -tile-rows 0", 0, rowMt));
                 }
             }
             else
             {
-                // 非高位色度或无损模式，仅尝试一组参数
-                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), isTrueLossless ? 0 : cpuUsed, rowMt));
+                sets.Add((effectiveAom, TilePart(tileCols, isTrueLossless), cpuUsed, rowMt));
             }
 
             return sets;
@@ -2507,9 +2540,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             bool slotTaken = false;
             try
             {
+                // 增加更详细的超时日志，若超时直接返回
                 if (!await _ffmpegSlots.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    _logger.LogInfo($"编码信号量获取超时: {input} CRF={crf}");
+                    _logger.LogInfo($"❌ 编码信号量获取超时: {input} CRF={crf}");
                     return (false, TimeSpan.Zero, 0, "编码信号量获取超时", false, null, null);
                 }
                 slotTaken = true;
@@ -2533,7 +2567,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
                         }
 
-                        // 保存缓存
+                        // 成功，保存缓存
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         _fs.CopyFile(output, cacheFile, true);
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
@@ -2542,7 +2576,17 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                     string error = $"CRF={crf}, {stderrLastLine}";
                     _logger.LogInfo($"❌ 编码失败: {input} - {error}");
+
+                    // 清理失败输出
                     if (_fs.FileExists(output)) _fs.DeleteFile(output);
+
+                    // 致命错误：编码器没写出任何数据，立即停止重试（避免无效循环占用槽位）
+                    if (stderrLastLine.Contains("Nothing was written", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInfo($"检测到致命错误，放弃重试: {input} CRF={crf}");
+                        return (false, TimeSpan.Zero, attempt, error, false, null, null);
+                    }
+
                     if (attempt < _maxRetries) await Task.Delay(1000);
                 }
 
@@ -3456,62 +3500,51 @@ PerformSecantIteration(
 
         private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
         {
-            // ★ 记录连续失败次数，用于提前切换稳定参数
             int consecutiveFailures = 0;
-            const int failThreshold = 2; // 连续失败超过该阈值时强制使用降级参数
+            const int failThreshold = 2;
+            string normalizedKey = GetNormalizedPathForCache(input);
 
             return async crf =>
             {
+                // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
+                if (_fatalFmts.TryGetValue(normalizedKey, out var fatalSet) && fatalSet.Contains(pixFmt))
+                {
+                    _logger.LogInfo($"⚠️ 致命格式 {pixFmt} 已禁用，跳过 CRF={crf} [{name}]");
+                    return -1;
+                }
+
                 for (int i = 0; i < 3; i++)
                 {
                     token.ThrowIfCancellationRequested();
 
                     QualityMetrics? m = null;
 
-                    // 如果连续失败未超过阈值，先尝试正常参数
                     if (consecutiveFailures < failThreshold)
                     {
                         m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                        if (m != null)
-                        {
-                            consecutiveFailures = 0; // 成功则重置计数
-                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                        }
+                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
 
-                        // 降速重试
                         m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                        if (m != null)
-                        {
-                            consecutiveFailures = 0;
-                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                        }
+                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
                     }
 
-                    // 超过阈值，或前两步失败：尝试 yuv420p 降级（更稳定）
-                    if (!pixFmt.StartsWith("yuv420p"))
+                    // 仅在 yuv420p 未被标记致命时才降级尝试
+                    if (!pixFmt.StartsWith("yuv420p") && (!_fatalFmts.TryGetValue(normalizedKey, out var fs) || !fs.Contains("yuv420p")))
                     {
                         m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null)
-                        {
-                            consecutiveFailures = 0;
-                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                        }
+                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
                     }
                     else
                     {
-                        // 已经是 yuv420p 依然失败，尝试降低 cpu 到 0
+                        // 当前格式就是 yuv420p 或已被致命标记，尝试降速
                         m = await GetOrComputeMetrics(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
-                        if (m != null)
-                        {
-                            consecutiveFailures = 0;
-                            return GetSearchScore(m, cfg.MetricMode ?? "ssim");
-                        }
+                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
                     }
 
-                    if (i < 2) _logger.LogInfo($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
+                    if (i < 2)
+                        _logger.LogInfo($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
                 }
 
-                // 该 CRF 点彻底失败，增加连续失败计数
                 consecutiveFailures++;
                 if (consecutiveFailures >= failThreshold)
                     _logger.LogInfo($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
