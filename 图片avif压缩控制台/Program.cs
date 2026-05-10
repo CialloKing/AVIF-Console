@@ -441,7 +441,19 @@ namespace AvifEncoder
 
 
 
-
+        /// <summary>
+        /// 根据图像宽度和最小 tile 宽度限制，计算最大合法的 tile-columns 值（log2 列数）。
+        /// 例如：宽度 ≤ 255 → 0；256~511 → 0；512~1023 → 1；1024~2047 → 2；以此类推。
+        /// </summary>
+        private static int GetMaxLegalTileCols(int imageWidth, int minTileWidth = 256)
+        {
+            if (imageWidth < minTileWidth)
+                return 0;
+            int maxTiles = imageWidth / minTileWidth;
+            if (maxTiles < 1)
+                return 0;
+            return (int)Math.Floor(Math.Log2(maxTiles));
+        }
 
         private sealed class FileScopedFailTracker
         {
@@ -1819,20 +1831,26 @@ namespace AvifEncoder
             }
 
             // ─── 计算合法的 tileCols ───
+            // 在 PrepareEncodingInfoAsync 中，替换 tileCols 计算部分：
             int tileCols = 0;
             if (!isTrulyLossless)
             {
-                // 基础性能建议值
+                // 基础性能推荐值
                 tileCols = Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4);
 
-                // 小图保护
+                // 小图保护（任何一边小于256）
                 if (tileCols > 0 && (w < 256 || h < 256))
                     tileCols = 0;
 
-                // ★ 合法性强制约束：tile 宽度不能超过 4096
+                // 合法性强制约束：tile 宽度不能超过 4096
                 int minLegalCols = GetMinLegalTileCols(w);
-                if (tileCols < minLegalCols)
-                    tileCols = minLegalCols;
+                // ★ 合法性强制约束：tile 宽度不能小于 256（libaom 实现限制）
+                int maxLegalCols = GetMaxLegalTileCols(w);
+
+                if (minLegalCols > maxLegalCols)   // 图像太小，无法满足任何 tile 要求
+                    tileCols = 0;
+                else
+                    tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
             }
 
             int crf = config.BaseCRF;
@@ -2157,9 +2175,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
             string stillPic = useStillPic ? "-still-picture 1" : "";
 
-            // 计算安全模式所需的最小 tile 列数（至少 2 列，除非图像极小）
             int minCols = GetMinLegalTileCols(imageWidth);
-            int safeTileCols = (imageWidth >= 256) ? Math.Max(2, minCols) : 0;
+            int maxCols = GetMaxLegalTileCols(imageWidth);
+            int safeTileCols;
+            if (imageWidth < 256 || minCols > maxCols)
+                safeTileCols = 0;
+            else
+                safeTileCols = Math.Clamp(Math.Max(2, minCols), minCols, maxCols);
 
             string safeTile = EncoderUtils.IsLibAom(config.Encoder)
                 ? $"-tile-columns {safeTileCols} -tile-rows 0"
@@ -2503,32 +2525,28 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
 
-            // 保证传入的 tileCols 已满足法律规定（PrepareEncodingInfoAsync 已处理，此处再次确认）
+            // 双边约束
             int minLegal = GetMinLegalTileCols(imageWidth);
-            int legalTileCols = Math.Max(tileCols, minLegal);
+            int maxLegal = GetMaxLegalTileCols(imageWidth);
+            int legalTileCols = Math.Clamp(tileCols, minLegal, maxLegal);
 
             if (!isTrueLossless && isHighChroma)
             {
-                // 第一组：完整 AOM 参数 + 合法 tile
                 sets.Add((effectiveAom, TilePart(legalTileCols, false), cpuUsed, rowMt));
 
                 if (allowParamDegrade)
                 {
-                    // 降速，不降 tile
                     sets.Add((effectiveAom, TilePart(legalTileCols, false), 0, rowMt));
 
-                    // 空 AOM 参数，仍用合法 tile
                     bool supportsTile = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
                     string tilePart = supportsTile ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
-                    // ★ 最后的救命稻草：安全 tile（≥2 列，且满足合法性）
+                    // ★ 安全 tile：至少 2 列（除非图像太小），且必须在 [minLegal, maxLegal] 内
                     int safeTileCols = (imageWidth > 0 && imageWidth >= 256)
-                                       ? Math.Max(2, minLegal)   // 至少 2 列，且满足合法要求
+                                       ? Math.Clamp(Math.Max(2, minLegal), minLegal, maxLegal)
                                        : 0;
-                    // 若因宽度极大导致 safeTileCols 小于 minLegal，再次保证（理论上上面已经保证）
-                    if (imageWidth >= 256 && safeTileCols < minLegal)
-                        safeTileCols = minLegal;
+                    if (minLegal > maxLegal) safeTileCols = 0;   // 彻底无法使用 tile
 
                     string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
