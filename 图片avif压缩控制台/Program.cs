@@ -246,6 +246,8 @@ namespace AvifEncoder
 
         public int SearchEvaluations { get; set; }   // ★ 新增：搜索阶段实际成功评估CRF点的次数
 
+        public string InputPath { get; set; } = "";   // 原始输入文件完整路径，用于重试
+
     }
 
     /// <summary> 一次 libvmaf 计算得到的全部常用指标 </summary>
@@ -480,6 +482,24 @@ namespace AvifEncoder
                 }
                 return -1;
             }
+        }
+
+        /// <summary>
+        /// 根据输入文件路径与索引生成输出完整路径，并保持子目录结构。
+        /// </summary>
+        private string GetOutputPath(string inputFilePath, int index)
+        {
+            // 获取相对于输入根目录的相对路径
+            string relPath = Path.GetRelativePath(_inputDir, inputFilePath);
+            string? relDir = Path.GetDirectoryName(relPath);
+            string fileName = GetOutputFileName(inputFilePath, index);
+
+            string targetDir = string.IsNullOrEmpty(relDir)
+                ? _outputDir
+                : Path.Combine(_outputDir, relDir);
+
+            _fs.CreateDirectory(targetDir);
+            return Path.Combine(targetDir, fileName);
         }
 
 
@@ -746,24 +766,33 @@ namespace AvifEncoder
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
-            // 生成唯一临时 JSON 文件
-            string jsonPath = Path.Combine(_outputDir, $"_metrics_{Guid.NewGuid():N}.json")
-                                                  .Replace('\\', '/');
+            // ========== 去除 Windows 长路径前缀并统一为正斜杠 ==========
+            string cleanOutputDir = _outputDir;
+            if (OperatingSystem.IsWindows() && cleanOutputDir.StartsWith(@"\\?\"))
+                cleanOutputDir = cleanOutputDir.Substring(4);
+
+            cleanOutputDir = cleanOutputDir.Replace('\\', '/');
+
+            string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
+            // ★ 关键修复：转义路径中的冒号，防止 ffmpeg 将其解释为参数分隔符
+            // 正确写法：两个反斜杠（在 C# 中写为四个反斜杠）
+            string jsonPathSafe = (cleanOutputDir + "/" + jsonName).Replace(":", "\\\\:");
 
             try
             {
                 var (w1, h1) = await GetResolutionAsync(refPath).WaitAsync(TimeSpan.FromSeconds(30));
                 var (w2, h2) = await GetResolutionAsync(distPath).WaitAsync(TimeSpan.FromSeconds(30));
+
                 string filter;
                 if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPath}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPathSafe}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
@@ -782,8 +811,8 @@ namespace AvifEncoder
                     return null;
                 }
 
-                // 读取 JSON
-                string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
+                // 读取 JSON 指标文件时，使用未转义的实际路径
+                string physicalPath = (cleanOutputDir + "/" + jsonName).Replace('/', Path.DirectorySeparatorChar);
                 if (!_fs.FileExists(physicalPath))
                 {
                     _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
@@ -794,7 +823,7 @@ namespace AvifEncoder
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
-                // ★ 从 stderr 提取 VMAF 分数（新版 ffmpeg 不会将 vmaf 写入 JSON，而是打印到 stderr）
+                // 从 stderr 提取 VMAF 分数
                 var vmafMatch = Regex.Match(stderr, @"VMAF score:\s*([0-9.]+)");
                 if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
                         NumberStyles.Float, CultureInfo.InvariantCulture, out double vmafScore))
@@ -824,10 +853,10 @@ namespace AvifEncoder
             }
             finally
             {
-                // 清理临时 JSON 文件
+                // 清理临时 JSON 文件（使用未转义的实际路径）
                 try
                 {
-                    string physicalPath = jsonPath.Replace('/', Path.DirectorySeparatorChar);
+                    string physicalPath = (cleanOutputDir + "/" + jsonName).Replace('/', Path.DirectorySeparatorChar);
                     if (_fs.FileExists(physicalPath)) _fs.DeleteFile(physicalPath);
                 }
                 catch { }
@@ -1179,16 +1208,15 @@ namespace AvifEncoder
 
             SafeWriteLine($"\n[RETRY] 开始重试 {failures.Count} 个失败文件...");
 
-            var retryFiles = failures.Select(f => (
-                filePath: Path.Combine(_inputDir, f!.OriginalFileName),
-                index: f.Index
-            )).ToList();
+            // 使用 Result 中保存的完整输入路径，不再拼接
+            var retryFiles = failures.Select(f => (filePath: f!.InputPath, index: f.Index)).ToList();
 
+            // 删除已有的输出文件，避免干扰
             foreach (var (filePath, index) in retryFiles)
             {
-                string outFile = Path.Combine(_outputDir, GetOutputFileName(filePath, index));
-                if (_fs.FileExists(outFile))
-                    try { _fs.DeleteFile(outFile); } catch { }
+                string outPath = GetOutputPath(filePath, index);
+                if (_fs.FileExists(outPath))
+                    try { _fs.DeleteFile(outPath); } catch { }
             }
 
             var retryResults = await ProcessFilesAsync(retryFiles, _config, isRetry: true);
@@ -1461,11 +1489,13 @@ namespace AvifEncoder
                     if (!acquired)
                     {
                         _logger.LogInfo($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
+                        // 信号量超时
                         var failResult = new EncodeResult
                         {
                             Index = file.index,
                             FileName = GetOutputFileName(file.filePath, file.index),
                             OriginalFileName = Path.GetFileName(file.filePath),
+                            InputPath = file.filePath,                     // ★ 新增
                             Success = false,
                             Skipped = false,
                             ErrorMessage = "任务信号量获取超时",
@@ -1483,11 +1513,13 @@ namespace AvifEncoder
                     catch (Exception ex)
                     {
                         _logger.LogInfo($"文件处理异常: {file.filePath} - {ex.Message}");
+                        // 异常处理中的 failResult
                         var failResult = new EncodeResult
                         {
                             Index = file.index,
                             FileName = GetOutputFileName(file.filePath, file.index),
                             OriginalFileName = Path.GetFileName(file.filePath),
+                            InputPath = file.filePath,
                             Success = false,
                             Skipped = false,
                             ErrorMessage = $"异常: {ex.Message}",
@@ -1505,11 +1537,13 @@ namespace AvifEncoder
                 {
                     // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
                     _logger.LogInfo($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
+                    // 取消操作
                     var cancelResult = new EncodeResult
                     {
                         Index = file.index,
                         FileName = GetOutputFileName(file.filePath, file.index),
                         OriginalFileName = Path.GetFileName(file.filePath),
+                        InputPath = file.filePath,
                         Success = false,
                         Skipped = false,
                         ErrorMessage = "用户取消操作",
@@ -1549,8 +1583,7 @@ namespace AvifEncoder
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
-            string outputFileName = GetOutputFileName(inputPath, index);
-            string outputPath = Path.Combine(_outputDir, outputFileName);
+            string outputPath = GetOutputPath(inputPath, index);   // ★ 使用新方法保持子目录结构
             var fileStartTime = DateTime.Now;
 
             // ---- 预缩放 ----
@@ -1562,7 +1595,7 @@ namespace AvifEncoder
                     _logger.LogInfo($"预缩放: {name} {scaling.OriginalWidth}x{scaling.OriginalHeight} -> {scaling.ScaledWidth}x{scaling.ScaledHeight}");
 
                 // 跳过已存在
-                var skipResult = await TrySkipExistingOutputAsync(workingInputPath, index, config, isRetry);
+                var skipResult = await TrySkipExistingOutputAsync(inputPath, index, config, isRetry);
                 if (skipResult != null) return skipResult;
 
                 _logger.LogInfo($"开始: {name}");
@@ -1570,7 +1603,8 @@ namespace AvifEncoder
                 // 准备编码信息
                 var encInfo = await PrepareEncodingInfoAsync(workingInputPath, config);
                 if (encInfo == null)
-                    return FailResult(index, outputFileName, name, "无法获取分辨率", fileStartTime);
+                    return FailResult(index, Path.GetFileName(outputPath), name,
+                                      inputPath, "无法获取分辨率", fileStartTime);
 
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
 
@@ -1583,8 +1617,9 @@ namespace AvifEncoder
                 (double ssim, QualityMetrics? metrics) = await EvaluateFinalQualityAsync(
                     workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
 
-                // 组装结果
-                return BuildResult(index, outputFileName, name, inputPath, outputPath,
+                // 组装结果（第三个参数是纯文件名，用于显示）
+                return BuildResult(index, Path.GetFileName(outputPath), name,
+                                   inputPath, outputPath,
                                    encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime);
             }
             finally
@@ -1666,31 +1701,34 @@ namespace AvifEncoder
         }
 
 
-        private EncodeResult FailResult(int index, string outputFileName, string name, string error, DateTime fileStartTime)
+        private EncodeResult FailResult(int index, string outputFileName, string name,
+                                string inputPath, string error, DateTime fileStartTime)
         {
             var result = new EncodeResult
             {
                 Index = index,
                 FileName = outputFileName,
                 OriginalFileName = name,
+                InputPath = inputPath,                  // ★ 记录原始输入路径
                 Success = false,
                 ErrorMessage = error,
                 TotalTime = DateTime.Now - fileStartTime
-
-
             };
             MarkProcessed(result);
             return result;
         }
 
-        private EncodeResult BuildResult(int index, string outputFileName, string name, string inputPath, string outputPath,
-    FinalEncodeResult encodeResult, CRFSearchResult searchResult, EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
+        private EncodeResult BuildResult(int index, string outputFileName, string name,
+    string inputPath, string outputPath,
+    FinalEncodeResult encodeResult, CRFSearchResult searchResult,
+    EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
         {
             var result = new EncodeResult
             {
                 Index = index,
                 FileName = outputFileName,
                 OriginalFileName = name,
+                InputPath = inputPath,                 // ★ 记录原始输入路径
                 OriginalSize = encodeResult.Success ? _fs.GetFileLength(inputPath) : 0,
                 OutputSize = encodeResult.Success ? _fs.GetFileLength(outputPath) : 0,
                 UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
@@ -1767,8 +1805,7 @@ namespace AvifEncoder
         {
             if (isRetry) return null;
 
-            string outputFileName = GetOutputFileName(inputPath, index);
-            string outputPath = Path.Combine(_outputDir, outputFileName);
+            string outputPath = GetOutputPath(inputPath, index);   // ★ 使用新方法保持子目录结构
             if (_fs.FileExists(outputPath))
             {
                 string name = Path.GetFileName(inputPath);
@@ -1777,11 +1814,12 @@ namespace AvifEncoder
                 var skipResult = new EncodeResult
                 {
                     Index = index,
-                    FileName = outputFileName,
+                    FileName = Path.GetFileName(outputPath),
                     OriginalFileName = name,
+                    InputPath = inputPath,                // ★ 赋值
                     OriginalSize = _fs.GetFileLength(inputPath),
                     OutputSize = _fs.GetFileLength(outputPath),
-                    // ... 其余字段
+                    Skipped = true
                 };
                 MarkProcessed(skipResult);
                 return skipResult;
