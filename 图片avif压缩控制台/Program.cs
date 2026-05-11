@@ -572,8 +572,11 @@ namespace AvifEncoder
                     ICacheManager? cacheManager = null)
         {
             _fs = fileSystem ?? new RealFileSystem();
-            _inputDir = inputDir;
-            _outputDir = outputDir;
+
+            // ★ 启用长路径支持（Windows 下自动添加 \\?\ 前缀）
+            _inputDir = EnsureLongPath(inputDir);
+            _outputDir = EnsureLongPath(outputDir);
+
             _config = config;
             _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
             _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
@@ -584,21 +587,16 @@ namespace AvifEncoder
             bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
             int cpuCount = Environment.ProcessorCount;
             int ssimSlots = Math.Max(2, cpuCount);
-
-            // 计算 ffmpeg 并发池大小：硬件编码器可承受 2×CPU 核数，软件编码器为 ½ 核数
             int ffmpegPoolSize = isHardwareEncoder
                 ? Math.Max(2, cpuCount * 2)
                 : Math.Max(2, cpuCount / 2);
 
-            // 如果是硬件编码器且用户没有通过 -t 手动指定 MaxJobs，则自动提升并发数
             if (isHardwareEncoder && !config.UserSpecifiedMaxJobs)
             {
                 config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
             }
 
-            // 最终并发数受池大小限制
             _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
-
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
         }
@@ -752,13 +750,12 @@ namespace AvifEncoder
             try
             {
                 string full = Path.GetFullPath(input).Trim();
-                // Windows：统一小写，避免大小写变体
-                // Linux/macOS：保留原始大小写，精确匹配
+                // 启用长路径支持，确保缓存键一致
+                full = EnsureLongPath(full);
                 return OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
             }
             catch
             {
-                // 极端异常时使用文件名小写作为回退键（应极少发生）
                 return $"__fallback__{Path.GetFileName(input).ToLowerInvariant()}";
             }
         }
@@ -1284,7 +1281,22 @@ namespace AvifEncoder
 
 
 
-
+        /// <summary>
+        /// 确保路径在 Windows 上使用长路径格式（添加 \\?\ 前缀），
+        /// 从而突破 260 字符的 MAX_PATH 限制。
+        /// </summary>
+        private static string EnsureLongPath(string path)
+        {
+            if (OperatingSystem.IsWindows() && !path.StartsWith(@"\\?\"))
+            {
+                // 如果是根路径，直接添加前缀；否则 Path.GetFullPath 会规范化
+                string full = Path.GetFullPath(path);
+                if (!full.StartsWith(@"\\?\"))
+                    full = @"\\?\" + full;
+                return full;
+            }
+            return path;
+        }
 
         /// <summary>
         /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
@@ -4067,7 +4079,7 @@ PerformSecantIteration(
         /// <summary>在 PATH 环境变量中查找可执行文件</summary>
         public static string? FindExecutable(string name)
         {
-            // 1. 优先在应用程序所在目录（工作目录）中查找，支持便携/免安装部署
+            // 1. 优先在应用程序所在目录中查找（便携/免安装部署）
             string? appDir = AppContext.BaseDirectory;
             if (!string.IsNullOrEmpty(appDir))
             {
@@ -4077,7 +4089,7 @@ PerformSecantIteration(
                     return localFile;
             }
 
-            // 2. 若未找到，则回退到 PATH 环境变量中查找（兼容传统安装方式）
+            // 2. 回退到 PATH 环境变量
             var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
             foreach (var p in paths ?? Array.Empty<string>())
             {
@@ -4087,7 +4099,6 @@ PerformSecantIteration(
                     return full;
             }
 
-            // 3. 可以继续扩展其他常见目录，例如 ./tools、./bin 等（目前不添加）
             return null;
         }
     }
