@@ -766,17 +766,16 @@ namespace AvifEncoder
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
-            // ========== 去除 Windows 长路径前缀并统一为正斜杠 ==========
-            string cleanOutputDir = _outputDir;
-            if (OperatingSystem.IsWindows() && cleanOutputDir.StartsWith(@"\\?\"))
-                cleanOutputDir = cleanOutputDir.Substring(4);
-
-            cleanOutputDir = cleanOutputDir.Replace('\\', '/');
+            // 使用程序当前工作目录下的临时子目录（路径合理，无 \\?\ 前缀）
+            string workDir = Environment.CurrentDirectory;
+            string metricsDir = Path.Combine(workDir, "avif_metrics_tmp");
+            Directory.CreateDirectory(metricsDir);      // 确保目录存在
 
             string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
-            // ★ 关键修复：转义路径中的冒号，防止 ffmpeg 将其解释为参数分隔符
-            // 正确写法：两个反斜杠（在 C# 中写为四个反斜杠）
-            string jsonPathSafe = (cleanOutputDir + "/" + jsonName).Replace(":", "\\\\:");
+            string jsonPath = Path.Combine(metricsDir, jsonName);
+
+            // log_path 仅使用文件名，因为随后 ffmpeg 进程的工作目录将设为 metricsDir
+            string logPathSafe = jsonName;
 
             try
             {
@@ -788,19 +787,56 @@ namespace AvifEncoder
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPathSafe}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
+                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={jsonPathSafe}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
+                             $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
                               $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
 
+                // 启动 ffmpeg 进程，将工作目录设为 metricsDir（此目录不含 \\?\ 前缀）
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(_ffmpegPath, args)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        WorkingDirectory = metricsDir   // 安全的普通路径
+                    }
+                };
+
+                process.Start();
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
+
                 var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
-                var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
-                    _ffmpegPath, args, timeout, _globalCts?.Token ?? default);
+                using var timeoutCts = new CancellationTokenSource(timeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+
+                try
+                {
+                    await Task.WhenAll(stdoutTask, stderrTask,
+                        process.WaitForExitAsync(linkedCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited)
+                    {
+                        try { process.Kill(entireProcessTree: true); } catch { }
+                        try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                    }
+                }
+
+                string stderr = await stderrTask;
+                int exitCode = process.ExitCode;
 
                 if (!string.IsNullOrWhiteSpace(stderr))
                     _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
@@ -811,19 +847,18 @@ namespace AvifEncoder
                     return null;
                 }
 
-                // 读取 JSON 指标文件时，使用未转义的实际路径
-                string physicalPath = (cleanOutputDir + "/" + jsonName).Replace('/', Path.DirectorySeparatorChar);
-                if (!_fs.FileExists(physicalPath))
+                // 因为工作目录已经是 metricsDir，生成的 JSON 就在该目录下
+                if (!File.Exists(jsonPath))
                 {
-                    _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {physicalPath}");
+                    _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
                     return null;
                 }
 
-                string json = await _fs.ReadAllTextAsync(physicalPath);
+                string json = await File.ReadAllTextAsync(jsonPath);
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
-                // 从 stderr 提取 VMAF 分数
+                // 从 stderr 提取 VMAF 分数（可选）
                 var vmafMatch = Regex.Match(stderr, @"VMAF score:\s*([0-9.]+)");
                 if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
                         NumberStyles.Float, CultureInfo.InvariantCulture, out double vmafScore))
@@ -853,11 +888,9 @@ namespace AvifEncoder
             }
             finally
             {
-                // 清理临时 JSON 文件（使用未转义的实际路径）
                 try
                 {
-                    string physicalPath = (cleanOutputDir + "/" + jsonName).Replace('/', Path.DirectorySeparatorChar);
-                    if (_fs.FileExists(physicalPath)) _fs.DeleteFile(physicalPath);
+                    if (File.Exists(jsonPath)) File.Delete(jsonPath);
                 }
                 catch { }
             }
@@ -1114,7 +1147,8 @@ namespace AvifEncoder
         private async Task PrintStartupInfoAsync()
         {
             SafeWriteLine("===== AVIF 全自动编码流水线 =====");
-            SafeWriteLine($"输入文件夹: {_inputDir}  输出文件夹: {_outputDir}");
+            SafeWriteLine($"输入文件夹: {_inputDir}");
+            SafeWriteLine($"输出文件夹: {_outputDir}");
 
             string crfInfo;
             if (_config.UseCRFSearch)
