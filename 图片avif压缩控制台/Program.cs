@@ -95,14 +95,7 @@ namespace AvifEncoder
         public int MinCRF { get; set; } = 1;
         public int MaxCRF { get; set; } = 38;
 
-        // 超时配置（分钟，-1 表示自动计算）
-        // EncodeTimeoutMinutes：最终编码超时，-1 时根据分辨率自动计算（5～180分钟）
-        // SearchTimeoutMinutes：二分搜索全局超时，默认 60 分钟
-        // SafeTimeoutMinutes：安全模式全扫描超时，默认 180 分钟
-        // SafeEncodeTimeoutMinutes：安全模式单次编码超时（扫描时使用，较短，默认 10 分钟）
-        // SearchEncodeTimeoutMinutes：搜索过程中临时编码超时，默认 10 分钟
-        // SsimTimeoutMinutes：SSIM 计算超时，默认 5 分钟
-        // 编码回退时安全模式使用 timeoutMinutes * 2 作为超时（提供更宽松的时间）
+        // 超时配置（分钟）
         public int EncodeTimeoutMinutes { get; set; } = -1;
         public int SearchTimeoutMinutes { get; set; } = 60;
         public int SafeTimeoutMinutes { get; set; } = 180;
@@ -110,20 +103,21 @@ namespace AvifEncoder
         public int SearchEncodeTimeoutMinutes { get; set; } = 10;
         public int SsimTimeoutMinutes { get; set; } = 5;
 
-        // ★ 自定义编码器
+        // 自定义编码器
         public string Encoder { get; set; } = "libaom-av1";
-
         public string MetricMode { get; set; } = "vmaf";
 
-        public bool UserSpecifiedMaxJobs { get; set; } = false; // 新增
+        // 用户是否通过 -t 手动指定了 MaxJobs
+        public bool UserSpecifiedMaxJobs { get; set; } = false;
 
-
-        // ★ 预缩放：长边最大像素数，0 或负数表示禁用
+        // 预缩放：长边最大像素数，0 或负数表示禁用
         public int MaxResolution { get; set; } = 2560;
 
-
-        // 是否将缩放应用于最终输出（默认 true，即输出为缩放后尺寸；false 则搜索缩放但输出原尺寸）
+        // 是否将缩放应用于最终输出
         public bool ApplyScalingToOutput { get; set; } = true;
+
+        // 是否递归遍历输入目录的子文件夹
+        public bool RecurseSubdirectories { get; set; } = false;
 
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
@@ -136,18 +130,13 @@ namespace AvifEncoder
             return "";
         }
 
-
-
         /// <summary>
-        /// 根据当前 MetricMode 自动调整 TargetSSIM 的默认上限，
-        /// 确保在不同度量下搜索目标落在合理区间。
+        /// 根据当前 MetricMode 自动调整 TargetSSIM 的默认上限。
         /// 仅在用户未手动指定 -q 时调用。
         /// </summary>
         public void AdjustTargetForMetricMode()
         {
-            // ★ 无损模式下不调整质量目标，避免日志混淆
             if (Lossless) return;
-
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":
@@ -159,70 +148,57 @@ namespace AvifEncoder
             }
         }
 
-
-        /// <summary>文件系统抽象接口，封装常用的文件和目录操作。</summary>
-        public interface IFileSystem
-        {
-            bool FileExists(string path);
-            long GetFileLength(string path);
-            void CopyFile(string source, string destination, bool overwrite);
-            void DeleteFile(string path);
-            void WriteAllText(string path, string contents, Encoding encoding);
-            Task WriteAllTextAsync(string path, string contents, Encoding encoding);
-            Task<string> ReadAllTextAsync(string path);
-            void AppendAllText(string path, string contents);
-            DateTime GetCreationTime(string path);
-
-            bool DirectoryExists(string path);
-            void CreateDirectory(string path);
-            string[] GetFiles(string path, string searchPattern);
-            IEnumerable<string> EnumerateFiles(string path);
-            IEnumerable<string> EnumerateFileSystemEntries(string path);
-            void DeleteDirectory(string path, bool recursive);
-        }
-
-        public class RealFileSystem : IFileSystem
-        {
-            public bool FileExists(string path) => File.Exists(path);
-            public long GetFileLength(string path) => new FileInfo(path).Length;
-            public void CopyFile(string source, string destination, bool overwrite) =>
-                File.Copy(source, destination, overwrite);
-            public void DeleteFile(string path) => File.Delete(path);
-            public void WriteAllText(string path, string contents, Encoding encoding) =>
-                File.WriteAllText(path, contents, encoding);
-            public Task WriteAllTextAsync(string path, string contents, Encoding encoding) =>
-                File.WriteAllTextAsync(path, contents, encoding);
-            public Task<string> ReadAllTextAsync(string path) => File.ReadAllTextAsync(path);
-            public void AppendAllText(string path, string contents) => File.AppendAllText(path, contents);
-            public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
-
-            public bool DirectoryExists(string path) => Directory.Exists(path);
-            public void CreateDirectory(string path) => Directory.CreateDirectory(path);
-            public string[] GetFiles(string path, string searchPattern) =>
-                Directory.GetFiles(path, searchPattern);
-            public IEnumerable<string> EnumerateFiles(string path) =>
-                Directory.EnumerateFiles(path);
-            public IEnumerable<string> EnumerateFileSystemEntries(string path) =>
-                Directory.EnumerateFileSystemEntries(path);
-            public void DeleteDirectory(string path, bool recursive) =>
-                Directory.Delete(path, recursive);
-        }
-
         /// <summary>
         /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
-        /// 例如：vmaf 模式下输入 95 将转换为 0.95；psnr 模式下输入 40 转换为 0.5。
         /// </summary>
         public void SetQualityTarget(double rawValue, string metricMode)
         {
             TargetSSIM = metricMode?.ToLower() switch
             {
                 "ssim" => Math.Clamp(rawValue, 0, 1),
-                "psnr" => Math.Clamp((rawValue - 30) / 20.0, 0, 1),   // 30 dB -> 0, 50 dB -> 1
+                "psnr" => Math.Clamp((rawValue - 30) / 20.0, 0, 1),
                 "msssim" => Math.Clamp(rawValue, 0, 1),
                 "vmaf" => Math.Clamp(rawValue / 100.0, 0, 1),
                 "mix" => Math.Clamp(rawValue, 0, 1),
-                _ => Math.Clamp(rawValue, 0, 1)                   // fallback
+                _ => Math.Clamp(rawValue, 0, 1)
             };
+        }
+
+
+        // ========== 文件系统抽象（解决跨平台/长路径/可测试性）==========
+        public interface IFileSystem
+        {
+            bool FileExists(string path);
+            long GetFileLength(string path);
+            void DeleteFile(string path);
+            void CopyFile(string source, string dest, bool overwrite);
+            void CreateDirectory(string path);
+            void DeleteDirectory(string path, bool recursive);
+            string[] GetFiles(string path, string searchPattern);
+            DateTime GetCreationTime(string path);
+            void AppendAllText(string path, string contents);
+            void WriteAllText(string path, string contents, Encoding encoding);
+            Task<string> ReadAllTextAsync(string path);
+            IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption);
+            bool DirectoryExists(string path);
+        }
+
+        public class RealFileSystem : IFileSystem
+        {
+            public bool FileExists(string path) => File.Exists(path);
+            public long GetFileLength(string path) => new FileInfo(path).Length;
+            public void DeleteFile(string path) => File.Delete(path);
+            public void CopyFile(string source, string dest, bool overwrite) => File.Copy(source, dest, overwrite);
+            public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+            public void DeleteDirectory(string path, bool recursive) => Directory.Delete(path, recursive);
+            public string[] GetFiles(string path, string searchPattern) => Directory.GetFiles(path, searchPattern);
+            public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
+            public void AppendAllText(string path, string contents) => File.AppendAllText(path, contents);
+            public void WriteAllText(string path, string contents, Encoding encoding) => File.WriteAllText(path, contents, encoding);
+            public async Task<string> ReadAllTextAsync(string path) => await File.ReadAllTextAsync(path);
+            public IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption)
+                => Directory.EnumerateFiles(path, searchPattern, searchOption);
+            public bool DirectoryExists(string path) => Directory.Exists(path);
         }
     }
 
@@ -311,11 +287,12 @@ namespace AvifEncoder
     {
         private readonly object _lock = new();
         private readonly string _logDir;
-        private readonly IFileSystem _fs;
+        private readonly PresetConfig.IFileSystem _fs;   // 改为完整限定名
 
-        public FileLogger(string outputDir, IFileSystem? fileSystem = null)
+
+        public FileLogger(string outputDir, PresetConfig.IFileSystem? fileSystem = null)  // 改为完整限定名
         {
-            _fs = fileSystem ?? new RealFileSystem();
+            _fs = fileSystem ?? new PresetConfig.RealFileSystem();
             _logDir = Path.Combine(outputDir, "log");
             _fs.CreateDirectory(_logDir);
 
@@ -423,7 +400,7 @@ namespace AvifEncoder
 
 
 
-        private readonly IFileSystem _fs;
+        private readonly PresetConfig.IFileSystem _fs;   // 改为完整限定名
 
         // 删除原有字段：
         // private HashSet<int> _knownBadCrfs = new HashSet<int>();
@@ -568,10 +545,10 @@ namespace AvifEncoder
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
-                    IFileSystem? fileSystem = null,
+                    PresetConfig.IFileSystem? fileSystem = null,   // 改为完整限定名
                     ICacheManager? cacheManager = null)
         {
-            _fs = fileSystem ?? new RealFileSystem();
+            _fs = fileSystem ?? new PresetConfig.RealFileSystem();
 
             // ★ 启用长路径支持（Windows 下自动添加 \\?\ 前缀）
             _inputDir = EnsureLongPath(inputDir);
@@ -1162,7 +1139,10 @@ namespace AvifEncoder
             _fs.CreateDirectory(_outputDir);
 
             var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
-            var sortedFiles = _fs.EnumerateFiles(_inputDir)
+
+            // 根据配置选择是否递归遍历子文件夹
+            var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var sortedFiles = _fs.EnumerateFiles(_inputDir, "*.*", searchOption)
                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                 .OrderBy(f => f, new NaturalComparer())
                 .Select((path, idx) => (path, index: idx + 1))
@@ -4289,14 +4269,22 @@ AVIF 编码器 CLI -- 帮助手册
             public int? EncodeTimeout, SearchTimeout, SafeTimeout,
                         SafeEncodeTimeout, SearchEncodeTimeout, SsimTimeout;
             public string? CustomEncoder;
-            public string? MetricMode;          // ★ 新增
+            public string? MetricMode;
 
             public int? MaxResolution;   // 用户传入的预缩放阈值
-
             public bool OutputFullRes;   // 若为 true，则输出原尺寸（不将缩放应用到输出）
+
+            public bool Recurse;         // ★ 新增：遍历子文件夹
         }
 
         // ========== 参数解析 ==========
+        // ========== 6. ParseCommandLineArgs（仅展示关键新增，需要整合到单字符解析中） ==========
+        // 在原有的单字符选项解析部分增加：
+        //
+        //     else if (flags.Equals("R")) { opts.Recurse = true; }
+        // 或者支持 --recursive 长参数
+        //
+        // 以下为完整方法，包含原有逻辑及新增项
         private static ParsedOptions ParseCommandLineArgs(string[] args)
         {
             var opts = new ParsedOptions();
@@ -4305,7 +4293,7 @@ AVIF 编码器 CLI -- 帮助手册
             {
                 string arg = args[i];
 
-                // 超时选项
+                // ========== 超时选项 ==========
                 if (arg.StartsWith("--timeout-"))
                 {
                     string timeoutType = arg["--timeout-".Length..];
@@ -4326,7 +4314,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // 自定义编码器
+                // ========== 自定义编码器 ==========
                 if (arg == "--encoder" && i + 1 < args.Length)
                 {
                     opts.CustomEncoder = args[++i];
@@ -4338,7 +4326,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // 指标模式
+                // ========== 指标模式 ==========
                 if (arg == "--metric" && i + 1 < args.Length)
                 {
                     opts.MetricMode = args[++i].ToLower();
@@ -4350,7 +4338,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // 预缩放
+                // ========== 预缩放 ==========
                 if (arg == "--max-resolution" && i + 1 < args.Length)
                 {
                     if (int.TryParse(args[++i], out int mr) && mr >= 0)
@@ -4367,7 +4355,7 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // ★ 输出原尺寸开关
+                // ========== 输出原尺寸开关 ==========
                 if (arg == "--output-full-res")
                 {
                     opts.OutputFullRes = true;
@@ -4379,7 +4367,14 @@ AVIF 编码器 CLI -- 帮助手册
                     continue;
                 }
 
-                // 单字符选项
+                // ========== 遍历子文件夹 ==========
+                if (arg == "-R" || arg == "--recursive")
+                {
+                    opts.Recurse = true;
+                    continue;
+                }
+
+                // ========== 单字符选项 ==========
                 if (arg.StartsWith('-') && arg.Length > 1)
                 {
                     string flags = arg[1..];
@@ -4458,6 +4453,7 @@ AVIF 编码器 CLI -- 帮助手册
                                 case 'f': opts.AutoSource = false; opts.Force444 = true; opts.Force420 = false; opts.Force422 = false; break;
                                 case 'g': opts.AutoSource = false; opts.Force422 = true; opts.Force420 = false; opts.Force444 = false; break;
                                 case 'l': opts.ForceLossless = true; break;
+                                case 'R': opts.Recurse = true; break;  // ★ 单字符 R 也可触发递归
                                 default:
                                     Console.WriteLine($"未知选项: -{c}");
                                     return null!;
@@ -4475,6 +4471,7 @@ AVIF 编码器 CLI -- 帮助手册
         }
 
         // ========== 根据解析结果构建配置 ==========
+        // ========== 7. BuildPresetConfig ==========
         private static PresetConfig BuildPresetConfig(ParsedOptions opts)
         {
             PresetConfig config;
@@ -4509,7 +4506,6 @@ AVIF 编码器 CLI -- 帮助手册
                 }
                 if (opts.CustomSSIM.HasValue)
                 {
-                    // ★ 修复：优先使用用户通过 --metric 指定的模式，否则使用当前配置（预设）的模式
                     string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
                     config.SetQualityTarget(opts.CustomSSIM.Value, effectiveMetric);
                 }
@@ -4532,11 +4528,9 @@ AVIF 编码器 CLI -- 帮助手册
             if (!string.IsNullOrEmpty(opts.NameFormat))
                 config.OutputNameFormat = opts.NameFormat;
 
-            // ★ 设置指标模式
             if (!string.IsNullOrEmpty(opts.MetricMode))
                 config.MetricMode = opts.MetricMode;
 
-            // ★ 自动调整默认目标（仅在用户未手动指定 -q 时）
             bool userSetQuality = opts.CustomSSIM.HasValue;
             if (!userSetQuality)
                 config.AdjustTargetForMetricMode();
@@ -4563,8 +4557,7 @@ AVIF 编码器 CLI -- 帮助手册
                 AvifPipeline.ApplyBitDepth(config);
             }
 
-            // 位置：BuildPresetConfig 方法内，替换原有的 if (opts.ManualCRF.HasValue) 块
-            if (opts.ManualCRF.HasValue && !config.Lossless)  // 增加 Lossless 检查
+            if (opts.ManualCRF.HasValue && !config.Lossless)
             {
                 if (!config.UseCRFSearch)
                 {
@@ -4580,6 +4573,10 @@ AVIF 编码器 CLI -- 帮助手册
                 config.MaxResolution = opts.MaxResolution.Value;
 
             config.ApplyScalingToOutput = !opts.OutputFullRes;
+
+            // ★ 递归遍历子文件夹
+            config.RecurseSubdirectories = opts.Recurse;
+
             return config;
         }
 
@@ -4715,7 +4712,7 @@ AVIF 编码器 CLI -- 帮助手册
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
                     logger: fileLogger,
                     processRunner: null,                // 默认 RealProcessRunner
-                    fileSystem: new RealFileSystem(),
+                    fileSystem: new PresetConfig.RealFileSystem(),   // 改为完整限定名
                     cacheManager: cache);              // 注入缓存服务
                 await pipeline.RunAsync();
             }
