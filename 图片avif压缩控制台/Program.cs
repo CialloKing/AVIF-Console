@@ -445,6 +445,11 @@ namespace AvifEncoder
             return (int)Math.Floor(Math.Log2(maxTiles));
         }
 
+        private static string TilePart(int tileCols, bool isTrueLossless)
+    => isTrueLossless
+        ? "-tile-columns 0 -tile-rows 0"
+        : $"-tile-columns {tileCols} -tile-rows 0";
+
         private sealed class FileScopedFailTracker
         {
             public HashSet<int> KnownBadCrfs { get; } = new();
@@ -2267,8 +2272,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
         /// 仅对 libaom‑av1 启用 tile 与 row‑mt 参数，其他编码器忽略，避免无效参数造成失败。
         /// </summary>
+        /// <summary>
+        /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
+        /// 仅对 libaom‑av1 启用 tile 与 row‑mt 参数，其他编码器忽略，避免无效参数造成失败。
+        /// 若启用了 DisableTileParallel，则强制 tile=0 且关闭 row‑mt。
+        /// </summary>
         private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
-                                 int crf, string aomPart, int imageWidth)
+                                         int crf, string aomPart, int imageWidth)
         {
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
             string stillPic = useStillPic ? "-still-picture 1" : "";
@@ -2281,10 +2291,18 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             else
                 safeTileCols = Math.Clamp(Math.Max(2, minCols), minCols, maxCols);
 
+            // ★ 若禁用分块并行，强制 tile 列数为 0
+            if (config.DisableTileParallel)
+                safeTileCols = 0;
+
             string safeTile = EncoderUtils.IsLibAom(config.Encoder)
                 ? $"-tile-columns {safeTileCols} -tile-rows 0"
                 : "";
-            string safeRowMt = EncoderUtils.IsLibAom(config.Encoder) ? "-row-mt 1" : "";
+
+            // ★ row-mt 仅在未禁用 tile 并行且为 libaom 时开启
+            string safeRowMt = (EncoderUtils.IsLibAom(config.Encoder) && !config.DisableTileParallel)
+                ? "-row-mt 1"
+                : "";
 
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
@@ -2476,16 +2494,19 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// <summary>
         /// 生成用于编码缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
+        /// <summary>
+        /// 生成用于编码缓存的一致键，确保所有缓存访问使用相同格式。
+        /// </summary>
         private string GetEncodeCacheKey(
-    string normalizedPath, int crf, string pixFmt,
-    string tilePart, int actualCpu, bool isTrueLossless,
-    string aomParams, bool jpeg, int bitDepth,
-    int width = 0, int height = 0)       // ★ 新增
+            string normalizedPath, int crf, string pixFmt,
+            string tilePart, int actualCpu, bool isTrueLossless,
+            string aomParams, bool jpeg, int bitDepth,
+            int width = 0, int height = 0, string rowMt = "")   // ★ 新增 rowMt 参数
         {
             string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
             return $"{normalizedPath}|crf={crf}|pix={pixFmt}" +
                    $"|tile={tilePart}|cpu={actualCpu}|lossless={isTrueLossless}" +
-                   $"|aom={aomParams}|jpeg={jpeg}|depth={bitDepth}{res}";
+                   $"|aom={aomParams}|jpeg={jpeg}|depth={bitDepth}{res}|rowmt={rowMt}";
         }
 
 
@@ -2613,17 +2634,18 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
+        /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
-    bool allowParamDegrade, int imageWidth)
+            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
+            bool allowParamDegrade, int imageWidth)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
-            string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
 
-            // ★ 新增：若禁用分块并行，则关闭 row-mt
+            // ★ row-mt：仅在 libaom 且未禁用 tile 并行时启用
+            string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
             if (cfg.DisableTileParallel)
                 rowMt = "";
 
@@ -2650,6 +2672,10 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                                        : 0;
                     if (minLegal > maxLegal) safeTileCols = 0;   // 彻底无法使用 tile
 
+                    // ★ 若禁用分块并行，安全 tile 也归零
+                    if (cfg.DisableTileParallel)
+                        safeTileCols = 0;
+
                     string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
                         : "-tile-columns 0 -tile-rows 0";
@@ -2664,10 +2690,6 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             return sets;
         }
 
-        private static string TilePart(int tileCols, bool isTrueLossless)
-            => isTrueLossless ? "-tile-columns 0 -tile-rows 0" : $"-tile-columns {tileCols} -tile-rows 0";
-
-        /// <summary> 尝试使用单个参数集编码，返回结果 </summary>
         private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
     string? actualAomParams, string? commandLine)>
 TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt,
@@ -2679,7 +2701,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             string cacheKey = GetEncodeCacheKey(normalizedInput, crf, currentPixFmt, param.tilePart,
                                                 param.actualCpu, isTrueLossless, param.aomParams,
-                                                IsJpeg(input), currentPixFmt.Contains("10le") ? 10 : 8, encW, encH);
+                                                IsJpeg(input), currentPixFmt.Contains("10le") ? 10 : 8,
+                                                encW, encH, param.rowMt);   // ★ 新增 param.rowMt
 
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
 
