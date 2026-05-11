@@ -4578,11 +4578,12 @@ AVIF 编码器 —— Linux 风格命令行工具
         // ========== 程序入口 ==========
         // ========== 修复后的 Main 方法 ==========
         // ========== 修复后的 Main 方法（支持交互模式引号路径） ==========
+        // ========== 修复后的 Main 方法（引号解析 + 自动禁用/恢复快速编辑）==========
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            // 快速编辑模式不再使用 -e，如需保留可改为隐藏参数（例如 --win-quick-edit），此处完全移除旧逻辑
+            // 快速编辑模式不再通过 -e 控制，改为自动管理（见下方）
 
             // 预先检查 ffmpeg 是否可用
             if (EncoderUtils.FindExecutable("ffmpeg") == null)
@@ -4648,7 +4649,7 @@ AVIF 编码器 —— Linux 风格命令行工具
                 Console.Write("> ");
                 string? line = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(line))
-                    args = ParseCommandLineInteractive(line);   // ★ 使用引号感知分割
+                    args = ParseCommandLineInteractive(line);   // ★ 引号感知分割
                 else
                 { Console.WriteLine("未输入参数，退出。"); Console.ReadKey(); return; }
             }
@@ -4678,6 +4679,27 @@ AVIF 编码器 —— Linux 风格命令行工具
                 return;
             }
 
+            // ========== 控制台快速编辑管理：运行前禁用，结束后恢复 ==========
+            uint originalMode = 0;
+            IntPtr consoleHandle = IntPtr.Zero;
+            bool quickEditDisabled = false;
+
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    consoleHandle = GetStdHandle(-10);   // STD_INPUT_HANDLE
+                    if (GetConsoleMode(consoleHandle, out originalMode))
+                    {
+                        const uint ENABLE_QUICK_EDIT = 0x0040;
+                        uint newMode = originalMode & ~ENABLE_QUICK_EDIT;
+                        SetConsoleMode(consoleHandle, newMode);
+                        quickEditDisabled = true;
+                    }
+                }
+                catch { }
+            }
+
             // 实际运行流水线
             AvifPipeline? pipeline = null;
             try
@@ -4700,6 +4722,13 @@ AVIF 编码器 —— Linux 风格命令行工具
             finally
             {
                 pipeline?.Dispose();
+
+                // 恢复控制台模式
+                if (quickEditDisabled && consoleHandle != IntPtr.Zero)
+                {
+                    try { SetConsoleMode(consoleHandle, originalMode); } catch { }
+                }
+
                 Console.WriteLine("按任意键退出...");
                 Console.ReadKey();
             }
