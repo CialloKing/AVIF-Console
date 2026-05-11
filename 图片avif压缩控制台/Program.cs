@@ -124,6 +124,9 @@ namespace AvifEncoder
         // 是否递归遍历输入目录的子文件夹
         public bool RecurseSubdirectories { get; set; } = false;
 
+        // 在 PresetConfig 类中添加
+        public bool DisableTileParallel { get; set; } = false;
+
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
         /// 只有 libaom-av1 支持 aq-mode/deltaq-mode 等参数，其他编码器返回空字符串。
@@ -1944,6 +1947,9 @@ namespace AvifEncoder
                 else
                     tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
             }
+            // ★ 新增：强制关闭分块并行
+            if (_config.DisableTileParallel)
+                tileCols = 0;
 
             int crf = config.BaseCRF;
             if (isLosslessMode && !isTrulyLossless) crf = 0;
@@ -2616,6 +2622,10 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
 
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
+
+            // ★ 新增：若禁用分块并行，则关闭 row-mt
+            if (cfg.DisableTileParallel)
+                rowMt = "";
 
             // 双边约束
             int minLegal = GetMinLegalTileCols(imageWidth);
@@ -3705,12 +3715,26 @@ PerformSecantIteration(
 
                 try
                 {
+                    // ★ 根据 DisableTileParallel 调整预探测参数
+                    string tilePart;
+                    string rowMt;
+                    if (cfg.DisableTileParallel)
+                    {
+                        tilePart = "-tile-columns 0 -tile-rows 0";
+                        rowMt = "";
+                    }
+                    else
+                    {
+                        tilePart = probeTileCols > 0
+                            ? $"-tile-columns {probeTileCols} -tile-rows 0"
+                            : "-tile-columns 0 -tile-rows 0";
+                        rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
+                    }
+
                     var testParams = (aomParams: cfg.GetEffectiveAomParams(),
-                                      tilePart: probeTileCols > 0
-                                          ? $"-tile-columns {probeTileCols} -tile-rows 0"
-                                          : "-tile-columns 0 -tile-rows 0",
+                                      tilePart: tilePart,
                                       actualCpu: 0,
-                                      rowMt: EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "");
+                                      rowMt: rowMt);
 
                     var testEnc = await TryEncodeWithParamSet(input, probeOutput,
                         midForTest, pixFmt, testParams, cfg, false, 2, name);
@@ -3729,12 +3753,10 @@ PerformSecantIteration(
             }
 
             // ─── 2. Proxy 三点采样与区间裁剪 ───
-            // 选取三个代表性的 CRF 点
             int crfLow = globalMin;
             int crfMid = (globalMin + globalMax) / 2;
             int crfHigh = globalMax;
 
-            // 并行执行三个 Proxy 评估（容忍单个失败）
             double scoreLow = -1, scoreMid = -1, scoreHigh = -1;
             try
             {
@@ -3750,12 +3772,10 @@ PerformSecantIteration(
             }
             catch
             {
-                // 若并行等待异常，保持原区间不变
                 _logger.LogMetric("crf", $"[{name}] Proxy 并行评估异常，保持全区间 [{low}, {high}]");
                 return (low, high, recommendedFmt);
             }
 
-            // 检查 Proxy 结果有效性
             bool lowValid = scoreLow >= 0;
             bool midValid = scoreMid >= 0;
             bool highValid = scoreHigh >= 0;
@@ -3768,46 +3788,39 @@ PerformSecantIteration(
 
             _logger.LogSearch($"[{name}] Proxy 分数: CRF={crfLow} → {scoreLow:F4} | CRF={crfMid} → {scoreMid:F4} | CRF={crfHigh} → {scoreHigh:F4}");
 
-            // 如果最高质量点仍不达标，则目标无法实现
             if (scoreLow < target)
             {
                 _logger.LogMetric("crf", $"[{name}] Proxy 最低 CRF={crfLow} 质量 {scoreLow:F4} < 目标 {target:F4}，目标无法达成");
-                return (-1, high, recommendedFmt);  // low = -1 表示质量不足
+                return (-1, high, recommendedFmt);
             }
 
-            // 如果最差点已达标（理论上不会，因 MaxCRF 早停已处理），直接使用
             if (scoreHigh >= target)
             {
                 _logger.LogMetric("crf", $"[{name}] Proxy 最高 CRF={crfHigh} 已达目标，无需收缩");
                 return (low, high, recommendedFmt);
             }
 
-            // 检查单调性：scoreLow >= scoreMid >= scoreHigh (CRF 越小质量越高)
             if (scoreLow < scoreMid || scoreMid < scoreHigh)
             {
                 _logger.LogMetric("crf", $"[{name}] Proxy 点非单调，保持全区间 [{low}, {high}]");
                 return (low, high, recommendedFmt);
             }
 
-            // 安全收缩区间：在满足 low 达标、high 不达标的前提下，尽量缩小范围
             if (scoreMid >= target)
             {
-                // 中点达标 → 低点收缩到中点，高点保持 MaxCRF（仍不达标）
                 low = crfMid;
                 high = crfHigh;
                 SafeWriteLine($"  [{name}] Proxy 收缩区间: [{low}, {high}] (中点达标)");
                 _logger.LogSearch($"[{name}] Proxy 区间收缩至 [{low}, {high}]");
             }
-            else // scoreMid < target
+            else
             {
-                // 中点不达标 → 低点保持 MinCRF（达标），高点收缩到中点
                 low = crfLow;
                 high = crfMid;
                 SafeWriteLine($"  [{name}] Proxy 收缩区间: [{low}, {high}] (中点不达标)");
                 _logger.LogSearch($"[{name}] Proxy 区间收缩至 [{low}, {high}]");
             }
 
-            // 确保区间至少有两个不同的整数点，否则保持原区间
             if (high - low < 1)
             {
                 low = globalMin;
@@ -4227,6 +4240,7 @@ AVIF 编码器 —— Linux 风格命令行工具
   -l, --lossless               无损模式 (真无损或数学无损)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
+      --disable-tile-parallel  强制关闭分块并行 (tile) 以追求更高压缩率（编码速度会明显变慢）
       --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
@@ -4289,6 +4303,7 @@ AVIF 编码器 —— Linux 风格命令行工具
             public bool Quiet = false;
             public bool ShowVersion = false;
             public bool DryRun = false;
+            public bool DisableTileParallel { get; set; } = false;
         }
 
         // ========== 参数解析 ==========
@@ -4393,6 +4408,9 @@ AVIF 编码器 —— Linux 风格命令行工具
                         case "version": opts.ShowVersion = true; break;
                         case "dry-run": opts.DryRun = true; break;
                         case "help": PrintHelp(); return null!;
+                        case "disable-tile-parallel":
+                            opts.DisableTileParallel = true;
+                            break;
                         // 超时选项
                         default:
                             if (key.StartsWith("timeout-"))
@@ -4621,6 +4639,10 @@ AVIF 编码器 —— Linux 风格命令行工具
             if (opts.SafeEncodeTimeout.HasValue) config.SafeEncodeTimeoutMinutes = opts.SafeEncodeTimeout.Value;
             if (opts.SearchEncodeTimeout.HasValue) config.SearchEncodeTimeoutMinutes = opts.SearchEncodeTimeout.Value;
             if (opts.SsimTimeout.HasValue) config.SsimTimeoutMinutes = opts.SsimTimeout.Value;
+
+
+            //----------
+            config.DisableTileParallel = opts.DisableTileParallel;
 
             return config;
         }
