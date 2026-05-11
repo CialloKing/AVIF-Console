@@ -4067,12 +4067,27 @@ PerformSecantIteration(
         /// <summary>在 PATH 环境变量中查找可执行文件</summary>
         public static string? FindExecutable(string name)
         {
+            // 1. 优先在应用程序所在目录（工作目录）中查找，支持便携/免安装部署
+            string? appDir = AppContext.BaseDirectory;
+            if (!string.IsNullOrEmpty(appDir))
+            {
+                string localFile = Path.Combine(appDir,
+                    OperatingSystem.IsWindows() ? $"{name}.exe" : name);
+                if (File.Exists(localFile))
+                    return localFile;
+            }
+
+            // 2. 若未找到，则回退到 PATH 环境变量中查找（兼容传统安装方式）
             var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
             foreach (var p in paths ?? Array.Empty<string>())
             {
-                string full = Path.Combine(p, OperatingSystem.IsWindows() ? $"{name}.exe" : name);
-                if (File.Exists(full)) return full;
+                string full = Path.Combine(p,
+                    OperatingSystem.IsWindows() ? $"{name}.exe" : name);
+                if (File.Exists(full))
+                    return full;
             }
+
+            // 3. 可以继续扩展其他常见目录，例如 ./tools、./bin 等（目前不添加）
             return null;
         }
     }
