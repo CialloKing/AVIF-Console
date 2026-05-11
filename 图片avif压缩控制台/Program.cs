@@ -4105,149 +4105,71 @@ PerformSecantIteration(
         // ========== 帮助文本 ==========
         static void PrintHelp()
         {
-            int defaultThreads = GetDefaultThreads();
-            Console.WriteLine($@"
-AVIF 编码器 CLI -- 帮助手册
-========================================
+            Console.WriteLine(@"
+AVIF 编码器 —— Linux 风格命令行工具
 
 用法:
-  AvifEncoder -i <输入目录> -o <输出目录> [选项]
+  AvifEncoder --input <目录> --output <目录> [选项]
+  AvifEncoder -i <目录> -o <目录> [选项]
 
-基本参数
-----------------------------------------
-  -i <dir>         输入文件夹 (默认: input)
-  -o <dir>         输出文件夹 (默认: Avifoutput)
+主要选项:
+  -i, --input <目录>           输入目录 (默认: input)
+  -o, --output <目录>          输出目录 (默认: Avifoutput)
+  -p, --preset <预设>          预设模式: fast, balanced, best, extreme (默认: extreme)
+  -e, --encoder <名称>         指定 AV1 编码器 (默认: libaom-av1)
+  -j, --jobs <数量>            并行任务数 (默认: 根据 CPU 自动计算)
 
-预设模式 (快速配置)
-----------------------------------------
-  -p fast|balanced|best   选择预设 (默认: extreme)
+质量控制:
+  -s, --search                 启用 CRF 搜索 (默认启用)
+      --no-search              禁用 CRF 搜索
+      --metric <模式>          质量评价模式: vmaf, ssim, psnr, msssim, mix (默认 vmaf)
+      --target-vmaf <0-100>    直接设置 VMAF 目标，自动切换模式
+      --target-ssim <0-1>      直接设置 SSIM 目标
+      --target-psnr <dB>       直接设置 PSNR-Y 目标 (典型 30-50)
+      --target-msssim <0-1>    直接设置 MS-SSIM 目标
+      --target-mix <0-1>       直接设置加权混合评分目标
+      --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
+      --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
 
-  预设      | CRF | 目标SSIM | 色彩采样 | 搜索
-  ----------|-----|----------|----------|-----
-  fast      | 38  | 0.91     | 420      | 关闭
-  balanced  | 36  | 0.97     | 420      | 关闭
-  best      | 34  | 0.97     | 444      | 开启
-  extreme   | 35  | 0.99     | 444      | 开启
+像素格式:
+  -c, --chroma <采样>          色度采样: 420, 422, 444, auto (默认: auto)
+  -b, --bit-depth <位数>       输出位深: 8 或 10
 
-  注：预设可被后续参数覆盖
+其他编码选项:
+  -l, --lossless               无损模式 (真无损或数学无损)
+  -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
+  -r, --recursive              递归处理子目录
+      --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
+      --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
+      --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
+      --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
+      --timeout-safe <分钟>    安全模式全扫描超时 (默认 180)
+      --timeout-safe-encode <分钟> 安全模式单次编码超时 (默认 10)
+      --timeout-search-encode <分钟> 搜索过程中临时编码超时 (默认 10)
+      --timeout-ssim <分钟>    SSIM 计算超时 (默认 5)
 
-质量控制 (互斥开关)
-----------------------------------------
-  -s         启用 CRF 搜索 (自动选择最优 CRF)
-  -n         禁用 CRF 搜索 (默认，使用预设 CRF)
-  -q <n>     手动设置质量目标，输入值为当前 --metric 模式的原生数值：
-               ssim    - 0.0~1.0（直接 SSIM）
-               psnr    - 30~50（单位 dB，亮度 PSNR）
-               msssim  - 0.0~1.0（直接 MS-SSIM）
-               vmaf    - 0~100（VMAF 分数，90 以上为高质量）
-               mix     - 0.0~1.0（加权混合评分）
-             示例：
-               --metric vmaf -q 95   → 要求 VMAF ≥ 95
-               --metric psnr -q 40   → 要求亮度 PSNR ≥ 40 dB
-               --metric mix -q 0.90  → 要求综合评分 ≥ 0.90
-             若未手动指定，则使用预设值并自动适配上限。
+通用选项:
+  -v, --verbose                详细输出
+  -q, --quiet                  安静模式，仅输出错误
+  -D, --dry-run                仅打印配置，不实际编码
+  -V, --version                显示版本信息
+  -h, --help                   显示此帮助信息
 
-色彩采样 (三选一，默认源自适应)
-----------------------------------------
-  -c         使用 4:2:0 色度采样
-  -g         使用 4:2:2 色度采样
-  -f         使用 4:4:4 色度采样
-  -a         源自适应 (根据源文件自动选择色度采样和位深，默认启用)
-             手动指定 -c/-g/-f 或 -d 会关闭自适应
+示例:
+  # 基础用法
+  AvifEncoder -i ./图片 -o ./输出
 
-位深 (二选一，默认8bit / 自适应)
-----------------------------------------
-  -d 8       使用 8 位位深
-  -d 10      使用 10 位位深
-             指定 -d 会关闭自适应
+  # 最佳预设 + 目标 VMAF 95
+  AvifEncoder --preset best --target-vmaf 95
 
-输出命名 (自定义文件名) 直接写模板即可，无需加引号
-----------------------------------------
-  -m <模板>        输出文件名模板 (默认: covers-{{index}}.avif)
-                   可用占位符: {{name}} 源文件主名, {{index}} 序号(01,02...)
-                   正确示例:
-                     -m {{name}}.avif            按源文件名
-                     -m img_{{index}}.avif       自定义前缀
-                     -m {{name}}_{{index}}.avif   源名+序号
-                   错误示例:
-                     -m ""{{name}}.avif""        （引号会被当成文件名的一部分）
+  # 使用 420 色度、8bit、固定 CRF 30、不搜索
+  AvifEncoder -c 420 -b 8 --crf 30 --no-search
 
-其他编码选项
-----------------------------------------
-  -r <crf>   手动指定 CRF (1~50)，仅在搜索禁用时生效
-             或 -r min:max 设置 CRF 搜索范围 (0~63)，需配合 -s 使用
-  -l         无损模式 (支持真无损源文件，有损源自动数学无损)
-  -t <n>     并行处理线程数 (默认: 自动，当前 {defaultThreads} 线程)
-  -e         保留控制台快速编辑模式 (允许用鼠标选择文字，但选择期间程序会暂停)
-             默认行为：不加 -e 时，程序会自动禁用快速编辑模式，以避免鼠标误触导致程序卡死；
-             此时无法用鼠标直接选择文字，但运行结束后会恢复。
-
-  --encoder <名称>   指定编码器 (默认 libaom-av1)
-                     常用 AV1 编码器:
-                       libaom-av1  压缩效率最高，速度最慢 (支持所有 aq/deltaq 参数)
-                       libsvtav1   速度最快，多线程优化 (适合批量处理)
-                       rav1e       速度与压缩率平衡，Rust 实现 (部分高级参数不支持)
-                     可使用 ffmpeg -encoders | grep av1 查看本机支持的编码器
-  --metric <模式>   质量评价模式 (默认 vmaf)
-                     vmaf   - VMAF
-                     ssim   - SSIM
-                     psnr   - PSNR (亮度)
-                     msssim - MS-SSIM       
-                     mix    - 加权混合评分
-  --max-resolution <像素>  设置预缩放长边上限(默认2560)，0 禁用
-  --output-full-res        搜索和指标使用缩放，但最终输出保留原尺寸
-超时选项 (所有值均为正整数)
-----------------------------------------
-  --timeout-encode <分钟>         单次最终编码超时 (默认自动计算：5~180)
-  --timeout-search <分钟>         搜索全局超时 (默认 60)
-  --timeout-safe <分钟>           安全模式全扫描超时 (默认 180)
-  --timeout-safe-encode <分钟>    安全模式内单次编码超时 (默认 10)
-  --timeout-search-encode <分钟>  搜索过程中临时编码超时 (默认 10)
-  --timeout-ssim <分钟>           SSIM 计算超时 (默认 5)
-
-搜索策略 (启用 -s 时生效)
-----------------------------------------
-  1. 尝试用户指定的色度+位深
-  2. 降级位深 (10->8 bit)
-  3. 降级色度采样 (444->422->420, 8/10 bit)
-  4. 安全模式全 CRF 扫描 (yuv420p)
-  全部失败则回退至预设 CRF 直接编码。
-  (自适应模式下仅使用源匹配格式，不降级)
-
-使用示例
-----------------------------------------
-  . 默认模式 (自适应 + 不搜索):
-      -i pics -o out
-
-  . 自适应 + 搜索 + 目标 0.98:
-      -s -q 0.98 -i pics -o out
-
-  . 强制 444p 10bit + 搜索:
-      -f -d 10 -s -q 0.98
-
-  . 手动指定 CRF=30, 不搜索, 422 色度 (8bit):
-      -r 30 -g -n
-
-  . 自定义 CRF 搜索范围 (0~63) 并搜索:
-      -s -r 0:63
-
-  . 使用 SVT-AV1 编码器:
-      -s -q 0.95 --encoder libsvtav1
-
-  . 调整超时时间 (编码120分钟, 搜索180分钟):
-      -s -q 0.95 --timeout-encode 120 --timeout-search 180
-
-  . 保留快速编辑模式 (方便复制日志，但注意不要点击窗口):
-      -e -s -q 0.95 -t 2
-
-  . 无损处理 PNG 图片:
-      -l -i pngs -o avifs
-
-  . 自定义文件名 (不要加引号):
-      -m {{name}}.avif -i pics
-      -m cover_{{index}}.avif
+  # 自定义搜索范围与超时
+  AvifEncoder --crf 10:45 --target-ssim 0.98 --timeout-search 120
 ");
-        }
+        
+}
 
         // ========== 参数解析数据类 ==========
         private class ParsedOptions
@@ -4255,26 +4177,30 @@ AVIF 编码器 CLI -- 帮助手册
             public string InputDir = "input";
             public string OutputDir = "Avifoutput";
             public CliPreset Preset = CliPreset.Extreme;
-            public bool ForceSearch;
-            public bool ForceNoSearch;
-            public bool Force420, Force444, Force422;
-            public bool ForceLossless;
-            public int? ManualThreads;
-            public double? CustomSSIM;
-            public int? ManualCRF;
-            public int? BitDepth;
-            public string? NameFormat;
-            public bool AutoSource = true;
-            public int? MinCRF, MaxCRF;
+            public bool EnableSearch = true;          // 默认启用搜索
+            public bool ForceNoSearch = false;        // --no-search
+            public double? QualityTarget;             // --quality
+            public string MetricMode = "vmaf";
+            public string? DirectTargetMode;          // --target-xxx 对应的度量名
+            public double? DirectTargetValue;
+            public int? ManualCrf;                    // --crf 单值
+            public int? CrfMin, CrfMax;               // --crf min:max
+            public string Chroma = "auto";            // --chroma 420/422/444/auto
+            public int? BitDepth;                     // --bit-depth 8/10
+            public bool Lossless = false;
+            public string? OutputTemplate;
+            public string Encoder = "libaom-av1";
+            public int? Jobs;                         // -j / --jobs
+            public bool Recursive = false;
+            public int? MaxResolution;
+            public bool OutputFullRes = false;
+            // 超时（分钟）
             public int? EncodeTimeout, SearchTimeout, SafeTimeout,
                         SafeEncodeTimeout, SearchEncodeTimeout, SsimTimeout;
-            public string? CustomEncoder;
-            public string? MetricMode;
-
-            public int? MaxResolution;   // 用户传入的预缩放阈值
-            public bool OutputFullRes;   // 若为 true，则输出原尺寸（不将缩放应用到输出）
-
-            public bool Recurse;         // ★ 新增：遍历子文件夹
+            public bool Verbose = false;
+            public bool Quiet = false;
+            public bool ShowVersion = false;
+            public bool DryRun = false;
         }
 
         // ========== 参数解析 ==========
@@ -4288,194 +4214,201 @@ AVIF 编码器 CLI -- 帮助手册
         private static ParsedOptions ParseCommandLineArgs(string[] args)
         {
             var opts = new ParsedOptions();
-
-            for (int i = 0; i < args.Length; i++)
+            int i = 0;
+            while (i < args.Length)
             {
                 string arg = args[i];
 
-                // ========== 超时选项 ==========
-                if (arg.StartsWith("--timeout-"))
-                {
-                    string timeoutType = arg["--timeout-".Length..];
-                    if (i + 1 >= args.Length) throw new Exception($"选项 {arg} 需要一个值");
-                    string valStr = args[++i];
-                    if (!int.TryParse(valStr, out int val) || val <= 0)
-                        throw new Exception($"{arg} 必须是正整数");
-                    switch (timeoutType)
-                    {
-                        case "encode": opts.EncodeTimeout = val; break;
-                        case "search": opts.SearchTimeout = val; break;
-                        case "safe": opts.SafeTimeout = val; break;
-                        case "safe-encode": opts.SafeEncodeTimeout = val; break;
-                        case "search-encode": opts.SearchEncodeTimeout = val; break;
-                        case "ssim": opts.SsimTimeout = val; break;
-                        default: throw new Exception($"未知超时选项: {arg}");
-                    }
-                    continue;
-                }
+                // 选项结束符
+                if (arg == "--") { i++; break; }
 
-                // ========== 自定义编码器 ==========
-                if (arg == "--encoder" && i + 1 < args.Length)
+                // 长选项
+                if (arg.StartsWith("--"))
                 {
-                    opts.CustomEncoder = args[++i];
-                    continue;
-                }
-                if (arg.StartsWith("--encoder="))
-                {
-                    opts.CustomEncoder = arg["--encoder=".Length..];
-                    continue;
-                }
+                    string key = arg.Substring(2);
+                    string? value = null;
+                    int eq = key.IndexOf('=');
+                    if (eq >= 0) { value = key.Substring(eq + 1); key = key.Substring(0, eq); }
 
-                // ========== 指标模式 ==========
-                if (arg == "--metric" && i + 1 < args.Length)
-                {
-                    opts.MetricMode = args[++i].ToLower();
-                    continue;
-                }
-                if (arg.StartsWith("--metric="))
-                {
-                    opts.MetricMode = arg["--metric=".Length..].ToLower();
-                    continue;
-                }
+                    // 需要值的辅助函数
+                    string GetValue() => value ?? (++i < args.Length ? args[i] : throw new Exception($"选项 --{key} 缺少值"));
 
-                // ========== 预缩放 ==========
-                if (arg == "--max-resolution" && i + 1 < args.Length)
-                {
-                    if (int.TryParse(args[++i], out int mr) && mr >= 0)
-                        opts.MaxResolution = mr;
-                    else throw new Exception("--max-resolution 必须是非负整数");
-                    continue;
-                }
-                if (arg.StartsWith("--max-resolution="))
-                {
-                    string val = arg["--max-resolution=".Length..];
-                    if (int.TryParse(val, out int mr2) && mr2 >= 0)
-                        opts.MaxResolution = mr2;
-                    else throw new Exception("--max-resolution 必须是非负整数");
-                    continue;
-                }
-
-                // ========== 输出原尺寸开关 ==========
-                if (arg == "--output-full-res")
-                {
-                    opts.OutputFullRes = true;
-                    continue;
-                }
-                if (arg.StartsWith("--output-full-res="))
-                {
-                    opts.OutputFullRes = true;
-                    continue;
-                }
-
-                // ========== 遍历子文件夹 ==========
-                if (arg == "-R" || arg == "--recursive")
-                {
-                    opts.Recurse = true;
-                    continue;
-                }
-
-                // ========== 单字符选项 ==========
-                if (arg.StartsWith('-') && arg.Length > 1)
-                {
-                    string flags = arg[1..];
-                    if (flags.Equals("p") && i + 1 < args.Length)
+                    switch (key)
                     {
-                        string p = args[++i].ToLower();
-                        opts.Preset = p switch
-                        {
-                            "fast" => CliPreset.Fast,
-                            "balanced" => CliPreset.Balanced,
-                            "best" => CliPreset.Best,
-                            "extreme" => CliPreset.Extreme,
-                            _ => throw new Exception("预设必须为 fast/balanced/best/extreme")
-                        };
-                    }
-                    else if (flags.Equals("t") && i + 1 < args.Length)
-                    {
-                        if (int.TryParse(args[++i], out int t)) opts.ManualThreads = t;
-                        else throw new Exception("线程数必须是数字");
-                    }
-                    else if (flags.Equals("d") && i + 1 < args.Length)
-                    {
-                        if (int.TryParse(args[++i], out int d) && (d == 8 || d == 10))
-                        {
-                            opts.BitDepth = d;
-                            opts.AutoSource = false;
-                        }
-                        else throw new Exception("位深必须是 8 或 10");
-                    }
-                    else if (flags.Equals("m") && i + 1 < args.Length)
-                    {
-                        opts.NameFormat = args[++i].Trim('"').Trim('\'');
-                    }
-                    else if (flags.Equals("i") && i + 1 < args.Length) { opts.InputDir = args[++i]; }
-                    else if (flags.Equals("o") && i + 1 < args.Length) { opts.OutputDir = args[++i]; }
-                    else if (flags.Equals("q") && i + 1 < args.Length)
-                    {
-                        if (double.TryParse(args[++i], out double q))
-                            opts.CustomSSIM = q;
-                        else throw new Exception("-q 需要是一个数值");
-                    }
-                    else if (flags.Equals("r") && i + 1 < args.Length)
-                    {
-                        string rawCRF = args[++i];
-                        if (rawCRF.Contains(':'))
-                        {
-                            var parts = rawCRF.Split(':');
-                            if (parts.Length == 2 &&
-                                int.TryParse(parts[0], out int minVal) && minVal >= 0 && minVal <= 63 &&
-                                int.TryParse(parts[1], out int maxVal) && maxVal >= 0 && maxVal <= 63 &&
-                                minVal < maxVal)
+                        case "input": opts.InputDir = GetValue(); break;
+                        case "output": opts.OutputDir = GetValue(); break;
+                        case "preset":
+                            opts.Preset = GetValue().ToLower() switch
                             {
-                                opts.MinCRF = minVal;
-                                opts.MaxCRF = maxVal;
-                            }
-                            else throw new Exception("CRF 范围格式错误，应为 min:max (0~63 且 min<max)");
-                        }
-                        else
-                        {
-                            if (int.TryParse(rawCRF, out int r) && r >= 1 && r <= 50)
-                                opts.ManualCRF = r;
-                            else throw new Exception("CRF 必须是 1~50 的整数");
-                        }
-                    }
-                    else if (flags.Equals("h")) { PrintHelp(); return null!; }
-                    else
-                    {
-                        foreach (char c in flags)
-                        {
-                            switch (c)
+                                "fast" => CliPreset.Fast,
+                                "balanced" => CliPreset.Balanced,
+                                "best" => CliPreset.Best,
+                                "extreme" => CliPreset.Extreme,
+                                _ => throw new Exception("预设参数错误")
+                            };
+                            break;
+                        case "search": opts.EnableSearch = true; opts.ForceNoSearch = false; break;
+                        case "no-search": opts.ForceNoSearch = true; opts.EnableSearch = false; break;
+                        case "quality": opts.QualityTarget = double.Parse(GetValue()); break;
+                        case "metric": opts.MetricMode = GetValue().ToLower(); break;
+                        case "target-vmaf": opts.DirectTargetMode = "vmaf"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-ssim": opts.DirectTargetMode = "ssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-psnr": opts.DirectTargetMode = "psnr"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "crf":
+                            string crfVal = GetValue();
+                            if (crfVal.Contains(':'))
                             {
-                                case 's': opts.ForceSearch = true; opts.ForceNoSearch = false; break;
-                                case 'n': opts.ForceNoSearch = true; opts.ForceSearch = false; break;
-                                case 'a': opts.AutoSource = true; break;
-                                case 'c': opts.AutoSource = false; opts.Force420 = true; opts.Force444 = false; opts.Force422 = false; break;
-                                case 'f': opts.AutoSource = false; opts.Force444 = true; opts.Force420 = false; opts.Force422 = false; break;
-                                case 'g': opts.AutoSource = false; opts.Force422 = true; opts.Force420 = false; opts.Force444 = false; break;
-                                case 'l': opts.ForceLossless = true; break;
-                                case 'R': opts.Recurse = true; break;  // ★ 单字符 R 也可触发递归
-                                default:
-                                    Console.WriteLine($"未知选项: -{c}");
-                                    return null!;
+                                var parts = crfVal.Split(':');
+                                if (parts.Length == 2 &&
+                                    int.TryParse(parts[0], out int min) && min >= 0 && min <= 63 &&
+                                    int.TryParse(parts[1], out int max) && max >= 0 && max <= 63 && min < max)
+                                { opts.CrfMin = min; opts.CrfMax = max; opts.EnableSearch = true; }
+                                else throw new Exception("CRF 范围格式错误");
                             }
+                            else
+                            {
+                                if (int.TryParse(crfVal, out int r) && r >= 1 && r <= 50)
+                                { opts.ManualCrf = r; opts.ForceNoSearch = true; }
+                                else throw new Exception("CRF 应为 1-50 的整数");
+                            }
+                            break;
+                        case "chroma":
+                            string c = GetValue().ToLower();
+                            if (new[] { "420", "422", "444", "auto" }.Contains(c))
+                                opts.Chroma = c;
+                            else throw new Exception("--chroma 仅支持 420/422/444/auto");
+                            break;
+                        case "bit-depth":
+                            if (int.TryParse(GetValue(), out int bd) && (bd == 8 || bd == 10))
+                                opts.BitDepth = bd;
+                            else throw new Exception("--bit-depth 必须为 8 或 10");
+                            break;
+                        case "lossless": opts.Lossless = true; break;
+                        case "output-template": opts.OutputTemplate = GetValue().Trim('"', '\''); break;
+                        case "encoder": opts.Encoder = GetValue(); break;
+                        case "jobs":
+                            if (int.TryParse(GetValue(), out int jobs) && jobs > 0)
+                                opts.Jobs = jobs;
+                            else throw new Exception("--jobs 需要正整数");
+                            break;
+                        case "recursive": opts.Recursive = true; break;
+                        case "max-resolution":
+                            if (int.TryParse(GetValue(), out int mr) && mr >= 0)
+                                opts.MaxResolution = mr;
+                            else throw new Exception("--max-resolution 需要非负整数");
+                            break;
+                        case "output-full-res": opts.OutputFullRes = true; break;
+                        case "verbose": opts.Verbose = true; break;
+                        case "quiet": opts.Quiet = true; break;
+                        case "version": opts.ShowVersion = true; break;
+                        case "dry-run": opts.DryRun = true; break;
+                        case "help": PrintHelp(); return null!;
+                        // 超时选项
+                        default:
+                            if (key.StartsWith("timeout-"))
+                            {
+                                string type = key.Substring("timeout-".Length);
+                                if (!int.TryParse(GetValue(), out int val) || val <= 0)
+                                    throw new Exception($"--{key} 需要正整数");
+                                switch (type)
+                                {
+                                    case "encode": opts.EncodeTimeout = val; break;
+                                    case "search": opts.SearchTimeout = val; break;
+                                    case "safe": opts.SafeTimeout = val; break;
+                                    case "safe-encode": opts.SafeEncodeTimeout = val; break;
+                                    case "search-encode": opts.SearchEncodeTimeout = val; break;
+                                    case "ssim": opts.SsimTimeout = val; break;
+                                    default: throw new Exception($"未知超时选项 --{key}");
+                                }
+                            }
+                            else throw new Exception($"未知选项 --{key}");
+                            break;
+                    }
+                    i++;
+                    continue;
+                }
+
+                // 短选项
+                if (arg.StartsWith('-') && arg.Length > 1 && !char.IsDigit(arg[1]))
+                {
+                    string flags = arg.Substring(1);
+                    // 带值的短选项（需要下一个参数）
+                    if (flags == "i" || flags == "o" || flags == "p" || flags == "c" || flags == "b" ||
+                        flags == "t" || flags == "e" || flags == "j")
+                    {
+                        if (++i >= args.Length) throw new Exception($"选项 -{flags} 缺少值");
+                        string val = args[i];
+                        switch (flags)
+                        {
+                            case "i": opts.InputDir = val; break;
+                            case "o": opts.OutputDir = val; break;
+                            case "p":
+                                opts.Preset = val.ToLower() switch
+                                {
+                                    "fast" => CliPreset.Fast,
+                                    "balanced" => CliPreset.Balanced,
+                                    "best" => CliPreset.Best,
+                                    "extreme" => CliPreset.Extreme,
+                                    _ => throw new Exception("预设参数错误")
+                                };
+                                break;
+                            case "c":
+                                if (new[] { "420", "422", "444", "auto" }.Contains(val.ToLower()))
+                                    opts.Chroma = val.ToLower();
+                                else throw new Exception("-c 仅支持 420/422/444/auto");
+                                break;
+                            case "b":
+                                if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10))
+                                    opts.BitDepth = bd2;
+                                else throw new Exception("-b 必须为 8 或 10");
+                                break;
+                            case "t": opts.OutputTemplate = val.Trim('"', '\''); break;
+                            case "e": opts.Encoder = val; break;
+                            case "j":
+                                if (int.TryParse(val, out int j) && j > 0) opts.Jobs = j;
+                                else throw new Exception("-j 需要正整数");
+                                break;
+                        }
+                        i++;
+                        continue;
+                    }
+
+                    // 无值短选项组合
+                    foreach (char c in flags)
+                    {
+                        switch (c)
+                        {
+                            case 's': opts.EnableSearch = true; opts.ForceNoSearch = false; break;
+                            case 'l': opts.Lossless = true; break;
+                            case 'r': opts.Recursive = true; break;
+                            case 'v': opts.Verbose = true; break;
+                            case 'q': opts.Quiet = true; break;
+                            case 'V': opts.ShowVersion = true; break;
+                            case 'D': opts.DryRun = true; break;
+                            case 'h': PrintHelp(); return null!;
+                            default: throw new Exception($"未知短选项 -{c}");
                         }
                     }
+                    i++;
+                    continue;
                 }
-                else
-                {
-                    Console.WriteLine($"未知参数: {arg}");
-                    return null!;
-                }
+
+                throw new Exception($"无法识别的参数: {arg}");
             }
             return opts;
         }
 
         // ========== 根据解析结果构建配置 ==========
         // ========== 7. BuildPresetConfig ==========
+        // ==================== 配置构建器 ====================
         private static PresetConfig BuildPresetConfig(ParsedOptions opts)
         {
             PresetConfig config;
-            if (opts.ForceLossless)
+
+            // ---------- 1. 基础预设与无损模式 ----------
+            if (opts.Lossless)
             {
                 config = new PresetConfig
                 {
@@ -4485,36 +4418,115 @@ AVIF 编码器 CLI -- 帮助手册
                     SearchCpuUsed = 0,
                     UseCRFSearch = false,
                     Lossless = true,
-                    PixelFormat = null,
+                    PixelFormat = null,                // 无损模式自动选择合适格式
                     AomParams = "aq-mode=0:deltaq-mode=0:enable-chroma-deltaq=0",
-                    MaxJobs = GetDefaultThreads(),
-                    BitDepth = 10
+                    MaxJobs = opts.Jobs ?? Math.Max(2, (int)Math.Sqrt(Environment.ProcessorCount)),
+                    Encoder = opts.Encoder,
+                    BitDepth = 10                     // 无损默认高精度
                 };
+                // 无损模式下忽略大部分质量参数，直接返回
+                return config;
+            }
+
+            // ---------- 2. 从预设创建基础配置 ----------
+            config = AvifPipeline.CreateFromPreset(opts.Preset);
+
+            // 手动覆盖编码器
+            config.Encoder = opts.Encoder;
+
+            // 搜索开关
+            if (opts.ForceNoSearch)
+                config.UseCRFSearch = false;
+            else if (opts.EnableSearch)
+                config.UseCRFSearch = true;   // 保持预设，除非显式要求
+
+            // ---------- 3. 色彩采样与位深 ----------
+            if (opts.Chroma != "auto")
+            {
+                config.AutoSource = false;
+                config.UserSetChroma = true;
+                // 构建像素格式字符串（位深稍后统一处理）
+                config.PixelFormat = opts.Chroma switch
+                {
+                    "420" => "yuv420p",
+                    "422" => "yuv422p",
+                    "444" => "yuv444p",
+                    _ => "yuv420p"
+                };
+            }
+
+            if (opts.BitDepth.HasValue)
+            {
+                config.BitDepth = opts.BitDepth.Value;
+                config.UserSetBitDepth = true;
+                config.AutoSource = false;   // 手动指定位深则关闭自适应
+            }
+
+            // 调用 ApplyBitDepth 确保 PixelFormat 后缀与 BitDepth 一致
+            AvifPipeline.ApplyBitDepth(config);
+
+            // ---------- 4. 质量目标处理 ----------
+            // 直接目标优先（--target-vmaf 等）
+            if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
+            {
+                opts.MetricMode = opts.DirectTargetMode;
+                opts.QualityTarget = opts.DirectTargetValue;
+            }
+
+            if (opts.QualityTarget.HasValue)
+            {
+                string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
+                config.MetricMode = effectiveMetric;
+                config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
             }
             else
             {
-                config = AvifPipeline.CreateFromPreset(opts.Preset);
-                if (opts.ForceSearch) config.UseCRFSearch = true;
-                if (opts.ForceNoSearch) config.UseCRFSearch = false;
-                if (opts.Force444) config.PixelFormat = "yuv444p10le";
-                else if (opts.Force420) config.PixelFormat = "yuv420p10le";
-                else if (opts.Force422) config.PixelFormat = "yuv422p10le";
-                if (opts.ManualThreads.HasValue)
-                {
-                    config.MaxJobs = opts.ManualThreads.Value;
-                    config.UserSpecifiedMaxJobs = true;   // 标记手动设置
-                }
-                if (opts.CustomSSIM.HasValue)
-                {
-                    string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
-                    config.SetQualityTarget(opts.CustomSSIM.Value, effectiveMetric);
-                }
+                // 未手动指定质量时，使用预设目标并根据度量模式调整上限
+                config.AdjustTargetForMetricMode();
             }
 
-            if (opts.MinCRF.HasValue) config.MinCRF = opts.MinCRF.Value;
-            if (opts.MaxCRF.HasValue) config.MaxCRF = opts.MaxCRF.Value;
-            if (config.MinCRF >= config.MaxCRF) throw new Exception("最小 CRF 必须小于最大 CRF");
+            // 设置度量模式（可能被 DirectTarget 覆盖，也可能直接通过 --metric 设置）
+            if (!string.IsNullOrEmpty(opts.MetricMode))
+                config.MetricMode = opts.MetricMode;
 
+            // ---------- 5. CRF 固定值与搜索范围 ----------
+            if (opts.ManualCrf.HasValue)
+            {
+                config.BaseCRF = opts.ManualCrf.Value;
+                // 手动固定 CRF 且非显式搜索时，禁用搜索
+                if (!opts.EnableSearch)
+                    config.UseCRFSearch = false;
+            }
+
+            if (opts.CrfMin.HasValue)
+                config.MinCRF = opts.CrfMin.Value;
+            if (opts.CrfMax.HasValue)
+                config.MaxCRF = opts.CrfMax.Value;
+
+            // 范围合法性检查
+            if (config.MinCRF >= config.MaxCRF)
+                throw new Exception("最小 CRF 必须小于最大 CRF");
+
+            // ---------- 6. 并行任务数 ----------
+            if (opts.Jobs.HasValue)
+            {
+                config.MaxJobs = opts.Jobs.Value;
+                config.UserSpecifiedMaxJobs = true;
+            }
+
+            // ---------- 7. 输出模板 ----------
+            if (!string.IsNullOrEmpty(opts.OutputTemplate))
+                config.OutputNameFormat = opts.OutputTemplate;
+
+            // ---------- 8. 分辨率与缩放策略 ----------
+            if (opts.MaxResolution.HasValue)
+                config.MaxResolution = opts.MaxResolution.Value;
+            config.ApplyScalingToOutput = !opts.OutputFullRes;
+
+            // ---------- 9. 递归子目录 ----------
+            config.RecurseSubdirectories = opts.Recursive;
+
+            // ---------- 10. 超时配置 ----------
             if (opts.EncodeTimeout.HasValue) config.EncodeTimeoutMinutes = opts.EncodeTimeout.Value;
             if (opts.SearchTimeout.HasValue) config.SearchTimeoutMinutes = opts.SearchTimeout.Value;
             if (opts.SafeTimeout.HasValue) config.SafeTimeoutMinutes = opts.SafeTimeout.Value;
@@ -4522,94 +4534,19 @@ AVIF 编码器 CLI -- 帮助手册
             if (opts.SearchEncodeTimeout.HasValue) config.SearchEncodeTimeoutMinutes = opts.SearchEncodeTimeout.Value;
             if (opts.SsimTimeout.HasValue) config.SsimTimeoutMinutes = opts.SsimTimeout.Value;
 
-            if (!string.IsNullOrEmpty(opts.CustomEncoder))
-                config.Encoder = opts.CustomEncoder;
-
-            if (!string.IsNullOrEmpty(opts.NameFormat))
-                config.OutputNameFormat = opts.NameFormat;
-
-            if (!string.IsNullOrEmpty(opts.MetricMode))
-                config.MetricMode = opts.MetricMode;
-
-            bool userSetQuality = opts.CustomSSIM.HasValue;
-            if (!userSetQuality)
-                config.AdjustTargetForMetricMode();
-
-            config.AutoSource = opts.AutoSource;
-            if (!opts.AutoSource)
-            {
-                if (opts.Force444 || opts.Force422 || opts.Force420) config.UserSetChroma = true;
-                if (opts.BitDepth.HasValue) config.UserSetBitDepth = true;
-            }
-            else
-            {
-                config.PixelFormat = null;
-                if (opts.BitDepth.HasValue)
-                {
-                    config.BitDepth = opts.BitDepth.Value;
-                    config.UserSetBitDepth = true;
-                }
-            }
-
-            if (!config.AutoSource || config.UserSetBitDepth)
-            {
-                if (opts.BitDepth.HasValue) config.BitDepth = opts.BitDepth.Value;
-                AvifPipeline.ApplyBitDepth(config);
-            }
-
-            if (opts.ManualCRF.HasValue && !config.Lossless)
-            {
-                if (!config.UseCRFSearch)
-                {
-                    config.BaseCRF = opts.ManualCRF.Value;
-                    Console.WriteLine($"手动设置 CRF = {config.BaseCRF}");
-                }
-                else
-                {
-                    Console.WriteLine("[WARN] -r 仅在禁用搜索时有效，已忽略");
-                }
-            }
-            if (opts.MaxResolution.HasValue)
-                config.MaxResolution = opts.MaxResolution.Value;
-
-            config.ApplyScalingToOutput = !opts.OutputFullRes;
-
-            // ★ 递归遍历子文件夹
-            config.RecurseSubdirectories = opts.Recurse;
-
             return config;
         }
 
         // ========== 程序入口 ==========
+        // ========== 修复后的 Main 方法 ==========
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            // 快速编辑模式管理
-            bool forceEnableQuickEdit = false;
-            uint originalMode = 0;
-            IntPtr consoleHandle = IntPtr.Zero;
-
-            if (args.Contains("-e"))
-            {
-                forceEnableQuickEdit = true;
-                args = args.Where(a => a != "-e").ToArray();
-            }
+            // 快速编辑模式不再使用 -e，如需保留可改为隐藏参数（例如 --win-quick-edit），此处完全移除旧逻辑
 
             // 预先检查 ffmpeg 是否可用
-            bool ffmpegFound = false;
-            var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
-            foreach (var p in paths ?? Array.Empty<string>())
-            {
-                string full = Path.Combine(p, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
-                if (File.Exists(full))
-                {
-                    ffmpegFound = true;
-                    break;
-                }
-            }
-
-            if (!ffmpegFound)
+            if (EncoderUtils.FindExecutable("ffmpeg") == null)
             {
                 Console.WriteLine("[FAIL] 错误: ffmpeg 未找到，请确认 ffmpeg 已安装并添加到 PATH 环境变量中。");
                 Console.WriteLine("按任意键退出...");
@@ -4627,7 +4564,7 @@ AVIF 编码器 CLI -- 帮助手册
 
                 Console.WriteLine("\n正在检测可用的 AV1 编码器...");
                 var allEncoders = await GetAvailableEncodersListAsync();
-                Console.WriteLine($"当前ffmpeg 支持的 AV1 编码器: {string.Join(", ", allEncoders)}");
+                Console.WriteLine($"当前 ffmpeg 支持的 AV1 编码器: {string.Join(", ", allEncoders)}");
 
                 Console.WriteLine("\n正在测试编码器实际可用性...");
                 var encoderStatuses = await TestEncodersAsync(allEncoders, logOutputDir, logInputDir);
@@ -4646,13 +4583,13 @@ AVIF 编码器 CLI -- 帮助手册
 
                     if (softAvail.Count > 0)
                     {
-                        Console.WriteLine("  -- 软件编码器（推荐，支持全部参数） --");
+                        Console.WriteLine("  -- 软件编码器（推荐） --");
                         foreach (var (name, _, _) in softAvail)
                             Console.WriteLine($"  [OK] {name,-12}  (--encoder {name})");
                     }
                     if (hardAvail.Count > 0)
                     {
-                        Console.WriteLine("  -- 硬件编码器（速度较快，不支持部分高级参数） --");
+                        Console.WriteLine("  -- 硬件编码器 --");
                         foreach (var (name, _, _) in hardAvail)
                             Console.WriteLine($"  [OK] {name,-12}  (--encoder {name})");
                     }
@@ -4681,50 +4618,49 @@ AVIF 编码器 CLI -- 帮助手册
             ParsedOptions? opts = ParseCommandLineArgs(args);
             if (opts == null) return;
 
+            // 显示版本
+            if (opts.ShowVersion)
+            {
+                Console.WriteLine("AvifEncoder v2.0 (Linux-style CLI)");
+                return;
+            }
+
             // 构建配置
             PresetConfig config = BuildPresetConfig(opts);
 
-            // 临时禁用快速编辑
-            if (!forceEnableQuickEdit && OperatingSystem.IsWindows())
+            // 模拟运行
+            if (opts.DryRun)
             {
-                try
-                {
-                    consoleHandle = GetStdHandle(-10);
-                    if (GetConsoleMode(consoleHandle, out originalMode))
-                    {
-                        const uint ENABLE_QUICK_EDIT = 0x0040;
-                        SetConsoleMode(consoleHandle, originalMode & ~ENABLE_QUICK_EDIT);
-                    }
-                }
-                catch { }
+                Console.WriteLine("== Dry Run ==");
+                Console.WriteLine($"Input: {opts.InputDir}\nOutput: {opts.OutputDir}");
+                Console.WriteLine($"Encoder: {config.Encoder}\nSearch: {config.UseCRFSearch}");
+                Console.WriteLine($"Target: {config.TargetSSIM} (Metric: {config.MetricMode})");
+                Console.WriteLine($"CRF: {config.BaseCRF}, Chroma: {opts.Chroma}, BitDepth: {config.BitDepth}");
+                return;
             }
 
+            // 实际运行流水线
             AvifPipeline? pipeline = null;
             try
             {
                 var fileLogger = new FileLogger(opts.OutputDir);
                 Logger.SetInstance(fileLogger);
-
-                // 创建缓存管理器实例
                 var cache = new CacheManager();
 
-                // 使用新构造函数，显式注入 ICacheManager
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
                     logger: fileLogger,
-                    processRunner: null,                // 默认 RealProcessRunner
-                    fileSystem: new PresetConfig.RealFileSystem(),   // 改为完整限定名
-                    cacheManager: cache);              // 注入缓存服务
+                    processRunner: null,
+                    fileSystem: new PresetConfig.RealFileSystem(),
+                    cacheManager: cache);
                 await pipeline.RunAsync();
             }
-            catch (Exception ex) { Console.WriteLine($"[FAIL] 错误: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FAIL] 错误: {ex.Message}");
+            }
             finally
             {
                 pipeline?.Dispose();
-
-                if (!forceEnableQuickEdit && consoleHandle != IntPtr.Zero)
-                {
-                    try { SetConsoleMode(consoleHandle, originalMode); } catch { }
-                }
                 Console.WriteLine("按任意键退出...");
                 Console.ReadKey();
             }
