@@ -1292,14 +1292,26 @@ namespace AvifEncoder
         /// <summary> 清理编码缓存及临时文件 </summary>
         private void FinalCleanup()
         {
+            // 清理编码缓存目录
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
+
+            // 清理缩放后的临时图片目录
             string scaledDir = Path.Combine(_outputDir, "_scaled");
             if (_fs.DirectoryExists(scaledDir))
             {
                 try { _fs.DeleteDirectory(scaledDir, true); } catch { }
             }
-            foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))   // 替换 Directory.GetFiles
+
+            // 清理带 _p_ 前缀的临时 AVIF 文件
+            foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
                 try { _fs.DeleteFile(f); } catch { }
+
+            // ★ 新增：清理 ComputeAllMetrics 生成的临时 JSON 目录
+            string metricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");
+            if (Directory.Exists(metricsDir))
+            {
+                try { Directory.Delete(metricsDir, true); } catch { }
+            }
         }
 
         private void CleanDirectory(string dir)
