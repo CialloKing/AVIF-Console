@@ -79,11 +79,16 @@ namespace AvifEncoder
         public bool UseCRFSearch { get; set; }
         public int MaxJobs { get; set; }
         public string? PixelFormat { get; set; }
+
+        // 在 PresetConfig 类中，将 AomParams 属性更新为：
         public string AomParams { get; set; } =
             "aq-mode=3:deltaq-mode=0:enable-chroma-deltaq=1:sharpness=0:" +
             "enable-qm=1:enable-restoration=1:enable-cdef=1:" +
             "enable-global-motion=1:enable-warped-motion=1:" +
-            "enable-obmc=1:enable-ref-frame-mvs=1:enable-tx64=1:enable-dist-wtd-comp=1";
+            "enable-obmc=1:enable-ref-frame-mvs=1:" +
+            "enable-tx64=1:enable-dist-wtd-comp=1:" +
+            "enable-rect-tx=1:enable-1to4-partitions=1:" +
+            "enable-ab-partitions=1:enable-rect-partitions=1";
         public bool Lossless { get; set; } = false;
         public int BitDepth { get; set; } = 8;
         public bool AutoSource { get; set; } = true;
