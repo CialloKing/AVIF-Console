@@ -161,8 +161,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\avif_config.ixx" />
-    <ClCompile Include="src\avif_process.ixx" />
+    <ClCompile Include="src\app\config.ixx" />
+    <ClCompile Include="src\core\process.ixx" />
+    <ClCompile Include="src\backends\magick_backend.ixx" />
+    <ClCompile Include="src\app\pipeline.ixx" />
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

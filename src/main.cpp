@@ -11,7 +11,7 @@
 #include <windows.h>
 
 import avif.config;
-import avif.process;
+import avif.pipeline;
 
 template <class Value, class Function>
 std::expected<Value, std::string> capture_expected(Function&& fn) noexcept {
