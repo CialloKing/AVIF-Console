@@ -766,15 +766,14 @@ namespace AvifEncoder
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
-            // 使用程序当前工作目录下的临时子目录（路径合理，无 \\?\ 前缀）
+            // 在工作目录下建临时子目录，避免路径中的盘符/冒号干扰
             string workDir = Environment.CurrentDirectory;
             string metricsDir = Path.Combine(workDir, "avif_metrics_tmp");
-            Directory.CreateDirectory(metricsDir);      // 确保目录存在
+            Directory.CreateDirectory(metricsDir);
 
             string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
             string jsonPath = Path.Combine(metricsDir, jsonName);
-
-            // log_path 仅使用文件名，因为随后 ffmpeg 进程的工作目录将设为 metricsDir
+            // 只传文件名，彻底解决冒号/盘符问题
             string logPathSafe = jsonName;
 
             try
@@ -787,19 +786,20 @@ namespace AvifEncoder
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
+                    // ★ 使用 vmaf_float_v0.6.1 浮点模型
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
-                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
                     filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
-                             $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                             $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
                               $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
 
-                // 启动 ffmpeg 进程，将工作目录设为 metricsDir（此目录不含 \\?\ 前缀）
+                // 启动 ffmpeg，工作目录设为 metricsDir
                 using var process = new Process
                 {
                     StartInfo = new ProcessStartInfo(_ffmpegPath, args)
@@ -808,7 +808,7 @@ namespace AvifEncoder
                         CreateNoWindow = true,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
-                        WorkingDirectory = metricsDir   // 安全的普通路径
+                        WorkingDirectory = metricsDir   // 关键：避免路径中的冒号
                     }
                 };
 
@@ -823,8 +823,7 @@ namespace AvifEncoder
 
                 try
                 {
-                    await Task.WhenAll(stdoutTask, stderrTask,
-                        process.WaitForExitAsync(linkedCts.Token));
+                    await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
                 }
                 catch (OperationCanceledException)
                 {
@@ -847,7 +846,6 @@ namespace AvifEncoder
                     return null;
                 }
 
-                // 因为工作目录已经是 metricsDir，生成的 JSON 就在该目录下
                 if (!File.Exists(jsonPath))
                 {
                     _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
@@ -858,7 +856,7 @@ namespace AvifEncoder
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
-                // 从 stderr 提取 VMAF 分数（可选）
+                // 从 stderr 提取 VMAF 分数（部分版本写入 stderr）
                 var vmafMatch = Regex.Match(stderr, @"VMAF score:\s*([0-9.]+)");
                 if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
                         NumberStyles.Float, CultureInfo.InvariantCulture, out double vmafScore))
@@ -895,6 +893,7 @@ namespace AvifEncoder
                 catch { }
             }
         }
+
 
         private QualityMetrics? ParseVmafJson(string json)
         {
