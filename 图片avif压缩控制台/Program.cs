@@ -4577,6 +4577,7 @@ AVIF 编码器 —— Linux 风格命令行工具
 
         // ========== 程序入口 ==========
         // ========== 修复后的 Main 方法 ==========
+        // ========== 修复后的 Main 方法（支持交互模式引号路径） ==========
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -4647,7 +4648,7 @@ AVIF 编码器 —— Linux 风格命令行工具
                 Console.Write("> ");
                 string? line = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(line))
-                    args = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    args = ParseCommandLineInteractive(line);   // ★ 使用引号感知分割
                 else
                 { Console.WriteLine("未输入参数，退出。"); Console.ReadKey(); return; }
             }
@@ -4702,6 +4703,37 @@ AVIF 编码器 —— Linux 风格命令行工具
                 Console.WriteLine("按任意键退出...");
                 Console.ReadKey();
             }
+        }
+
+        // ========== 引号感知的命令行交互分割方法 ==========
+        private static string[] ParseCommandLineInteractive(string line)
+        {
+            var args = new List<string>();
+            bool inQuotes = false;
+            var current = new StringBuilder();
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (char.IsWhiteSpace(c) && !inQuotes)
+                {
+                    if (current.Length > 0)
+                    {
+                        args.Add(current.ToString());
+                        current.Clear();
+                    }
+                }
+                else
+                {
+                    current.Append(c);
+                }
+            }
+            if (current.Length > 0)
+                args.Add(current.ToString());
+            return args.ToArray();
         }
 
         // ========== 获取 ffmpeg 支持的 AV1 编码器列表 ==========
