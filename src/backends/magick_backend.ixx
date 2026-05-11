@@ -37,6 +37,14 @@ std::optional<fs::path> existing_file(fs::path path) {
   return std::nullopt;
 }
 
+std::optional<fs::path> existing_magick(fs::path path) {
+  std::error_code ec;
+  if (fs::is_directory(path, ec) && !ec) {
+    path /= L"magick.exe";
+  }
+  return existing_file(std::move(path));
+}
+
 void collect_ancestor_runtime_candidates(std::vector<fs::path>& candidates,
                                          fs::path start) {
   std::error_code ec;
@@ -62,7 +70,7 @@ std::optional<fs::path> environment_magick() {
     return std::nullopt;
   }
   buffer.resize(size);
-  return existing_file(buffer);
+  return existing_magick(buffer);
 }
 
 std::vector<fs::path> bundled_candidates() {
@@ -75,12 +83,14 @@ std::vector<fs::path> bundled_candidates() {
 }  // namespace magick_detail
 
 void configure_magick_environment(const MagickRuntime& runtime) {
-  if (!runtime.bundled) {
+  std::error_code ec;
+  const auto coder_dir = runtime.root / L"modules" / L"coders";
+  if (!fs::is_directory(coder_dir, ec) || ec) {
     return;
   }
 
   const auto root = runtime.root.native();
-  const auto coder_path = (runtime.root / L"modules" / L"coders").native();
+  const auto coder_path = coder_dir.native();
   const auto filter_path = (runtime.root / L"modules" / L"filters").native();
   SetEnvironmentVariableW(L"MAGICK_HOME", root.c_str());
   SetEnvironmentVariableW(L"MAGICK_CONFIGURE_PATH", root.c_str());
@@ -91,7 +101,7 @@ void configure_magick_environment(const MagickRuntime& runtime) {
 std::expected<MagickRuntime, std::string> resolve_magick_runtime(
     const AppConfig& cfg) {
   if (cfg.magick_path_overridden) {
-    if (const auto direct = magick_detail::existing_file(cfg.magick_path)) {
+    if (const auto direct = magick_detail::existing_magick(cfg.magick_path)) {
       return MagickRuntime{.executable = *direct,
                            .root = direct->parent_path(),
                            .bundled = false};
@@ -177,9 +187,6 @@ class MagickBackend {
         args.push_back(
             std::format(L"{}x{}>", cfg_.max_resolution, cfg_.max_resolution));
       }
-
-      args.push_back(L"-colorspace");
-      args.push_back(L"sRGB");
 
       if (cfg_.strip_metadata) {
         args.push_back(L"-strip");

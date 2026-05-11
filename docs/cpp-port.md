@@ -16,17 +16,17 @@
 
 - 默认质量：`-quality 90`
 - 默认速度：不传 `heic:speed`，使用 ImageMagick 默认值
-- 默认颜色：`-colorspace sRGB`
 - 默认方向：`-auto-orient`
 - 默认不缩放，`--max-resolution` 显式设置后才缩放
 
 ## 保留的功能
 
 - 批量扫描 `jpg/jpeg/png/webp/bmp/tif/tiff/gif/jxl/jp2/heic/heif`
-- 输出名模板 `{name}` / `{index}` / `{ext}`
+- 输出名模板 `{name}` / `{index}` / `{ext}`，默认 `covers-{index}.avif`
 - `fast / balanced / best / extreme` 预设
 - `q90` 风格质量参数
 - 并行处理，处理时优先调度大文件
+- 重名输出按扫描顺序覆盖，最终保留同名组中的最后一张
 - 日志与 `summary.csv`
 - 单张失败继续处理后续图片
 

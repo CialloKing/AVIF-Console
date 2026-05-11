@@ -12,6 +12,7 @@ module;
 #include <ranges>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 export module avif.pipeline;
@@ -24,12 +25,42 @@ export namespace avif {
 
 namespace pipeline_detail {
 
+struct WorkGroup {
+  std::uintmax_t weight{};
+  std::vector<ImageFile> files{};
+};
+
 std::string first_line(std::string text) {
   const auto pos = text.find_first_of("\r\n");
   if (pos != std::string::npos) {
     text.resize(pos);
   }
   return text;
+}
+
+std::vector<WorkGroup> build_work_groups(const AppConfig& cfg,
+                                         const std::vector<ImageFile>& files) {
+  std::vector<WorkGroup> groups;
+  std::unordered_map<std::wstring, std::size_t> index_by_output;
+
+  for (const auto& image : files) {
+    const auto output = cfg.output_dir / output_name_for(cfg, image);
+    const auto key = normalized_lower_path_key(output);
+    const auto [it, inserted] = index_by_output.emplace(key, groups.size());
+    if (inserted) {
+      groups.push_back(WorkGroup{});
+    }
+
+    auto& group = groups[it->second];
+    group.weight += image.bytes;
+    group.files.push_back(image);
+  }
+
+  // 不同输出路径之间按总大小调度；同一路径内保留扫描顺序，重名时后者覆盖前者。
+  std::ranges::sort(groups, [](const WorkGroup& left, const WorkGroup& right) {
+    return left.weight > right.weight;
+  });
+  return groups;
 }
 
 void print_result(const EncodeResult& result, std::mutex& print_mutex) {
@@ -101,19 +132,15 @@ int run_pipeline(const AppConfig& cfg) {
     } else {
       std::println("Speed: ImageMagick default");
     }
-    std::println("Files: {}, Jobs: {}", files.size(),
-                 std::min<int>(cfg.max_jobs, static_cast<int>(files.size())));
-
-    auto work = files;
-    std::ranges::sort(work, [](const ImageFile& left, const ImageFile& right) {
-      return left.bytes > right.bytes;
-    });
+    auto work = pipeline_detail::build_work_groups(cfg, files);
+    const int jobs = std::max(
+        1, std::min<int>(cfg.max_jobs, static_cast<int>(work.size())));
+    std::println("Files: {}, Outputs: {}, Jobs: {}", files.size(),
+                 work.size(), jobs);
 
     std::vector<EncodeResult> results(files.size());
     std::atomic<std::size_t> next{0};
     std::mutex print_mutex;
-    const int jobs = std::max(
-        1, std::min<int>(cfg.max_jobs, static_cast<int>(work.size())));
 
     std::vector<std::jthread> workers;
     workers.reserve(static_cast<std::size_t>(jobs));
@@ -125,9 +152,19 @@ int run_pipeline(const AppConfig& cfg) {
           if (work_index >= work.size()) {
             break;
           }
-          auto result = backend.encode(work[work_index]);
-          pipeline_detail::print_result(result, print_mutex);
-          results[result.index] = std::move(result);
+          const auto& group = work[work_index];
+          if (group.files.size() > 1) {
+            std::scoped_lock lock{print_mutex};
+            std::println("[WARN] 输出重名: {} 个输入将依次覆盖 {}",
+                         group.files.size(),
+                         path_to_utf8(cfg.output_dir /
+                                      output_name_for(cfg, group.files.back())));
+          }
+          for (const auto& image : group.files) {
+            auto result = backend.encode(image);
+            pipeline_detail::print_result(result, print_mutex);
+            results[result.index] = std::move(result);
+          }
         }
       });
     }
@@ -135,17 +172,22 @@ int run_pipeline(const AppConfig& cfg) {
     workers.clear();
 
     std::uintmax_t original_total = 0;
-    std::uintmax_t output_total = 0;
+    std::unordered_map<std::wstring, std::uintmax_t> final_output_sizes;
     int ok_count = 0;
     int failed_count = 0;
     for (const auto& result : results) {
       original_total += result.original_bytes;
-      output_total += result.output_bytes;
       if (result.ok) {
         ++ok_count;
+        final_output_sizes[normalized_lower_path_key(result.output_path)] =
+            result.output_bytes;
       } else {
         ++failed_count;
       }
+    }
+    std::uintmax_t output_total = 0;
+    for (const auto& [_, bytes] : final_output_sizes) {
+      output_total += bytes;
     }
 
     write_csv(cfg.output_dir, results);

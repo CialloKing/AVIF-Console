@@ -38,6 +38,7 @@ msbuild .\图片avif压缩控制台.slnx /m /p:Configuration=Release /p:Platform
 ## 使用
 
 默认质量是 `q90`，默认不传 `heic:speed`，让 ImageMagick 使用自身默认速度参数。
+如果输出文件重名，程序会按扫描顺序依次覆盖；默认模板 `covers-{index}.avif` 会避免重名。
 
 ```powershell
 .\bin\x64\Release\AVIFConsoleCpp.exe -i input -o Avifoutput
@@ -49,23 +50,24 @@ msbuild .\图片avif压缩控制台.slnx /m /p:Configuration=Release /p:Platform
 - `-o, --output <dir>`: 输出目录，默认 `Avifoutput`
 - `-q, --quality <1-100>`: ImageMagick 质量，默认 `90`。也接受 `q90` 或 `0.9`
 - `-p, --preset fast|balanced|best|extreme`: 预设，默认 `best`
-- `-m, --max-jobs <n>`: 并发数量，默认 CPU 线程数
-- `-t, --template <模板>`: 输出文件名模板，默认 `{name}.avif`
+- `-t, --threads <n>`: 并发数量，默认 CPU 线程数。也支持 `-j/--jobs`
+- `-m, --template <模板>`: 输出文件名模板，默认 `covers-{index}.avif`
 - `--max-resolution <px>`: 限制最长边；`0` 表示不缩放，默认 `0`
 - `--speed <0-8>`: 可选，显式传给 ImageMagick `heic:speed`
 - `--define <key=value>`: 额外传给 `magick -define`，可重复
 - `--backend magick`: 后端占位参数，当前仅支持 `magick`
-- `--magick <path>`: 指定外部 `magick.exe`
+- `--magick <path>`: 指定外部 `magick.exe` 或 ImageMagick 目录
 - `--timeout-encode <minutes>`: 单张图片编码超时，默认 `30`
 - `--strip`: 去除元数据
-- `--overwrite`: 覆盖已有输出
+- `--skip-existing`: 已有输出时跳过
+- `--overwrite`: 覆盖已有输出，默认行为
 
 示例:
 
 ```powershell
 .\bin\x64\Release\AVIFConsoleCpp.exe -i "D:\图片" -o Avifoutput -q q90
 .\bin\x64\Release\AVIFConsoleCpp.exe -i pngs -o out --max-resolution 2560 --strip
-.\bin\x64\Release\AVIFConsoleCpp.exe -i input -o out --speed 0 --define heic:chroma=444
+.\bin\x64\Release\AVIFConsoleCpp.exe -i input -o out --define heic:chroma=444
 ```
 
 运行后会生成:

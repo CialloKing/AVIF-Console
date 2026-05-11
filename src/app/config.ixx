@@ -25,7 +25,7 @@ struct AppConfig {
   std::filesystem::path input_dir{L"input"};
   std::filesystem::path output_dir{L"Avifoutput"};
   std::filesystem::path magick_path{};
-  std::wstring output_template{L"{name}.avif"};
+  std::wstring output_template{L"covers-{index}.avif"};
   std::vector<std::wstring> magick_defines{};
   Preset preset{Preset::best};
   int quality{90};
@@ -33,7 +33,7 @@ struct AppConfig {
   int max_jobs{static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))};
   int max_resolution{0};
   int encode_timeout_minutes{30};
-  bool skip_existing{true};
+  bool skip_existing{false};
   bool strip_metadata{false};
   bool magick_path_overridden{false};
 };
@@ -163,16 +163,17 @@ void print_help() {
   -o, --output <目录>         输出目录，默认 Avifoutput
   -q, --quality <1-100>       ImageMagick 质量，默认 90。也接受 q90 或 0.9
   -p, --preset <名称>         fast / balanced / best / extreme，默认 best
-  -m, --max-jobs <数量>       并发数量，默认 CPU 线程数
-  -t, --template <模板>       输出命名，默认 {name}.avif
+  -t, --threads <数量>        并发数量，默认 CPU 线程数
+  -m, --template <模板>       输出命名，默认 covers-{index}.avif
   --max-resolution <像素>     限制最长边；0 表示不缩放，默认 0
   --speed <0-8>              可选：传给 ImageMagick heic:speed；默认使用 Magick 自身默认值
   --define <key=value>        额外传给 magick 的 -define，可重复
   --backend magick            后端占位参数；当前仅支持 magick
-  --magick <路径>             指定 magick.exe；默认优先使用 vendor/imagemagick
+  --magick <路径>             指定 magick.exe 或 ImageMagick 目录；默认优先使用 vendor/imagemagick
   --timeout-encode <分钟>     单张图片编码超时，默认 30
   --strip                    去除元数据
-  --overwrite                覆盖已有输出
+  --skip-existing            已有输出时跳过；默认覆盖
+  --overwrite                覆盖已有输出，默认行为
   --help                     显示帮助
 
 模板变量:
@@ -181,7 +182,7 @@ void print_help() {
   {ext}    原扩展名，不含点
 
 示例:
-  AVIFConsoleCpp.exe -i "D:\图片" -o Avifoutput -q q90 --speed 0
+  AVIFConsoleCpp.exe -i "D:\图片" -o Avifoutput -q q90
   AVIFConsoleCpp.exe -i input --max-resolution 2560 --strip
 )";
   std::println("{}", help);
@@ -250,7 +251,8 @@ std::expected<ParseResult, std::string> parse_arguments(
       continue;
     }
 
-    if (lower == L"-t" || lower == L"--template") {
+    if (lower == L"-m" || lower == L"--template" ||
+        lower == L"--output-template") {
       const auto value = require_value(i, args[i]);
       if (!value) {
         return std::unexpected{value.error()};
@@ -286,7 +288,8 @@ std::expected<ParseResult, std::string> parse_arguments(
       continue;
     }
 
-    if (lower == L"-m" || lower == L"--max-jobs") {
+    if (lower == L"-t" || lower == L"-j" || lower == L"--threads" ||
+        lower == L"--jobs" || lower == L"--max-jobs") {
       const auto value = require_value(i, args[i]);
       if (!value) {
         return std::unexpected{value.error()};

@@ -189,6 +189,13 @@ std::string path_to_utf8(const fs::path& path) {
   return utf8_from_wide(path.native());
 }
 
+std::wstring normalized_lower_path_key(const fs::path& path) {
+  auto key = path.lexically_normal().wstring();
+  std::ranges::transform(key, key.begin(),
+                         [](wchar_t ch) { return std::towlower(ch); });
+  return key;
+}
+
 std::string win32_error_message(DWORD error) {
   wchar_t* buffer = nullptr;
   const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -202,7 +209,7 @@ std::string win32_error_message(DWORD error) {
   }
   std::wstring message{buffer, buffer + length};
   LocalFree(buffer);
-    return core_detail::trim_copy(utf8_from_wide(message));
+  return core_detail::trim_copy(utf8_from_wide(message));
 }
 
 std::wstring quote_argument(std::wstring_view value) {
@@ -258,16 +265,18 @@ std::optional<fs::path> find_executable(std::wstring_view executable) {
     return std::nullopt;
   }
 
+  const std::wstring name{executable};
+  const wchar_t* extension = candidate.has_extension() ? nullptr : L".exe";
   std::wstring buffer(MAX_PATH, L'\0');
   const DWORD length =
-      SearchPathW(nullptr, std::wstring{executable}.c_str(), nullptr,
+      SearchPathW(nullptr, name.c_str(), extension,
                   static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
   if (length == 0) {
     return std::nullopt;
   }
   if (length >= buffer.size()) {
     buffer.assign(length + 1, L'\0');
-    SearchPathW(nullptr, std::wstring{executable}.c_str(), nullptr,
+    SearchPathW(nullptr, name.c_str(), extension,
                 static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
   }
   buffer.resize(wcslen(buffer.c_str()));
