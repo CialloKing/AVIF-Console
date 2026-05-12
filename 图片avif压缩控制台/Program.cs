@@ -125,7 +125,7 @@ namespace AvifEncoder
         public bool RecurseSubdirectories { get; set; } = false;
 
         // 在 PresetConfig 类中添加
-        public bool DisableTileParallel { get; set; } = false;
+        public bool SerialEncode { get; set; } = false;
 
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
@@ -433,7 +433,7 @@ namespace AvifEncoder
         {
             if (!EncoderUtils.IsLibAom(cfg.Encoder))
                 return "";
-            return cfg.DisableTileParallel ? "-row-mt 0" : "-row-mt 1";
+            return cfg.SerialEncode ? "-row-mt 0" : "-row-mt 1";
         }
 
         /// <summary>
@@ -1959,7 +1959,7 @@ namespace AvifEncoder
                     tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
             }
             // ★ 新增：强制关闭分块并行
-            if (_config.DisableTileParallel)
+            if (config.SerialEncode)
                 tileCols = 0;
 
             int crf = config.BaseCRF;
@@ -2284,6 +2284,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 仅对 libaom‑av1 启用 tile 与 row‑mt 参数，其他编码器忽略，避免无效参数造成失败。
         /// 若启用了 DisableTileParallel，则强制 tile=0 且关闭 row‑mt。
         /// </summary>
+        /// <summary>
+        /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
+        /// 若启用了 SerialEncode，则强制 tile=0 且关闭 row‑mt。
+        /// </summary>
         private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
                                  int crf, string aomPart, int imageWidth)
         {
@@ -2299,8 +2303,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 safeTileCols = Math.Clamp(Math.Max(2, minCols), minCols, maxCols);
 
             string safeRowMt;
-            // ===== 极限压缩模式 =====
-            if (config.DisableTileParallel)
+            // ===== 极限压缩模式（关闭所有并行）=====
+            if (config.SerialEncode)                           // 使用新属性名
             {
                 safeTileCols = 0;
                 if (EncoderUtils.IsLibAom(config.Encoder))
@@ -2310,7 +2314,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     if (string.IsNullOrEmpty(aomPart))
                         aomPart = "-aom-params threads=1";
                     else if (!aomPart.Contains("threads="))
-                        aomPart += " -aom-params threads=1";   // 简化追加，可改用更精确的字符串插入
+                        aomPart += " -aom-params threads=1";   // 简化追加
                 }
                 else
                 {
@@ -2326,7 +2330,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string safeTile = EncoderUtils.IsLibAom(config.Encoder)
                 ? $"-tile-columns {safeTileCols} -tile-rows 0" : "";
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
-            string threadsArg = config.DisableTileParallel ? "-threads 1" : "";
+            string threadsArg = config.SerialEncode ? "-threads 1" : "";  // 新属性名
 
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt yuv420p " +
@@ -2668,7 +2672,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             string rowMt;
 
             // ===== 极限压缩：强制关闭所有并行 =====
-            if (cfg.DisableTileParallel)
+            if (cfg.SerialEncode)
             {
                 tileCols = 0;                          // 瓦片列数强制为 0
                 if (EncoderUtils.IsLibAom(cfg.Encoder))
@@ -2712,7 +2716,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                                        ? Math.Clamp(Math.Max(2, minLegal), minLegal, maxLegal)
                                        : 0;
                     if (minLegal > maxLegal) safeTileCols = 0;
-                    if (cfg.DisableTileParallel) safeTileCols = 0;
+                    if (cfg.SerialEncode) safeTileCols = 0;   // ← 新属性名
 
                     string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
@@ -2842,8 +2846,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
         private string BuildFfmpegArgs(string input, string output, int crf, string pixFmt,
-                       (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-                       PresetConfig cfg, bool isTrueLossless)
+                   (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                   PresetConfig cfg, bool isTrueLossless)
         {
             string logLevel = "-loglevel info -hide_banner";
             string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
@@ -2854,8 +2858,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
 
             // ---------- 单线程全局控制 ----------
-            string threadsArg = cfg.DisableTileParallel ? "-threads 1" : "";
-            // ---------------------------------
+            string threadsArg = cfg.SerialEncode ? "-threads 1" : "";   // 新属性名
+                                                                        // ---------------------------------
 
             return $"{logLevel} -i \"{input}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {range} {colorMeta} " +
@@ -3600,8 +3604,12 @@ PerformSecantIteration(
         /// 使用极快的编码参数进行代理评估，返回 0‑1 分数（与 getScore 一致）。
         /// 失败返回 -1。
         /// </summary>
+        /// <summary>
+        /// 使用极快的编码参数进行代理评估，返回 0‑1 分数。
+        /// 失败返回 -1。
+        /// </summary>
         private async Task<double> ProxyEvaluateAsync(string input, int crf,
-    int tileCols, PresetConfig cfg, bool jpeg, string pixFmt)
+        int tileCols, PresetConfig cfg, bool jpeg, string pixFmt)
         {
             // Proxy 始终使用 yuv420p + cpu-used 6 + 最小稳定参数
             var proxyCfg = new PresetConfig
@@ -3615,7 +3623,7 @@ PerformSecantIteration(
                 AomParams = "aq-mode=0:enable-cdef=0",
                 MaxJobs = cfg.MaxJobs,
                 BitDepth = cfg.BitDepth,
-                DisableTileParallel = cfg.DisableTileParallel   // ← 新增
+                SerialEncode = cfg.SerialEncode   // ← 新属性名（传递极限压缩设置）
             };
 
             string tmpOutput = Path.Combine(_outputDir, $"_proxy_{Guid.NewGuid():N}.avif");
@@ -3783,10 +3791,9 @@ PerformSecantIteration(
                     // ★ 根据 DisableTileParallel 调整预探测参数
                     string tilePart;
                     string rowMt;
-                    if (cfg.DisableTileParallel)
+                    if (cfg.SerialEncode)
                     {
                         tilePart = "-tile-columns 0 -tile-rows 0";
-                        // 修复：极限模式也必须显式关闭 row-mt（若为 libaom）
                         rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 0" : "";
                     }
                     else
@@ -4306,7 +4313,7 @@ AVIF 编码器 —— Linux 风格命令行工具
   -l, --lossless               无损模式 (真无损或数学无损)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
-      --disable-tile-parallel  极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
+      --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
       --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
@@ -4369,7 +4376,7 @@ AVIF 编码器 —— Linux 风格命令行工具
             public bool Quiet = false;
             public bool ShowVersion = false;
             public bool DryRun = false;
-            public bool DisableTileParallel { get; set; } = false;
+            public bool SerialEncode { get; set; } = false;
         }
 
         // ========== 参数解析 ==========
@@ -4474,8 +4481,8 @@ AVIF 编码器 —— Linux 风格命令行工具
                         case "version": opts.ShowVersion = true; break;
                         case "dry-run": opts.DryRun = true; break;
                         case "help": PrintHelp(); return null!;
-                        case "disable-tile-parallel":
-                            opts.DisableTileParallel = true;
+                        case "serial-encode":
+                            opts.SerialEncode = true;
                             break;
                         // 超时选项
                         default:
@@ -4708,7 +4715,7 @@ AVIF 编码器 —— Linux 风格命令行工具
 
 
             //----------
-            config.DisableTileParallel = opts.DisableTileParallel;
+            config.SerialEncode = opts.SerialEncode;
 
             return config;
         }
