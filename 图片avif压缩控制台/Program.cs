@@ -429,7 +429,12 @@ namespace AvifEncoder
 
         /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
 
-
+        private static string GetRowMtArg(PresetConfig cfg)
+        {
+            if (!EncoderUtils.IsLibAom(cfg.Encoder))
+                return "";
+            return cfg.DisableTileParallel ? "-row-mt 0" : "-row-mt 1";
+        }
 
         /// <summary>
         /// 根据图像宽度和最小 tile 宽度限制，计算最大合法的 tile-columns 值（log2 列数）。
@@ -1725,7 +1730,8 @@ namespace AvifEncoder
             int tileCols = encInfo.TileCols;
             int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
             var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
-            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH);
+            string rowMtArg = GetRowMtArg(config);
+            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
 
             // 缓存命中
             if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
@@ -2158,9 +2164,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     if (metrics != null)
                     {
                         string normalizedInput = GetNormalizedPathForCache(inputPath);
+                        string rowMtSafe = GetRowMtArg(config);
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput, testCrf, "yuv420p", 0, 0,
-                            IsJpeg(inputPath), effectiveAom, 8, w, h);
+                            IsJpeg(inputPath), effectiveAom, 8, w, h, rowMtSafe);
                         _cache.SetMetrics(cacheKey, metrics);
 
                         return GetSearchScore(metrics, config.MetricMode ?? "ssim");
@@ -2278,7 +2285,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 若启用了 DisableTileParallel，则强制 tile=0 且关闭 row‑mt。
         /// </summary>
         private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
-                                         int crf, string aomPart, int imageWidth)
+                                 int crf, string aomPart, int imageWidth)
         {
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
             string stillPic = useStillPic ? "-still-picture 1" : "";
@@ -2291,24 +2298,40 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             else
                 safeTileCols = Math.Clamp(Math.Max(2, minCols), minCols, maxCols);
 
-            // ★ 若禁用分块并行，强制 tile 列数为 0
+            string safeRowMt;
+            // ===== 极限压缩模式 =====
             if (config.DisableTileParallel)
+            {
                 safeTileCols = 0;
+                if (EncoderUtils.IsLibAom(config.Encoder))
+                {
+                    safeRowMt = "-row-mt 0";
+                    // 确保 aomPart 包含 threads=1
+                    if (string.IsNullOrEmpty(aomPart))
+                        aomPart = "-aom-params threads=1";
+                    else if (!aomPart.Contains("threads="))
+                        aomPart += " -aom-params threads=1";   // 简化追加，可改用更精确的字符串插入
+                }
+                else
+                {
+                    safeRowMt = "";
+                }
+            }
+            else
+            {
+                safeRowMt = (EncoderUtils.IsLibAom(config.Encoder)) ? "-row-mt 1" : "";
+            }
+            // =====================
 
             string safeTile = EncoderUtils.IsLibAom(config.Encoder)
-                ? $"-tile-columns {safeTileCols} -tile-rows 0"
-                : "";
-
-            // ★ row-mt 仅在未禁用 tile 并行且为 libaom 时开启
-            string safeRowMt = (EncoderUtils.IsLibAom(config.Encoder) && !config.DisableTileParallel)
-                ? "-row-mt 1"
-                : "";
-
+                ? $"-tile-columns {safeTileCols} -tile-rows 0" : "";
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
+            string threadsArg = config.DisableTileParallel ? "-threads 1" : "";
+
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt yuv420p " +
                    $"-crf {crf} {encArgs} " +
-                   $"-color_range pc {stillPic} -frames:v 1 {aomPart} -y \"{outputPath}\"";
+                   $"-color_range pc {stillPic} -frames:v 1 {aomPart} {threadsArg} -y \"{outputPath}\"";
         }
 
 
@@ -2636,20 +2659,39 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
-            PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
-            bool allowParamDegrade, int imageWidth)
+    PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
+    bool allowParamDegrade, int imageWidth)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
             var sets = new List<(string, string, int, string)>();
-
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
+            string rowMt;
 
-            // ★ row-mt：仅在 libaom 且未禁用 tile 并行时启用
-            string rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
+            // ===== 极限压缩：强制关闭所有并行 =====
             if (cfg.DisableTileParallel)
-                rowMt = "";
+            {
+                tileCols = 0;                          // 瓦片列数强制为 0
+                if (EncoderUtils.IsLibAom(cfg.Encoder))
+                {
+                    rowMt = "-row-mt 0";              // 显式关闭行多线程
+                                                      // libaom 内部线程数设为 1
+                    if (string.IsNullOrEmpty(effectiveAom))
+                        effectiveAom = "threads=1";
+                    else if (!effectiveAom.Contains("threads="))
+                        effectiveAom += ":threads=1";
+                }
+                else
+                {
+                    rowMt = "";
+                }
+            }
+            else
+            {
+                rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
+            }
+            // =====================================
 
-            // 双边约束
+            // 合法性约束（图像宽度限制）
             int minLegal = GetMinLegalTileCols(imageWidth);
             int maxLegal = GetMaxLegalTileCols(imageWidth);
             int legalTileCols = Math.Clamp(tileCols, minLegal, maxLegal);
@@ -2657,7 +2699,6 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             if (!isTrueLossless && isHighChroma)
             {
                 sets.Add((effectiveAom, TilePart(legalTileCols, false), cpuUsed, rowMt));
-
                 if (allowParamDegrade)
                 {
                     sets.Add((effectiveAom, TilePart(legalTileCols, false), 0, rowMt));
@@ -2666,15 +2707,12 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                     string tilePart = supportsTile ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
-                    // ★ 安全 tile：至少 2 列（除非图像太小），且必须在 [minLegal, maxLegal] 内
+                    // 安全 tile（强制单线程时同样归零）
                     int safeTileCols = (imageWidth > 0 && imageWidth >= 256)
                                        ? Math.Clamp(Math.Max(2, minLegal), minLegal, maxLegal)
                                        : 0;
-                    if (minLegal > maxLegal) safeTileCols = 0;   // 彻底无法使用 tile
-
-                    // ★ 若禁用分块并行，安全 tile 也归零
-                    if (cfg.DisableTileParallel)
-                        safeTileCols = 0;
+                    if (minLegal > maxLegal) safeTileCols = 0;
+                    if (cfg.DisableTileParallel) safeTileCols = 0;
 
                     string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
@@ -2804,24 +2842,25 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
         /// <summary> 构建 ffmpeg 参数字符串 </summary>
         private string BuildFfmpegArgs(string input, string output, int crf, string pixFmt,
-                               (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-                               PresetConfig cfg, bool isTrueLossless)
+                       (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                       PresetConfig cfg, bool isTrueLossless)
         {
-            // 临时提升日志级别以获取详细错误（例如 tile sizing 错误）
             string logLevel = "-loglevel info -hide_banner";
-
             string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
             string crfPart = isTrueLossless ? "-lossless 1" : $"-crf {crf}";
             string range = "-color_range pc";
             string colorMeta = "-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709";
             string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
-
             string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+
+            // ---------- 单线程全局控制 ----------
+            string threadsArg = cfg.DisableTileParallel ? "-threads 1" : "";
+            // ---------------------------------
 
             return $"{logLevel} -i \"{input}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {range} {colorMeta} " +
                    $"{crfPart} {encoderSpecific} " +
-                   $"{stillPic} -frames:v 1 {aom} -y \"{output}\"";
+                   $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
         }
 
         private static string CsvEscape(string field)
@@ -3000,11 +3039,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
     string normalizedPath, int crf, string pixFmt,
     int tileCols, int cpuUsed, bool isJpeg,
     string effectiveAomParams, int bitDepth,
-    int width = 0, int height = 0)      // ★ 新增默认参数，保持兼容
+    int width = 0, int height = 0,
+    string rowMt = "")                         // ← 新增
         {
             string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
             return $"{normalizedPath}|crf={crf}|pix={pixFmt}|tile={tileCols}|cpu={cpuUsed}" +
-                   $"|jpeg={isJpeg}|aom={effectiveAomParams}|depth={bitDepth}{res}";
+                   $"|jpeg={isJpeg}|aom={effectiveAomParams}|depth={bitDepth}{res}|rowmt={rowMt}";
         }
 
 
@@ -3044,7 +3084,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string effectiveAom = cfg.GetEffectiveAomParams();
 
             var (metricsW, metricsH) = await GetResolutionAsync(input);
-            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH);
+            string rowMtArg = GetRowMtArg(cfg);
+            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH, rowMtArg);
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {
@@ -3573,7 +3614,8 @@ PerformSecantIteration(
                 Lossless = false,
                 AomParams = "aq-mode=0:enable-cdef=0",
                 MaxJobs = cfg.MaxJobs,
-                BitDepth = cfg.BitDepth
+                BitDepth = cfg.BitDepth,
+                DisableTileParallel = cfg.DisableTileParallel   // ← 新增
             };
 
             string tmpOutput = Path.Combine(_outputDir, $"_proxy_{Guid.NewGuid():N}.avif");
@@ -3744,7 +3786,8 @@ PerformSecantIteration(
                     if (cfg.DisableTileParallel)
                     {
                         tilePart = "-tile-columns 0 -tile-rows 0";
-                        rowMt = "";
+                        // 修复：极限模式也必须显式关闭 row-mt（若为 libaom）
+                        rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 0" : "";
                     }
                     else
                     {
@@ -4263,7 +4306,7 @@ AVIF 编码器 —— Linux 风格命令行工具
   -l, --lossless               无损模式 (真无损或数学无损)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
-      --disable-tile-parallel  强制关闭分块并行 (tile) 以追求更高压缩率（编码速度会明显变慢）
+      --disable-tile-parallel  极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
       --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
