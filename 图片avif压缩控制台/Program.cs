@@ -3758,8 +3758,16 @@ PerformSecantIteration(
         /// 混合搜索：默认基于先验表直接划定搜索区间，使用标准二分，无需 Proxy。
         /// 若启用 --proxy，则保留保守 Proxy 验证（沿用原有 PerformConservativeProxyPhaseAsync）。
         /// </summary>
+        /// <summary>
+        /// 数据驱动混合搜索（默认模式）：
+        /// 1. 根据先验表获取中位数 CRF，执行一次真实评估。
+        /// 2. 若中位数达标 → 向右二分 [median, userMax]（已知下界，不重复测 median）。
+        /// 3. 若中位数不达标 → 向左二分 [userMin, median-1]（验证下界 userMin）。
+        /// 4. 若仍未找到可行解，回退到安全模式全扫描（兜底离群值）。
+        /// 若启用 --proxy，则保留保守 Proxy 验证流程。
+        /// </summary>
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
             string name = displayName ?? Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
@@ -3774,81 +3782,103 @@ PerformSecantIteration(
             int userMin = cfg.MinCRF;
             int userMax = cfg.MaxCRF;
 
-            int searchLo = userMin;
-            int searchHi = userMax;
+            // ===== 统一计算先验中位数（避免重复声明） =====
+            int priorMedian = (userMin + userMax) / 2;   // 兜底
+            if (metricMode == "vmaf")
+            {
+                double targetVmaf = target * 100.0;
+                var (median, lo, hi) = GetPriorFromVmaf(targetVmaf);
+                priorMedian = Math.Clamp(median, userMin, userMax);
+            }
 
+            // ===== Proxy 模式（用户显式启用） =====
             if (cfg.UseProxySearch)
             {
-                // ---- Proxy 模式（保留原有逻辑，仅移除了 MaxCRF 早停） ----
-                int priorMedian = (userMin + userMax) / 2;
-                if (metricMode == "vmaf")
-                {
-                    double targetVmaf = target * 100.0;
-                    var (median, lo, hi) = GetPriorFromVmaf(targetVmaf);
-                    priorMedian = Math.Clamp(median, userMin, userMax);
-                    SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian}");
-                }
+                SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian}");
 
                 var (safeLo, safeHi) = await PerformConservativeProxyPhaseAsync(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, metricMode, token,
                     priorMedian, userMin, userMax);
 
-                if (safeLo < 0 || safeHi < safeLo)
+                int searchLo = (safeLo >= 0 && safeHi >= safeLo) ? Math.Max(userMin, safeLo) : userMin;
+                int searchHi = (safeLo >= 0 && safeHi >= safeLo) ? Math.Min(userMax, safeHi) : userMax;
+                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}]");
+
+                var (proxyCrf, proxyEval) = await StandardBinarySearch(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                    searchLo, searchHi);
+                totalEvalCount += proxyEval;
+
+                if (proxyCrf >= 0)
                 {
-                    SafeWriteLine($"  [{name}] [PROXY] 无法提供有效区间，使用全范围 [{userMin},{userMax}]");
-                    searchLo = userMin;
-                    searchHi = userMax;
+                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={proxyCrf}，总评估 {totalEvalCount} 次");
+                    return (proxyCrf, false, false, totalEvalCount);
                 }
-                else
+
+                // Proxy 失败 → 回退安全扫描
+                SafeWriteLine($"  [{name}] [FALLBACK] Proxy 区间无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
+                var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
+                if (safeOk)
                 {
-                    searchLo = Math.Max(userMin, safeLo);
-                    searchHi = Math.Min(userMax, safeHi);
+                    SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
+                    return (safeCrf, false, false, totalEvalCount);
+                }
+
+                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
+                return (cfg.BaseCRF, true, false, totalEvalCount);
+            }
+
+            // ========== 默认模式：先验中位数评估 + 方向二分 ==========
+            SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
+            double medianScore = await getScore(priorMedian);
+            totalEvalCount++;
+            string medianDisplay = metricMode == "vmaf" ? $"VMAF={medianScore * 100:F1}" : $"分数={medianScore:F4}";
+            SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
+
+            if (medianScore >= target)
+            {
+                // 中位数达标 → 向右搜索更大 CRF
+                int searchLo = priorMedian;
+                int searchHi = userMax;
+                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] (下界已知可行)");
+                var (bestCrf, binEval) = await StandardBinarySearch(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                    searchLo, searchHi, knownLoScore: medianScore);
+                totalEvalCount += binEval;
+                if (bestCrf >= 0)
+                {
+                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
+                    return (bestCrf, false, false, totalEvalCount);
                 }
             }
             else
             {
-                // ---- 默认：仅使用先验表统计区间 ----
-                if (metricMode == "vmaf")
+                // 中位数不达标 → 向左搜索更小 CRF
+                int searchLo = userMin;
+                int searchHi = priorMedian - 1;
+                if (searchHi < searchLo)
                 {
-                    double targetVmaf = target * 100.0;
-                    var (median, lo, hi) = GetPriorFromVmaf(targetVmaf);
-                    // 使用统计区间，直接钳制到用户范围内
-                    searchLo = Math.Max(userMin, lo);
-                    searchHi = Math.Min(userMax, hi);
-                    // 极端情况：目标极高，统计下界可能等于0，这是安全的，因为 CRF0 最高质量
-                    if (searchLo > searchHi) (searchLo, searchHi) = (userMin, userMax);
-                    SafeWriteLine($"  [{name}] [PRIOR] 统计区间=[{lo},{hi}]，搜索区间=[{searchLo},{searchHi}]");
+                    searchHi = searchLo;
                 }
-                else
+                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] (需验证下界)");
+                var (bestCrf, binEval) = await StandardBinarySearch(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                    searchLo, searchHi, knownLoScore: null);
+                totalEvalCount += binEval;
+                if (bestCrf >= 0)
                 {
-                    // 非 VMAF 模式：直接全范围
-                    searchLo = userMin;
-                    searchHi = userMax;
-                    SafeWriteLine($"  [{name}] [PRIOR] 非 VMAF 模式，使用全范围 [{userMin},{userMax}]");
+                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
+                    return (bestCrf, false, false, totalEvalCount);
                 }
             }
 
-            SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}]");
-
-            // ===== 标准二分 =====
-            var (bestCrf, binEval) = await StandardBinarySearch(
-                input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                searchLo, searchHi);
-            totalEvalCount += binEval;
-
-            if (bestCrf >= 0)
+            // 二分未找到可行解 → 回退安全扫描（兜底离群值）
+            SafeWriteLine($"  [{name}] [FALLBACK] 二分未找到可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
+            var (safeOk2, safeCrf2, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
+            if (safeOk2)
             {
-                SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
-                return (bestCrf, false, false, totalEvalCount);
-            }
-
-            // ===== 二分无解 → 回退到原始全范围安全扫描 =====
-            SafeWriteLine($"  [{name}] [FALLBACK] 区间内无可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
-            var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
-            if (safeOk)
-            {
-                SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
-                return (safeCrf, false, false, totalEvalCount);
+                SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf2}");
+                return (safeCrf2, false, false, totalEvalCount);
             }
 
             SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
@@ -3870,20 +3900,60 @@ PerformSecantIteration(
         /// 若没有任何点达标，返回 (-1, 评估次数)。
         /// 每一步均输出到控制台和日志。
         /// </summary>
+        /// <summary>
+        /// 标准右边界二分：在 [lo, hi] 区间内找到满足目标的最大 CRF。
+        /// 若提供 knownLoScore（且 >= target），则跳过 lo 的评估，直接从 lo+1 开始搜索。
+        /// 每一步均输出到控制台与日志。
+        /// 返回 (最优CRF, 本阶段评估次数)。若无任何可行点，返回 (-1, evalCount)。
+        /// </summary>
         private async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
             string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
             string name, double target, Func<int, Task<double>> getScore,
-            CancellationToken token, int lo, int hi)
+            CancellationToken token, int lo, int hi, double? knownLoScore = null)
         {
             int evalCount = 0;
             int bestCrf = -1;
 
-            // 标准右边界二分：从全区间直接开始
-            int l = lo, r = hi;
+            // 1. 处理下界（已知可行则跳过，否则验证）
+            if (knownLoScore.HasValue)
+            {
+                if (knownLoScore.Value >= target)
+                {
+                    bestCrf = lo;
+                    SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} (分数={knownLoScore.Value:F4})");
+                }
+                else
+                {
+                    // 调用方逻辑保证不会传入不达标的分数，此处为防御
+                    SafeWriteLine($"  [{name}] [CORE] 已知下界分数不达标，参数异常。");
+                    return (-1, evalCount);
+                }
+            }
+            else
+            {
+                SafeWriteLine($"  [{name}] [CORE] 下界验证 CRF={lo}...");
+                double loScore = await getScore(lo);
+                evalCount++;
+                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={loScore * 100:F1}" : $"分数={loScore:F4}";
+                SafeWriteLine($"  [{name}] [CORE] CRF={lo} → {loDisplay}");
+                if (loScore >= target)
+                {
+                    bestCrf = lo;
+                }
+                else
+                {
+                    SafeWriteLine($"  [{name}] [CORE] 下界不可行，目标无法达成。");
+                    return (-1, evalCount);
+                }
+            }
+
+            // 2. 标准右边界二分（从已知可行点的下一位开始）
+            int l = bestCrf + 1;
+            int r = hi;
             while (l <= r)
             {
                 token.ThrowIfCancellationRequested();
-                int mid = (l + r) / 2;           // 向下取整，确保不会无限循环
+                int mid = (l + r) / 2;
                 SafeWriteLine($"  [{name}] [BIN] 测试 CRF={mid} (区间 {l}-{r})...");
                 double score = await getScore(mid);
                 evalCount++;
@@ -3892,12 +3962,12 @@ PerformSecantIteration(
 
                 if (score >= target)
                 {
-                    bestCrf = mid;               // 记录当前可行点
-                    l = mid + 1;                 // 尝试更大的 CRF
+                    bestCrf = mid;
+                    l = mid + 1;
                 }
                 else
                 {
-                    r = mid - 1;                 // 收缩到更低 CRF
+                    r = mid - 1;
                 }
             }
 
