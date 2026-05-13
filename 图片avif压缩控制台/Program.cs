@@ -427,6 +427,82 @@ namespace AvifEncoder
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         private readonly ConcurrentDictionary<string, HashSet<string>> _fatalFmts = new();
 
+
+
+
+
+        // ========== 先验分布表（基于 400 张图片 VMAF 目标 → 最优 CRF 统计） ==========
+        private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> VmafPriorTable = new()
+{
+    (90, 37, 30, 50),
+    (91, 35, 29, 48),
+    (92, 33, 27, 45),
+    (93, 31, 26, 43),
+    (94, 28, 22, 40),
+    (95, 25, 18, 35),
+    (96, 18, 11, 28),
+};
+
+        /// <summary>
+        /// 根据目标 VMAF（0‑100）线性插值返回中位数、下界、上界（均已钳制在 1‑63）。
+        /// 外推使用最近边缘的斜率。
+        /// </summary>
+        private static (int median, int lo, int hi) GetPriorFromVmaf(double targetVmaf)
+        {
+            if (targetVmaf <= VmafPriorTable[0].TargetVmaf)
+            {
+                var first = VmafPriorTable[0];
+                double delta = first.TargetVmaf - targetVmaf;
+                int shiftMedian = (int)Math.Round(delta * 2.5);
+                int shiftRange = (int)Math.Round(delta * 3.5);
+                return (
+                    ClampCrf(first.Median + shiftMedian),
+                    ClampCrf(first.Lo + shiftRange),
+                    ClampCrf(first.Hi + shiftRange)
+                );
+            }
+
+            var last = VmafPriorTable[^1];
+            if (targetVmaf >= last.TargetVmaf)
+            {
+                double delta = targetVmaf - last.TargetVmaf;
+                int shiftMedian = (int)Math.Round(delta * 2.5);
+                int shiftRange = (int)Math.Round(delta * 3.5);
+                return (
+                    ClampCrf(last.Median - shiftMedian),
+                    ClampCrf(last.Lo - shiftRange),
+                    ClampCrf(last.Hi - shiftRange)
+                );
+            }
+
+            for (int i = 0; i < VmafPriorTable.Count - 1; i++)
+            {
+                var a = VmafPriorTable[i];
+                var b = VmafPriorTable[i + 1];
+                if (targetVmaf >= a.TargetVmaf && targetVmaf <= b.TargetVmaf)
+                {
+                    double t = (targetVmaf - a.TargetVmaf) / (b.TargetVmaf - a.TargetVmaf);
+                    int median = (int)Math.Round(a.Median + (b.Median - a.Median) * t);
+                    int lo = (int)Math.Round(a.Lo + (b.Lo - a.Lo) * t);
+                    int hi = (int)Math.Round(a.Hi + (b.Hi - a.Hi) * t);
+                    return (ClampCrf(median), ClampCrf(lo), ClampCrf(hi));
+                }
+            }
+
+            // fallback
+            return (ClampCrf((int)targetVmaf), 1, 63);
+        }
+
+        private static int ClampCrf(int value) => Math.Clamp(value, 0, 63);
+
+
+
+
+
+
+
+
+
         /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
 
         private static string GetRowMtArg(PresetConfig cfg)
@@ -449,6 +525,16 @@ namespace AvifEncoder
                 return 0;
             return (int)Math.Floor(Math.Log2(maxTiles));
         }
+
+
+
+
+
+
+
+
+
+
 
         private static string TilePart(int tileCols, bool isTrueLossless)
     => isTrueLossless
@@ -1672,7 +1758,7 @@ namespace AvifEncoder
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
 
                 // 搜索 + 最终编码
-                var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo);
+                var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo, name);
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
@@ -1982,14 +2068,18 @@ namespace AvifEncoder
 
         // 3. CRF 搜索
         // ---------- 主调度 ----------
-        private async Task<CRFSearchResult> RunCRFSearchAsync(string inputPath, PresetConfig config, EncodingInfo encInfo)
+        // 修改签名，增加 originalFileName 参数
+        private async Task<CRFSearchResult> RunCRFSearchAsync(string inputPath, PresetConfig config, EncodingInfo encInfo, string originalFileName)
         {
+            // 使用 originalFileName 作为所有显示的基准名称
+            string displayName = originalFileName;
+
             int crf = encInfo.BaseCrf;
             string actualPixFmt = encInfo.ActualPixFmt;
             var searchTime = TimeSpan.Zero;
             bool searchBasedCRF = false, useSafeModeFinalEncode = false;
-            int totalEvaluations = 0;    // ★ 搜索评估次数
-            string name = Path.GetFileName(inputPath);
+            int totalEvaluations = 0;
+            string name = displayName;   // 用于日志和输出
 
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
@@ -2004,8 +2094,9 @@ namespace AvifEncoder
                     int finalCrf;
                     string usedPixFmt;
 
+                    // ★ 传递 displayName 给搜索核心
                     (searchOk, finalCrf, usedPixFmt, totalEvaluations) = await TrySearchWithFormatAttempts(
-                        inputPath, config, encInfo, actualPixFmt, name);
+                        inputPath, config, encInfo, actualPixFmt, name);   // 传入 name
 
                     if (!searchOk)
                     {
@@ -2044,15 +2135,16 @@ namespace AvifEncoder
                 SearchTime = searchTime,
                 SearchBasedCRF = searchBasedCRF,
                 UseSafeModeFinalEncode = useSafeModeFinalEncode,
-                SearchEvalCount = totalEvaluations    // ★ 赋值
+                SearchEvalCount = totalEvaluations
             };
         }
 
         // ---------- 尝试目标格式列表搜索 ----------
         // ---------- 尝试目标格式列表搜索 ----------
+        // 修改签名，增加 displayName 参数
         private async Task<(bool ok, int crf, string pixFmt, int totalEvalCount)> TrySearchWithFormatAttempts(
-    string inputPath, PresetConfig config, EncodingInfo encInfo,
-    string actualPixFmt, string name)
+            string inputPath, PresetConfig config, EncodingInfo encInfo,
+            string actualPixFmt, string displayName)
         {
             var attempts = BuildPixFmtAttempts(config, actualPixFmt, encInfo.HasAlpha);
             int totalEvalCount = 0;
@@ -2064,11 +2156,12 @@ namespace AvifEncoder
                     string desc = fmt.Contains("422") ? "422" :
                                   (fmt.Contains("420") && !actualPixFmt.Contains("420") ? "420" : "");
                     if (!string.IsNullOrEmpty(desc))
-                        SafeWriteLine($"  [RETRY] [{name}] 尝试 {desc} {fmt} ...");
+                        SafeWriteLine($"  [RETRY] [{displayName}] 尝试 {desc} {fmt} ...");
                 }
 
+                // ★ 将 displayName 传给混合搜索
                 (int crfResult, bool failed, bool qualityInsufficient, int evalCount) =
-                    await HybridSearchCRFAsync(inputPath, encInfo.TileCols, config, fmt, IsJpeg(inputPath));
+                    await HybridSearchCRFAsync(inputPath, encInfo.TileCols, config, fmt, IsJpeg(inputPath), displayName);
                 totalEvalCount += evalCount;
 
                 if (qualityInsufficient)
@@ -3650,12 +3743,18 @@ PerformSecantIteration(
 
 
 
+        /// <summary>
+        /// 数据驱动混合搜索：中位数初始化 + 保守 Proxy 验证 + 安全二分
+        /// 始终在用户指定范围（或全范围）内搜索，保证全局最优。
+        /// </summary>
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
-            string name = Path.GetFileName(input);
+            // 使用传入的显示名，若未提供则从输入路径提取
+            string name = displayName ?? Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
-            _logger.LogSearch($"[{name}] 混合搜索 目标={target:F4} 模式={cfg.MetricMode ?? "vmaf"}");
+            string metricMode = cfg.MetricMode ?? "vmaf";
+            SafeWriteLine($"  [{name}] [SEARCH] 数据驱动混合搜索开始 (目标={target:F4})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
@@ -3663,53 +3762,214 @@ PerformSecantIteration(
             Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
             int totalEvalCount = 0;
 
-            try
+            // 备份用户原始搜索范围（安全回退时使用）
+            int userMin = cfg.MinCRF;
+            int userMax = cfg.MaxCRF;
+
+            // ===== 1. MaxCRF 早停（评估1次） =====
+            SafeWriteLine($"  [{name}] [EARLY] 检测 MaxCRF={userMax}...");
+            double maxScore = await getScore(userMax);
+            totalEvalCount++;
+            if (maxScore >= target)
             {
-                // 1. MaxCRF 提前早停
-                double maxScore = await getScore(cfg.MaxCRF);
-                totalEvalCount++;
-                if (maxScore >= target)
-                {
-                    SafeWriteLine($"  [{name}] MaxCRF={cfg.MaxCRF} 已达目标，直接使用");
-                    _logger.LogSearch($"[{name}] MaxCRF 早停，CRF={cfg.MaxCRF}");
-                    return (cfg.MaxCRF, false, false, totalEvalCount);
-                }
-                if (maxScore < 0)
-                    _logger.LogSearch($"[{name}] MaxCRF 早停评估失败，继续搜索");
-
-                // 2. Proxy 粗定位
-                var (low, high, recommendedFmt) = await PerformProxyPhaseAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token);
-                if (low < 0) return (cfg.BaseCRF, true, false, totalEvalCount);
-                _logger.LogSearch($"[{name}] Proxy 粗定位后区间: [{low}, {high}]");
-
-                // 3. 精搜索（Brent/Secant）
-                var (crf, failed, insufficient, brentEvalCount) = await SearchCoreAsync(input, tileCols, cfg, pixFmt, jpeg, name, target, low, high, getScore, token);
-                totalEvalCount += brentEvalCount;
-                if (!failed && !insufficient) return (crf, false, false, totalEvalCount);
-
-                // 4. 若精搜失败或质量不足，尝试安全模式全扫描（yuv420p）
-                SafeWriteLine($" [RETRY] [{name}] 精搜索失败，开始安全模式全扫描 (yuv420p)...");
-                var (safeOk, safeCrf, safePixFmt, safeMode) = await RunSafeModeScan(input, cfg, name, cfg.MinCRF, cfg.MaxCRF);
-                if (safeOk)
-                {
-                    _logger.LogSearch($"[{name}] 安全扫描成功，CRF={safeCrf}");
-                    return (safeCrf, false, false, totalEvalCount);   // 安全模式不计入额外评估次数
-                }
-
-                // 全部失败
-                _logger.LogSearch($"[{name}] 所有搜索策略失败，回退到 BaseCRF={cfg.BaseCRF}");
-                return (cfg.BaseCRF, true, false, totalEvalCount);
+                SafeWriteLine($"  [{name}] [EARLY] MaxCRF 已达标，直接使用 CRF={userMax}");
+                return (userMax, false, false, totalEvalCount);
             }
-            catch (OperationCanceledException)
+            SafeWriteLine($"  [{name}] [EARLY] MaxCRF 不达标，继续搜索。");
+
+            // ===== 2. 获取先验中位数（仅用于指导） =====
+            int priorMedian = (userMin + userMax) / 2;  // fallback
+            if (metricMode == "vmaf")
             {
-                SafeWriteLine($" [{name}] [WARN] 搜索超时/取消，用 BaseCRF {cfg.BaseCRF}");
-                _logger.LogSearch($"[{name}] 搜索被取消");
-                return (cfg.BaseCRF, true, false, totalEvalCount);
+                double targetVmaf = target * 100.0;
+                var (median, lo, hi) = GetPriorFromVmaf(targetVmaf);
+                priorMedian = Math.Clamp(median, userMin, userMax);
+                SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian} (目标 VMAF={targetVmaf:F0})");
             }
+
+            // ===== 3. 保守 Proxy 验证（中位数附近三点） =====
+            var (safeLo, safeHi) = await PerformConservativeProxyPhaseAsync(
+                input, tileCols, cfg, pixFmt, jpeg, name, target, metricMode, token,
+                priorMedian, userMin, userMax);
+
+            if (safeLo < 0 || safeHi < safeLo)
+            {
+                SafeWriteLine($"  [{name}] [PROXY] Proxy 无法提供有效区间，使用全范围 [{userMin},{userMax}]");
+                safeLo = userMin;
+                safeHi = userMax;
+            }
+            else
+            {
+                // 与用户范围取交集（绝不超出用户范围）
+                safeLo = Math.Max(userMin, safeLo);
+                safeHi = Math.Min(userMax, safeHi);
+            }
+
+            SafeWriteLine($"  [{name}] [INFO] 安全搜索区间: [{safeLo}, {safeHi}]");
+
+            // ===== 4. 标准右边界二分（在安全区间内） =====
+            var (bestCrf, binEval) = await StandardBinarySearch(
+                input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                safeLo, safeHi);
+            totalEvalCount += binEval;
+
+            if (bestCrf >= 0)
+            {
+                SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
+                return (bestCrf, false, false, totalEvalCount);
+            }
+
+            // ===== 5. 二分无解 → 回退到原始全范围安全扫描 =====
+            SafeWriteLine($"  [{name}] [FALLBACK] 二分未找到可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
+            var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
+            if (safeOk)
+            {
+                SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
+                return (safeCrf, false, false, totalEvalCount);
+            }
+
+            SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
+            return (cfg.BaseCRF, true, false, totalEvalCount);
+        }
+
+
+        /// <summary>
+        /// 在 [lo, hi] 区间内执行标准右边界二分，并附带右侧单调扫描。
+        /// 返回 (最优CRF, 本阶段真实评估次数)。若下界不可行或全部失败返回 (-1, 评估次数)。
+        /// 每一步均通过控制台和日志输出。
+        /// </summary>
+        private async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
+            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+            string name, double target, Func<int, Task<double>> getScore,
+            CancellationToken token, int lo, int hi)
+        {
+            int evalCount = 0;
+
+            // 1. 确认下界可行
+            SafeWriteLine($"  [{name}] [CORE] 下界验证 CRF={lo}...");
+            double loScore = await getScore(lo);
+            evalCount++;
+            string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={loScore * 100:F1}" : $"分数={loScore:F4}";
+            SafeWriteLine($"  [{name}] [CORE] CRF={lo} → {loDisplay}");
+            if (loScore < target)
+            {
+                SafeWriteLine($"  [{name}] [CORE] 下界不可行，目标无法达成。");
+                return (-1, evalCount);
+            }
+
+            // 2. 右边界二分
+            int l = lo, r = hi;
+            int bestCrf = lo;
+            while (l < r)
+            {
+                token.ThrowIfCancellationRequested();
+                int mid = (l + r + 1) / 2;      // 向上取整
+                SafeWriteLine($"  [{name}] [BIN] 测试 CRF={mid} (区间 {l}-{r})...");
+                double score = await getScore(mid);
+                evalCount++;
+                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={score * 100:F1}" : $"分数={score:F4}";
+                SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
+
+                if (score >= target)
+                {
+                    l = mid;
+                    bestCrf = mid;
+                }
+                else
+                {
+                    r = mid - 1;
+                }
+            }
+
+            // 3. 右侧单调扫描
+            for (int next = bestCrf + 1; next <= hi; next++)
+            {
+                token.ThrowIfCancellationRequested();
+                SafeWriteLine($"  [{name}] [SCAN] 右侧扫描 CRF={next}...");
+                double score = await getScore(next);
+                evalCount++;
+                string scanDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={score * 100:F1}" : $"分数={score:F4}";
+                SafeWriteLine($"  [{name}] [SCAN] CRF={next} → {scanDisplay}");
+                if (score >= target)
+                {
+                    bestCrf = next;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            SafeWriteLine($"  [{name}] [CORE] 二分结束，最优 CRF={bestCrf}，本阶段评估 {evalCount} 次");
+            return (bestCrf, evalCount);
         }
 
 
 
+        /// <summary>
+        /// 保守 Proxy 阶段：评估中位数附近 3 个点（median-2, median, median+2），
+        /// 仅当分数 > target + 0.02 时才视为“明确通过”。
+        /// 返回 (safeLo, safeHi) 均钳制在 [globalMin, globalMax] 内。
+        /// 若 Proxy 全部失败或无法判断，返回 (-1, -1)。
+        /// </summary>
+        private async Task<(int safeLo, int safeHi)> PerformConservativeProxyPhaseAsync(
+            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+            string name, double target, string metricMode, CancellationToken token,
+            int priorMedian, int globalMin, int globalMax)
+        {
+            int median = Math.Clamp(priorMedian, globalMin, globalMax);
+            var testCrfs = new[] { median - 2, median, median + 2 }
+                .Where(c => c >= globalMin && c <= globalMax)
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+
+            if (testCrfs.Count == 0)
+                return (globalMin, globalMax);
+
+            bool anyPass = false;
+            int lastPass = -1;
+            double passMargin = 0.02;  // 保守余量
+
+            foreach (int crf in testCrfs)
+            {
+                token.ThrowIfCancellationRequested();
+                SafeWriteLine($"  [{name}] [PROXY] 快速验证 CRF={crf} ...");
+                double proxyScore = await ProxyEvaluateAsync(input, crf, tileCols, cfg, jpeg, pixFmt);
+                if (proxyScore < 0)
+                {
+                    SafeWriteLine($"  [{name}] [PROXY] CRF={crf} 评估失败，跳过");
+                    continue;
+                }
+
+                bool pass = proxyScore >= target + passMargin;
+                string status = pass ? "明确通过" : "保守失败";
+                string display = metricMode == "vmaf" ? $"VMAF={proxyScore * 100:F1}" : $"分数={proxyScore:F4}";
+                SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
+
+                if (pass)
+                {
+                    anyPass = true;
+                    if (crf > lastPass) lastPass = crf;
+                }
+            }
+
+            if (anyPass)
+            {
+                // 至少一个明确通过 → 下界设为最后一个通过点，上界向右扩展 6 个 CRF
+                int safeLo = lastPass;
+                int safeHi = Math.Min(globalMax, lastPass + 6);
+                return (safeLo, safeHi);
+            }
+            else
+            {
+                // 全部未明确通过 → 最优解可能在左侧，向左扩展 6
+                int safeLo = Math.Max(globalMin, median - 6);
+                int safeHi = median - 1;
+                if (safeHi < safeLo) safeHi = safeLo;
+                return (safeLo, safeHi);
+            }
+        }
         private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
         {
             int consecutiveFailures = 0;
