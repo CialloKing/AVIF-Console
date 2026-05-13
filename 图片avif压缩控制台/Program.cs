@@ -97,8 +97,8 @@ namespace AvifEncoder
         public string OutputNameFormat { get; set; } = "covers-{index}.avif";
 
         // 自定义 CRF 搜索范围
-        public int MinCRF { get; set; } = 1;
-        public int MaxCRF { get; set; } = 38;
+        public int MinCRF { get; set; } = 0;
+        public int MaxCRF { get; set; } = 63;
 
         // 超时配置（分钟）
         public int EncodeTimeoutMinutes { get; set; } = -1;
