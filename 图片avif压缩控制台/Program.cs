@@ -1825,7 +1825,7 @@ namespace AvifEncoder
             // 缓存命中
             if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
-                _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F2}");
+                _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
                 return (cachedMetrics!.SSIM, cachedMetrics);
             }
 
@@ -1840,7 +1840,7 @@ namespace AvifEncoder
             if (metrics != null)
             {
                 _cache.SetMetrics(cacheKey, metrics);
-                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F6}, PSNR-Y={metrics.PSNR_Y:F4}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}");
                 return (metrics.SSIM, metrics);
             }
 
@@ -2849,7 +2849,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 _fs.CreateDirectory(Path.GetDirectoryName(output)!);
                 _fs.CopyFile(cached.file!, output, true);
-                _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F1}s");
+                _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F4}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
 
@@ -2900,7 +2900,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         _fs.CopyFile(output, cacheFile, true);
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
-                        _logger.LogSearch($"✅ 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F1}s");
+                        _logger.LogSearch($"✅ 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F4}s");
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
                     }
 
@@ -3189,7 +3189,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {
-                _logger.LogSearch($"指标缓存命中: CRF={crf} [{Path.GetFileName(input)}] VMAF={cached!.VMAF:F2}");
+                _logger.LogSearch($"指标缓存命中: CRF={crf} [{Path.GetFileName(input)}] VMAF={cached!.VMAF:F4}");
                 return cached!;
             }
 
@@ -3233,8 +3233,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         {
                             _cache.SetMetrics(key, metrics);
                             _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
-                                             $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F2}dB, " +
-                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F2}");
+                                             $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F4}dB, " +
+                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}");
                         }
                         else
                         {
@@ -3285,7 +3285,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         private static string FormatQualityDisplay(QualityMetrics? m, double fallbackScore)
         {
             if (m != null)
-                return $"VMAF={m.VMAF:F1}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}";
+                return $"VMAF={m.VMAF:F4}  PSNR-Y={m.PSNR_Y:F2}dB  SSIM={m.SSIM:F4}  MS-SSIM={m.MS_SSIM:F4}";
             return $"分数={fallbackScore:F4}";
         }
 
@@ -3579,7 +3579,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         {
             string display = cfg.MetricMode?.ToLower() switch
             {
-                "vmaf" => $"VMAF={score * 100:F1}",
+                "vmaf" => $"VMAF={score * 100:F4}",
                 _ => $"分数={score:F4}"
             };
             SafeWriteLine($"  [{name}] [{phase}] CRF={crf} -> {display}");
@@ -3660,7 +3660,7 @@ PerformSecantIteration(
             // 日志输出（根据度量模式自适应）
             string display = cfg.MetricMode?.ToLower() switch
             {
-                "vmaf" => $"VMAF={score * 100:F1}",
+                "vmaf" => $"VMAF={score * 100:F4}",
                 null or "" => $"分数={score:F4}",
                 _ => $"分数={score:F4}"
             };
@@ -3832,7 +3832,7 @@ PerformSecantIteration(
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
             totalEvalCount++;
-            string medianDisplay = metricMode == "vmaf" ? $"VMAF={medianScore * 100:F1}" : $"分数={medianScore:F4}";
+            string medianDisplay = metricMode == "vmaf" ? $"VMAF={medianScore * 100:F4}" : $"分数={medianScore:F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
             if (medianScore >= target)
@@ -3918,7 +3918,8 @@ PerformSecantIteration(
             if (knownLoScore.HasValue && knownLoScore.Value >= target)
             {
                 bestCrf = lo;
-                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} (分数={knownLoScore.Value:F4})");
+                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={knownLoScore.Value * 100:F4}" : $"分数={knownLoScore.Value:F4}";
+                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
             }
 
             // 确定搜索起点：若已知 lo 可行，则从 lo+1 开始；否则从 lo 开始
@@ -3932,7 +3933,7 @@ PerformSecantIteration(
                 SafeWriteLine($"  [{name}] [BIN] 测试 CRF={mid} (区间 {l}-{r})...");
                 double score = await getScore(mid);
                 evalCount++;
-                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={score * 100:F1}" : $"分数={score:F4}";
+                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
                 if (score >= target)
@@ -3994,7 +3995,7 @@ PerformSecantIteration(
 
                 bool pass = proxyScore >= target + passMargin;
                 string status = pass ? "明确通过" : "保守失败";
-                string display = metricMode == "vmaf" ? $"VMAF={proxyScore * 100:F1}" : $"分数={proxyScore:F4}";
+                string display = metricMode == "vmaf" ? $"VMAF={proxyScore * 100:F4}" : $"分数={proxyScore:F4}";
                 SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
 
                 if (pass)
@@ -4248,7 +4249,7 @@ PerformSecantIteration(
             double lowScore = await getScore(low);
             if (lowScore < target)
             {
-                SafeWriteLine($"  [LOW] [{name}] 最低可用 CRF={low} VMAF={lowScore * 100:F1} 无法达标");
+                SafeWriteLine($"  [LOW] [{name}] 最低可用 CRF={low} VMAF={lowScore * 100:F4} 无法达标");
                 _logger.LogSearch($"[{name}] 低端边界 CRF={low} 无法达标");
                 return (low, false, true, 0);
             }
@@ -4263,7 +4264,7 @@ PerformSecantIteration(
             // 输出最终指标
             QualityMetrics? finalMetrics = await GetOrComputeMetrics(input, bestCrf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
             if (finalMetrics != null)
-                SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F1} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
+                SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf} | VMAF={finalMetrics.VMAF:F4} SSIM={finalMetrics.SSIM:F4} PSNR-Y={finalMetrics.PSNR_Y:F2} MS-SSIM={finalMetrics.MS_SSIM:F4}");
             else
                 SafeWriteLine($"  [BEST] [{name}] 最佳 CRF = {bestCrf}");
 
@@ -4313,10 +4314,10 @@ PerformSecantIteration(
             string aomParams = CsvEscape(r.AomParamsUsed ?? "");
             string cache = r.CacheReused ? "是" : "否";
 
-            string vmaf = r.FinalVMAF?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
-            string psnrY = r.FinalPSNR_Y?.ToString("F2", CultureInfo.InvariantCulture) ?? "";
-            string msssim = r.FinalMSSSIM?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-            string mix = r.FinalMixScore?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string vmaf = r.FinalVMAF?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string psnrY = r.FinalPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string msssim = r.FinalMSSSIM?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
+            string mix = r.FinalMixScore?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
 
             // 按 CsvColumnNames 顺序拼接
             var values = new[]
@@ -4379,7 +4380,7 @@ PerformSecantIteration(
         {
             { TotalHours: >= 1 } => $"{(int)t.TotalHours}h {t.Minutes}m {t.Seconds}s",
             { TotalMinutes: >= 1 } => $"{(int)t.TotalMinutes}m {t.Seconds}s",
-            _ => $"{t.TotalSeconds:F1}s"
+            _ => $"{t.TotalSeconds:F4}s"
         };
     }
 
@@ -4482,7 +4483,7 @@ PerformSecantIteration(
                 eta = FormatTimeSpanLocal(TimeSpan.FromSeconds(elapsed.TotalSeconds / done * (total - done)));
             else if (done == total)
                 eta = "已完成";
-            string line = $"[{done}/{total} {pct,5:F1}%]";
+            string line = $"[{done}/{total} {pct,5:F4}%]";
 
             if (r != null)
             {
@@ -4490,12 +4491,12 @@ PerformSecantIteration(
                     return $"{line} [SKIP] 跳过 {r.FileName} | {r.OriginalFileName}";
                 if (r.Success)
                 {
-                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F1") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F2") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
+                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F4") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F4") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
                     return $"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
                            $"{FormatSizeLocal(r.OriginalSize)} -> {FormatSizeLocal(r.OutputSize)} | " +
-                           $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}";
+                           $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F4}s | 剩余 {eta}";
                 }
-                return $"{line} [FAIL] 失败 | {r.OriginalFileName} | 原因:{r.ErrorMessage} | 总耗时:{r.TotalTime.TotalSeconds:F1}s | 剩余 {eta}";
+                return $"{line} [FAIL] 失败 | {r.OriginalFileName} | 原因:{r.ErrorMessage} | 总耗时:{r.TotalTime.TotalSeconds:F4}s | 剩余 {eta}";
             }
             return $"{line} [SKIP] 跳过";
         }
@@ -4511,7 +4512,7 @@ PerformSecantIteration(
         {
             { TotalHours: >= 1 } => $"{(int)t.TotalHours}h {t.Minutes}m {t.Seconds}s",
             { TotalMinutes: >= 1 } => $"{(int)t.TotalMinutes}m {t.Seconds}s",
-            _ => $"{t.TotalSeconds:F1}s"
+            _ => $"{t.TotalSeconds:F4}s"
         };
     }
 
