@@ -3907,49 +3907,24 @@ PerformSecantIteration(
         /// 返回 (最优CRF, 本阶段评估次数)。若无任何可行点，返回 (-1, evalCount)。
         /// </summary>
         private async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
-            string name, double target, Func<int, Task<double>> getScore,
-            CancellationToken token, int lo, int hi, double? knownLoScore = null)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
+    string name, double target, Func<int, Task<double>> getScore,
+    CancellationToken token, int lo, int hi, double? knownLoScore = null)
         {
             int evalCount = 0;
             int bestCrf = -1;
 
-            // 1. 处理下界（已知可行则跳过，否则验证）
-            if (knownLoScore.HasValue)
+            // 已知下界可行：直接记录，不评估
+            if (knownLoScore.HasValue && knownLoScore.Value >= target)
             {
-                if (knownLoScore.Value >= target)
-                {
-                    bestCrf = lo;
-                    SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} (分数={knownLoScore.Value:F4})");
-                }
-                else
-                {
-                    // 调用方逻辑保证不会传入不达标的分数，此处为防御
-                    SafeWriteLine($"  [{name}] [CORE] 已知下界分数不达标，参数异常。");
-                    return (-1, evalCount);
-                }
-            }
-            else
-            {
-                SafeWriteLine($"  [{name}] [CORE] 下界验证 CRF={lo}...");
-                double loScore = await getScore(lo);
-                evalCount++;
-                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={loScore * 100:F1}" : $"分数={loScore:F4}";
-                SafeWriteLine($"  [{name}] [CORE] CRF={lo} → {loDisplay}");
-                if (loScore >= target)
-                {
-                    bestCrf = lo;
-                }
-                else
-                {
-                    SafeWriteLine($"  [{name}] [CORE] 下界不可行，目标无法达成。");
-                    return (-1, evalCount);
-                }
+                bestCrf = lo;
+                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} (分数={knownLoScore.Value:F4})");
             }
 
-            // 2. 标准右边界二分（从已知可行点的下一位开始）
-            int l = bestCrf + 1;
+            // 确定搜索起点：若已知 lo 可行，则从 lo+1 开始；否则从 lo 开始
+            int l = bestCrf >= 0 ? bestCrf + 1 : lo;
             int r = hi;
+
             while (l <= r)
             {
                 token.ThrowIfCancellationRequested();
