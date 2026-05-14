@@ -135,4 +135,5 @@ CLI 示例：
 - 批处理线程使用 `std::jthread`
 - 错误路径使用 `std::expected<T, std::string>` 和异常兜底，单文件失败不会终止整批
 - UI 通过 Slint event loop 投递后台线程进度，转换期间不会阻塞界面
+- UI 支持跟随 Windows 应用主题，也可以在标题栏手动切换浅色/深色
 - Slint 默认静态链接；ImageMagick 可用静态脚本路径尽量减少 DLL，运行时不依赖 PATH 中的 `magick.exe`

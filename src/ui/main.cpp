@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cctype>
 #include <filesystem>
 #include <format>
@@ -32,6 +33,7 @@ namespace {
 
 struct UiState {
   std::jthread worker{};
+  slint::Timer theme_timer{};
   std::mutex mutex{};
 };
 
@@ -90,6 +92,21 @@ void append_token_defines(avif::AppConfig& cfg, std::string text) {
 
 slint::SharedString to_shared(std::string_view text) {
   return slint::SharedString{std::string{text}.c_str()};
+}
+
+bool windows_prefers_dark_mode() {
+  // Windows stores the per-app theme choice in this user registry value.
+  DWORD apps_use_light_theme = 1;
+  DWORD value_size = sizeof(apps_use_light_theme);
+  const auto status = RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &apps_use_light_theme,
+      &value_size);
+  if (status != ERROR_SUCCESS) {
+    return false;
+  }
+  return apps_use_light_theme == 0;
 }
 
 template <class Function>
@@ -269,6 +286,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   const auto hardware_threads =
       static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
   app->set_threads_text(to_shared(std::to_string(hardware_threads)));
+  app->set_system_dark_mode(windows_prefers_dark_mode());
+
+  state->theme_timer.start(slint::TimerMode::Repeated, std::chrono::seconds{3}, [weak] {
+    if (auto app = weak.lock()) {
+      (*app)->set_system_dark_mode(windows_prefers_dark_mode());
+    }
+  });
 
   app->on_browse_input([weak] {
     if (auto app = weak.lock()) {

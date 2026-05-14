@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, LineEdit, ScrollView } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView } from "std-widgets.slint";
 
 export component AvifStudio inherits Window {
     title: "AVIF Studio";
@@ -16,6 +16,8 @@ export component AvifStudio inherits Window {
     in-out property <string> template-text: "{name}";
     in-out property <int> collision-index: 0;
     in-out property <string> defines-text: "";
+    in-out property <int> theme-index: 0;
+    in-out property <bool> system-dark-mode: false;
     in-out property <bool> strip-metadata: false;
     in-out property <bool> write-summary: false;
     in-out property <bool> write-log: false;
@@ -24,6 +26,21 @@ export component AvifStudio inherits Window {
     in-out property <string> status-text: "就绪";
     in-out property <string> task-list-text: "";
 
+    property <bool> dark-mode: root.theme-index == 2 || (root.theme-index == 0 && root.system-dark-mode);
+    property <color> page-bg: root.dark-mode ? #10151f : #f4f6fa;
+    property <color> panel-bg: root.dark-mode ? #171d29 : #ffffff;
+    property <color> panel-border: root.dark-mode ? #2b3445 : #d9e1ec;
+    property <color> text-strong: root.dark-mode ? #edf3ff : #172033;
+    property <color> text-body: root.dark-mode ? #d7deea : #263244;
+    property <color> text-muted: root.dark-mode ? #a9b4c5 : #334155;
+    property <color> status-idle-bg: root.dark-mode ? #153422 : #eaf7ef;
+    property <color> status-idle-fg: root.dark-mode ? #9ee6b8 : #176239;
+    property <color> status-running-bg: root.dark-mode ? #132b52 : #e5f0ff;
+    property <color> status-running-fg: root.dark-mode ? #9fc5ff : #174ea6;
+    property <color> progress-track: root.dark-mode ? #263244 : #d9e2ef;
+    property <color> progress-running: root.dark-mode ? #60a5fa : #2563eb;
+    property <color> progress-done: root.dark-mode ? #34d399 : #159447;
+
     callback browse-input();
     callback open-input();
     callback browse-output();
@@ -31,10 +48,18 @@ export component AvifStudio inherits Window {
     callback start-conversion();
     callback cancel-conversion();
 
-    background: #f4f6fa;
+    init => {
+        Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    changed dark-mode => {
+        Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    background: root.page-bg;
 
     Rectangle {
-        background: #f4f6fa;
+        background: root.page-bg;
 
         VerticalLayout {
             padding: 18px;
@@ -46,18 +71,23 @@ export component AvifStudio inherits Window {
                     text: "AVIF Studio";
                     font-size: 25px;
                     font-weight: 700;
-                    color: #172033;
+                    color: root.text-strong;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
+                }
+                ComboBox {
+                    model: ["跟随系统", "浅色", "深色"];
+                    current-index <=> root.theme-index;
+                    width: 112px;
                 }
                 Rectangle {
                     width: 138px;
                     height: 34px;
                     border-radius: 6px;
-                    background: root.running ? #e5f0ff : #eaf7ef;
+                    background: root.running ? root.status-running-bg : root.status-idle-bg;
                     Text {
                         text: root.status-text;
-                        color: root.running ? #174ea6 : #176239;
+                        color: root.running ? root.status-running-fg : root.status-idle-fg;
                         font-size: 13px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -68,8 +98,8 @@ export component AvifStudio inherits Window {
             Rectangle {
                 height: 156px;
                 border-radius: 8px;
-                background: #ffffff;
-                border-color: #d9e1ec;
+                background: root.panel-bg;
+                border-color: root.panel-border;
                 border-width: 1px;
 
                 VerticalLayout {
@@ -78,7 +108,7 @@ export component AvifStudio inherits Window {
 
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: "输入"; width: 54px; vertical-alignment: center; color: #334155; }
+                        Text { text: "输入"; width: 54px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.input-path; enabled: !root.running; horizontal-stretch: 1; }
                         ComboBox {
                             model: ["文件", "文件夹"];
@@ -92,7 +122,7 @@ export component AvifStudio inherits Window {
 
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: "输出"; width: 54px; vertical-alignment: center; color: #334155; }
+                        Text { text: "输出"; width: 54px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.output-dir; enabled: !root.running; horizontal-stretch: 1; }
                         Button { text: "选择"; enabled: !root.running; clicked => { root.browse-output(); } }
                         Button { text: "打开"; clicked => { root.open-output(); } }
@@ -100,7 +130,7 @@ export component AvifStudio inherits Window {
 
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: "命名"; width: 54px; vertical-alignment: center; color: #334155; }
+                        Text { text: "命名"; width: 54px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.template-text; enabled: !root.running; horizontal-stretch: 1; }
                         Button { text: "{date}"; enabled: !root.running; clicked => { root.template-text = root.template-text + "{date}"; } }
                         Button { text: "{time}"; enabled: !root.running; clicked => { root.template-text = root.template-text + "{time}"; } }
@@ -113,8 +143,8 @@ export component AvifStudio inherits Window {
             Rectangle {
                 height: 138px;
                 border-radius: 8px;
-                background: #ffffff;
-                border-color: #d9e1ec;
+                background: root.panel-bg;
+                border-color: root.panel-border;
                 border-width: 1px;
 
                 VerticalLayout {
@@ -123,22 +153,22 @@ export component AvifStudio inherits Window {
 
                     HorizontalLayout {
                         spacing: 10px;
-                        Text { text: "格式"; width: 42px; vertical-alignment: center; color: #334155; }
+                        Text { text: "格式"; width: 42px; vertical-alignment: center; color: root.text-muted; }
                         ComboBox {
                             model: ["AVIF", "WebP"];
                             current-index <=> root.format-index;
                             enabled: !root.running;
                             width: 92px;
                         }
-                        Text { text: "质量"; width: 42px; vertical-alignment: center; color: #334155; }
+                        Text { text: "质量"; width: 42px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.quality-text; enabled: !root.running; width: 64px; }
-                        Text { text: "最长边"; width: 58px; vertical-alignment: center; color: #334155; }
+                        Text { text: "最长边"; width: 58px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.max-resolution-text; enabled: !root.running; width: 84px; }
-                        Text { text: "线程"; width: 42px; vertical-alignment: center; color: #334155; }
+                        Text { text: "线程"; width: 42px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.threads-text; enabled: !root.running; width: 60px; }
-                        Text { text: "speed"; width: 44px; vertical-alignment: center; color: #334155; }
+                        Text { text: "speed"; width: 44px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.speed-text; enabled: !root.running; width: 58px; }
-                        Text { text: "重名"; width: 42px; vertical-alignment: center; color: #334155; }
+                        Text { text: "重名"; width: 42px; vertical-alignment: center; color: root.text-muted; }
                         ComboBox {
                             model: ["覆盖", "跳过", "追加时间", "追加随机"];
                             current-index <=> root.collision-index;
@@ -149,7 +179,7 @@ export component AvifStudio inherits Window {
 
                     HorizontalLayout {
                         spacing: 10px;
-                        Text { text: "define"; width: 54px; vertical-alignment: center; color: #334155; }
+                        Text { text: "define"; width: 54px; vertical-alignment: center; color: root.text-muted; }
                         LineEdit { text <=> root.defines-text; enabled: !root.running; horizontal-stretch: 1; }
                         CheckBox { text: "去除元数据(EXIF/ICC)"; checked <=> root.strip-metadata; enabled: !root.running; }
                         CheckBox { text: "summary"; checked <=> root.write-summary; enabled: !root.running; }
@@ -163,32 +193,32 @@ export component AvifStudio inherits Window {
             Rectangle {
                 height: 14px;
                 border-radius: 7px;
-                background: #d9e2ef;
+                background: root.progress-track;
                 clip: true;
                 Rectangle {
                     x: 0px;
                     width: parent.width * root.progress;
                     height: parent.height;
                     border-radius: 7px;
-                    background: root.running ? #2563eb : #159447;
+                    background: root.running ? root.progress-running : root.progress-done;
                 }
             }
 
             Rectangle {
                 border-radius: 8px;
-                background: #ffffff;
-                border-color: #d9e1ec;
+                background: root.panel-bg;
+                border-color: root.panel-border;
                 border-width: 1px;
                 vertical-stretch: 1;
 
                 VerticalLayout {
                     padding: 12px;
                     spacing: 8px;
-                    Text { text: "任务列表"; font-weight: 700; color: #172033; }
+                    Text { text: "任务列表"; font-weight: 700; color: root.text-strong; }
                     ScrollView {
                         Text {
                             text: root.task-list-text;
-                            color: #263244;
+                            color: root.text-body;
                             font-family: "Consolas";
                             font-size: 12px;
                             wrap: word-wrap;

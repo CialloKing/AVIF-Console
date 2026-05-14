@@ -44,6 +44,7 @@
 
 - CMake 根工程，生成 `AVIFConsoleCli.exe` 和 `AVIFStudio.exe`
 - Slint 桌面 UI
+- UI 支持跟随 Windows 应用主题，也可以手动切换浅色/深色
 - `run_batch(config, progress_callback, stop_token)` 批处理服务，CLI/UI 共用
 - `scripts\build-magick.ps1` 用于拉取、配置、编译并提取自编译 ImageMagick Windows 运行时
 
