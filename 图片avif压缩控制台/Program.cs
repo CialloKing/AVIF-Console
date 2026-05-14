@@ -130,6 +130,9 @@ namespace AvifEncoder
         // 在 PresetConfig 类中添加
         public bool UseProxySearch { get; set; } = false;   // 默认关闭
 
+        /// <summary> 是否启用先验引导搜索（中位数初始化 + 动态哨兵探测） </summary>
+        public bool UsePriorSearch { get; set; } = false;
+
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
         /// 只有 libaom-av1 支持 aq-mode/deltaq-mode 等参数，其他编码器返回空字符串。
@@ -3786,6 +3789,9 @@ PerformSecantIteration(
         /// <summary>
         /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
         /// </summary>
+        /// <summary>
+        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分（可通过 --prior-search 启用）
+        /// </summary>
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
             string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
@@ -3802,6 +3808,34 @@ PerformSecantIteration(
             int userMin = cfg.MinCRF;
             int userMax = cfg.MaxCRF;
 
+            // 先验搜索未启用时，直接全范围二分
+            if (!cfg.UsePriorSearch)
+            {
+                SafeWriteLine($"  [{name}] [INFO] 先验搜索已关闭，使用标准二分区间 [{userMin}, {userMax}]");
+                var (directBestCrf, directEval) = await StandardBinarySearch(
+                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                    userMin, userMax, knownLoScore: null);
+                totalEvalCount = directEval;
+                if (directBestCrf >= 0)
+                {
+                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={directBestCrf}，总评估 {totalEvalCount} 次");
+                    return (directBestCrf, false, false, totalEvalCount);
+                }
+
+                // 标准二分无解 → 回退安全扫描
+                SafeWriteLine($"  [{name}] [FALLBACK] 标准二分无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
+                var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
+                if (safeOk)
+                {
+                    SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
+                    return (safeCrf, false, false, totalEvalCount);
+                }
+
+                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
+                return (cfg.BaseCRF, true, false, totalEvalCount);
+            }
+
+            // ========== 以下为启用先验搜索时的逻辑 ==========
             // 统一计算先验中位数（VMAF 模式使用统计值，否则取中点）
             int priorMedian = (userMin + userMax) / 2;
             if (metricMode == "vmaf")
@@ -3811,7 +3845,6 @@ PerformSecantIteration(
                 priorMedian = Math.Clamp(median, userMin, userMax);
             }
 
-            // 用于后续分支的变量（统一在此声明）
             int searchLo, searchHi;
             double? knownLoScore = null;
 
@@ -3826,14 +3859,12 @@ PerformSecantIteration(
 
                 searchLo = (safeLo >= 0 && safeHi >= safeLo) ? Math.Max(userMin, safeLo) : userMin;
                 searchHi = (safeLo >= 0 && safeHi >= safeLo) ? Math.Min(userMax, safeHi) : userMax;
-                // knownLoScore 保持为 null（Proxy 不提供已知可行下界）
-                knownLoScore = null;
 
                 SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}]");
 
                 var (proxyCrf, proxyEval) = await StandardBinarySearch(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi, knownLoScore: knownLoScore);
+                    searchLo, searchHi, knownLoScore: null);
                 totalEvalCount += proxyEval;
 
                 if (proxyCrf >= 0)
@@ -3855,7 +3886,7 @@ PerformSecantIteration(
                 return (cfg.BaseCRF, true, false, totalEvalCount);
             }
 
-            // ========== 默认模式：先验中位数 + 动态哨兵 + 二分 ==========
+            // ========== 默认先验模式：中位数 + 哨兵 + 二分 ==========
             // 1. 评估中位数
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
@@ -3977,7 +4008,7 @@ PerformSecantIteration(
             return (cfg.BaseCRF, true, false, totalEvalCount);
         }
 
-        // 辅助格式化方法（添加到类中）
+        // 辅助格式化方法（可放在同一类中）
         private static string FormatScore(double score, string metricMode)
         {
             return metricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
@@ -4723,6 +4754,7 @@ AVIF 编码器 —— Linux 风格命令行工具
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
+      --prior-search            启用先验引导搜索（中位数+哨兵，通常更快）
       --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
@@ -4789,6 +4821,8 @@ AVIF 编码器 —— Linux 风格命令行工具
 
             // 在 private class ParsedOptions 中添加
             public bool EnableProxySearch { get; set; } = false;
+
+            public bool UsePriorSearch { get; set; } = false;
         }
 
         // ========== 参数解析 ==========
@@ -4893,6 +4927,7 @@ AVIF 编码器 —— Linux 风格命令行工具
                         case "version": opts.ShowVersion = true; break;
                         case "dry-run": opts.DryRun = true; break;
                         case "help": PrintHelp(); return null!;
+                        case "prior-search": opts.UsePriorSearch = true; break;
                         case "serial-encode":
                             opts.SerialEncode = true;
                             break;
@@ -5133,6 +5168,9 @@ AVIF 编码器 —— Linux 风格命令行工具
 
             //---------- 12. 极限压缩模式（单线程，禁用所有并行） ----------
             config.SerialEncode = opts.SerialEncode;
+
+            //---------- 13. 先验搜索模式 ----------
+            config.UsePriorSearch = opts.UsePriorSearch;
 
             return config;
         }
