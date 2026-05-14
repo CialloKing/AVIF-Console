@@ -3766,8 +3766,28 @@ PerformSecantIteration(
         /// 4. 若仍未找到可行解，回退到安全模式全扫描（兜底离群值）。
         /// 若启用 --proxy，则保留保守 Proxy 验证流程。
         /// </summary>
+        /// <summary>
+        /// 按目标 VMAF 动态返回最优哨兵偏移量（基于 400 张图片统计）
+        /// </summary>
+        private static int GetOptimalSentinelDelta(int targetVmafInt)
+        {
+            return targetVmafInt switch
+            {
+                90 => 4,                                   // 中位数 38 时最优
+                >= 91 and <= 95 => 2,                     // 分布最集中，极小偏移最优
+                96 => 3,                                   // 高离散度目标
+                _ => 3                                     // 安全默认
+            };
+        }
+
+        /// <summary>
+        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
+        /// </summary>
+        /// <summary>
+        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
+        /// </summary>
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
+            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
             string name = displayName ?? Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
@@ -3782,16 +3802,20 @@ PerformSecantIteration(
             int userMin = cfg.MinCRF;
             int userMax = cfg.MaxCRF;
 
-            // ===== 统一计算先验中位数（避免重复声明） =====
-            int priorMedian = (userMin + userMax) / 2;   // 兜底
+            // 统一计算先验中位数（VMAF 模式使用统计值，否则取中点）
+            int priorMedian = (userMin + userMax) / 2;
             if (metricMode == "vmaf")
             {
                 double targetVmaf = target * 100.0;
-                var (median, lo, hi) = GetPriorFromVmaf(targetVmaf);
+                var (median, _, _) = GetPriorFromVmaf(targetVmaf);
                 priorMedian = Math.Clamp(median, userMin, userMax);
             }
 
-            // ===== Proxy 模式（用户显式启用） =====
+            // 用于后续分支的变量（统一在此声明）
+            int searchLo, searchHi;
+            double? knownLoScore = null;
+
+            // ===== Proxy 模式（保持原逻辑，不使用哨兵） =====
             if (cfg.UseProxySearch)
             {
                 SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian}");
@@ -3800,13 +3824,16 @@ PerformSecantIteration(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, metricMode, token,
                     priorMedian, userMin, userMax);
 
-                int searchLo = (safeLo >= 0 && safeHi >= safeLo) ? Math.Max(userMin, safeLo) : userMin;
-                int searchHi = (safeLo >= 0 && safeHi >= safeLo) ? Math.Min(userMax, safeHi) : userMax;
+                searchLo = (safeLo >= 0 && safeHi >= safeLo) ? Math.Max(userMin, safeLo) : userMin;
+                searchHi = (safeLo >= 0 && safeHi >= safeLo) ? Math.Min(userMax, safeHi) : userMax;
+                // knownLoScore 保持为 null（Proxy 不提供已知可行下界）
+                knownLoScore = null;
+
                 SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}]");
 
                 var (proxyCrf, proxyEval) = await StandardBinarySearch(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi);
+                    searchLo, searchHi, knownLoScore: knownLoScore);
                 totalEvalCount += proxyEval;
 
                 if (proxyCrf >= 0)
@@ -3828,51 +3855,116 @@ PerformSecantIteration(
                 return (cfg.BaseCRF, true, false, totalEvalCount);
             }
 
-            // ========== 默认模式：先验中位数评估 + 方向二分 ==========
+            // ========== 默认模式：先验中位数 + 动态哨兵 + 二分 ==========
+            // 1. 评估中位数
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
             totalEvalCount++;
             string medianDisplay = metricMode == "vmaf" ? $"VMAF={medianScore * 100:F4}" : $"分数={medianScore:F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
-            if (medianScore >= target)
+            // 2. 哨兵探测（仅 VMAF 模式启用）
+            if (metricMode == "vmaf" && medianScore >= 0)
             {
-                // 中位数达标 → 向右搜索更大 CRF
-                int searchLo = priorMedian;
-                int searchHi = userMax;
-                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] (下界已知可行)");
-                var (bestCrf, binEval) = await StandardBinarySearch(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi, knownLoScore: medianScore);
-                totalEvalCount += binEval;
-                if (bestCrf >= 0)
+                int delta = GetOptimalSentinelDelta((int)Math.Round(target * 100.0));
+                if (delta > 0)
                 {
-                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
-                    return (bestCrf, false, false, totalEvalCount);
+                    if (medianScore >= target)   // 中位数达标
+                    {
+                        int probe = Math.Min(priorMedian + delta, userMax);
+                        if (probe > priorMedian)
+                        {
+                            SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
+                            double probeScore = await getScore(probe);
+                            totalEvalCount++;
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={probeScore * 100:F4}" : $"分数={probeScore:F4}";
+                            SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
+
+                            if (probeScore >= target)
+                            {
+                                searchLo = probe;
+                                searchHi = userMax;
+                                knownLoScore = probeScore;
+                            }
+                            else
+                            {
+                                searchLo = priorMedian;
+                                searchHi = probe - 1;
+                                knownLoScore = medianScore;
+                            }
+                        }
+                        else
+                        {
+                            searchLo = priorMedian;
+                            searchHi = userMax;
+                            knownLoScore = medianScore;
+                        }
+                    }
+                    else   // 中位数不达标
+                    {
+                        int probe = Math.Max(priorMedian - delta, userMin);
+                        if (probe < priorMedian)
+                        {
+                            SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
+                            double probeScore = await getScore(probe);
+                            totalEvalCount++;
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={probeScore * 100:F4}" : $"分数={probeScore:F4}";
+                            SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
+
+                            if (probeScore >= target)
+                            {
+                                searchLo = probe;
+                                searchHi = priorMedian - 1;
+                                knownLoScore = probeScore;
+                            }
+                            else
+                            {
+                                searchLo = userMin;
+                                searchHi = probe - 1;
+                                knownLoScore = null;
+                            }
+                        }
+                        else
+                        {
+                            searchLo = userMin;
+                            searchHi = priorMedian - 1;
+                            knownLoScore = null;
+                        }
+                    }
+                }
+                else
+                {
+                    // delta = 0，退化为标准中位数 + 二分逻辑
+                    searchLo = medianScore >= target ? priorMedian : userMin;
+                    searchHi = medianScore >= target ? userMax : priorMedian - 1;
+                    knownLoScore = medianScore >= target ? medianScore : (double?)null;
                 }
             }
             else
             {
-                // 中位数不达标 → 向左搜索更小 CRF
-                int searchLo = userMin;
-                int searchHi = priorMedian - 1;
-                if (searchHi < searchLo)
-                {
-                    searchHi = searchLo;
-                }
-                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] (需验证下界)");
-                var (bestCrf, binEval) = await StandardBinarySearch(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi, knownLoScore: null);
-                totalEvalCount += binEval;
-                if (bestCrf >= 0)
-                {
-                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
-                    return (bestCrf, false, false, totalEvalCount);
-                }
+                // 非 VMAF 模式或无有效分数
+                searchLo = medianScore >= target ? priorMedian : userMin;
+                searchHi = medianScore >= target ? userMax : priorMedian - 1;
+                knownLoScore = medianScore >= target ? medianScore : (double?)null;
             }
 
-            // 二分未找到可行解 → 回退安全扫描（兜底离群值）
+            // 3. 标准二分搜索
+            SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] {(knownLoScore.HasValue ? "(下界已知可行)" : "(需验证下界)")}");
+            if (knownLoScore.HasValue)
+                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={searchLo} ({FormatScore(knownLoScore.Value, metricMode)})");
+
+            var (bestCrf, binEval) = await StandardBinarySearch(
+                input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                searchLo, searchHi, knownLoScore: knownLoScore);
+            totalEvalCount += binEval;
+
+            if (bestCrf >= 0)
+            {
+                SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
+                return (bestCrf, false, false, totalEvalCount);
+            }
+
+            // 二分未找到可行解 → 回退安全扫描
             SafeWriteLine($"  [{name}] [FALLBACK] 二分未找到可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
             var (safeOk2, safeCrf2, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
             if (safeOk2)
@@ -3883,6 +3975,12 @@ PerformSecantIteration(
 
             SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
             return (cfg.BaseCRF, true, false, totalEvalCount);
+        }
+
+        // 辅助格式化方法（添加到类中）
+        private static string FormatScore(double score, string metricMode)
+        {
+            return metricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
         }
 
 
