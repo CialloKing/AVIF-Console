@@ -1,56 +1,53 @@
 param(
-    [string]$VcpkgRoot
+    [string]$MagickRoot = "",
+    [string]$VcpkgRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = $PSScriptRoot
-$Solution = Join-Path $Repo "图片avif压缩控制台.slnx"
+$Repo = Split-Path -Parent $PSCommandPath
+$BuildDir = Join-Path $Repo "build\x64\Release"
 
-function Resolve-MSBuild {
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswhere) {
-        $install = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-        if ($install) {
-            $candidate = Join-Path $install "MSBuild\Current\Bin\amd64\MSBuild.exe"
-            if (Test-Path $candidate) {
-                return $candidate
-            }
-        }
+if (-not $VcpkgRoot) {
+    if ($env:VCPKG_ROOT) {
+        $VcpkgRoot = $env:VCPKG_ROOT
+    } elseif (Test-Path "D:\Scoop\apps\vcpkg\current") {
+        $VcpkgRoot = "D:\Scoop\apps\vcpkg\current"
     }
-    $fromPath = Get-Command msbuild.exe -ErrorAction SilentlyContinue
-    if ($fromPath) {
-        return $fromPath.Source
-    }
-    throw "MSBuild.exe not found. 请确认 VS 2026 已安装 C++ 桌面开发组件。"
 }
 
-function Resolve-VcpkgRoot {
-    param([string]$ExplicitRoot)
-    if ($ExplicitRoot) {
-        return (Resolve-Path $ExplicitRoot).Path
+if (-not $MagickRoot) {
+    $SelfBuilt = Join-Path $Repo "third_party\imagemagick-runtime\x64\Release"
+    if (Test-Path (Join-Path $SelfBuilt "include\MagickWand\MagickWand.h")) {
+        $MagickRoot = $SelfBuilt
+    } elseif (Test-Path "D:\Scoop\apps\imagemagick\current\include\MagickWand\MagickWand.h") {
+        $MagickRoot = "D:\Scoop\apps\imagemagick\current"
+        Write-Warning "未发现自编译 ImageMagick，Release 构建临时使用 Scoop ImageMagick。"
     }
-    if ($env:VCPKG_ROOT -and (Test-Path $env:VCPKG_ROOT)) {
-        return (Resolve-Path $env:VCPKG_ROOT).Path
-    }
-    $scoopRoot = "D:\Scoop\apps\vcpkg\current"
-    if (Test-Path $scoopRoot) {
-        return (Resolve-Path $scoopRoot).Path
-    }
-    throw "vcpkg root not found. 可用 -VcpkgRoot 指定，例如 .\release.ps1 -VcpkgRoot D:\Scoop\apps\vcpkg\current"
 }
 
-$MSBuild = Resolve-MSBuild
-$Vcpkg = Resolve-VcpkgRoot $VcpkgRoot
-if (-not $Vcpkg.EndsWith("\")) {
-    $Vcpkg += "\"
+$ConfigureArgs = @(
+    "-S", $Repo,
+    "-B", $BuildDir,
+    "-G", "Visual Studio 18 2026",
+    "-A", "x64"
+)
+if ($VcpkgRoot) {
+    $ConfigureArgs += "-DVCPKG_ROOT=$VcpkgRoot"
+}
+if ($MagickRoot) {
+    $ConfigureArgs += "-DMAGICK_ROOT=$MagickRoot"
 }
 
-Write-Host "MSBuild: $MSBuild"
-Write-Host "vcpkg:   $Vcpkg"
-& $MSBuild $Solution /m /v:minimal /p:Configuration=Release /p:Platform=x64 /p:VcpkgRoot="$Vcpkg"
-
+cmake @ConfigureArgs
 if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+    throw "CMake 配置失败，退出码 $LASTEXITCODE。"
+}
+cmake --build $BuildDir --config Release --parallel
+if ($LASTEXITCODE -ne 0) {
+    throw "Release 构建失败，退出码 $LASTEXITCODE。"
 }
 
-Write-Host "输出: $Repo\bin\x64\Release\AVIFConsoleCpp.exe"
+Write-Host ""
+Write-Host "Release 输出:"
+Write-Host "  $Repo\bin\x64\Release\AVIFConsoleCli.exe"
+Write-Host "  $Repo\bin\x64\Release\AVIFStudio.exe"

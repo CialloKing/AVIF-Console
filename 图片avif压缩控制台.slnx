@@ -1,7 +1,0 @@
-<Solution>
-  <Configurations>
-    <Platform Name="x64" />
-    <Platform Name="x86" />
-  </Configurations>
-  <Project Path="AVIFConsoleCpp.vcxproj" Id="fbdaadf9-c1cc-46f5-89bd-094aa4d73306" />
-</Solution>

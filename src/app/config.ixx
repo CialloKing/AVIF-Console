@@ -152,11 +152,11 @@ void print_help() {
   constexpr std::string_view help = R"(AVIF Console C++23
 ==================
 
-默认后端：ImageMagick magick.exe
+默认后端：ImageMagick MagickWand
 默认质量：q90
 
 用法:
-  AVIFConsoleCpp.exe [选项]
+  AVIFConsoleCli.exe [选项]
 
 常用选项:
   -i, --input <目录>          输入目录，默认 input
@@ -167,9 +167,9 @@ void print_help() {
   -m, --template <模板>       输出命名，默认 covers-{index}.avif
   --max-resolution <像素>     限制最长边；0 表示不缩放，默认 0
   --speed <0-8>              可选：传给 ImageMagick heic:speed；默认使用 Magick 自身默认值
-  --define <key=value>        额外传给 magick 的 -define，可重复
+  --define <key=value>        额外传给 MagickWand 的 define，可重复
   --backend magick            后端占位参数；当前仅支持 magick
-  --magick <路径>             指定 magick.exe 或 ImageMagick 目录；默认优先使用 vendor/imagemagick
+  --magick <路径>             指定 ImageMagick 运行时目录
   --timeout-encode <分钟>     单张图片编码超时，默认 30
   --strip                    去除元数据
   --skip-existing            已有输出时跳过；默认覆盖
@@ -182,8 +182,8 @@ void print_help() {
   {ext}    原扩展名，不含点
 
 示例:
-  AVIFConsoleCpp.exe -i "D:\图片" -o Avifoutput -q q90
-  AVIFConsoleCpp.exe -i input --max-resolution 2560 --strip
+  AVIFConsoleCli.exe -i "D:\图片" -o Avifoutput -q q90
+  AVIFConsoleCli.exe -i input --max-resolution 2560 --strip
 )";
   std::println("{}", help);
 }

@@ -1,0 +1,197 @@
+import { Button, CheckBox, LineEdit, ScrollView } from "std-widgets.slint";
+
+export component AvifStudio inherits Window {
+    title: "AVIF Studio";
+    width: 1040px;
+    height: 720px;
+
+    in-out property <string> input-dir: "input";
+    in-out property <string> output-dir: "Avifoutput";
+    in-out property <string> quality-text: "90";
+    in-out property <string> max-resolution-text: "0";
+    in-out property <string> threads-text: "4";
+    in-out property <string> speed-text: "";
+    in-out property <string> template-text: "{name}.avif";
+    in-out property <string> defines-text: "";
+    in-out property <bool> strip-metadata: false;
+    in-out property <bool> skip-existing: false;
+    in-out property <bool> running: false;
+    in-out property <float> progress: 0.0;
+    in-out property <string> status-text: "就绪";
+    in-out property <string> task-list-text: "";
+    in-out property <string> log-text: "";
+
+    callback browse-input();
+    callback browse-output();
+    callback start-conversion();
+    callback cancel-conversion();
+    callback open-output();
+
+    background: #f5f7fb;
+
+    Rectangle {
+        background: #f5f7fb;
+
+        VerticalLayout {
+            padding: 18px;
+            spacing: 14px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    text: "AVIF Studio";
+                    font-size: 26px;
+                    font-weight: 700;
+                    color: #172033;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    width: 130px;
+                    height: 34px;
+                    border-radius: 6px;
+                    background: root.running ? #e8f2ff : #ecfdf3;
+                    Text {
+                        text: root.status-text;
+                        color: root.running ? #1557a8 : #166534;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 132px;
+                border-radius: 8px;
+                background: #ffffff;
+                border-color: #dbe2ee;
+                border-width: 1px;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "输入"; width: 54px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.input-dir; enabled: !root.running; horizontal-stretch: 1; }
+                        Button { text: "选择"; enabled: !root.running; clicked => { root.browse-input(); } }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "输出"; width: 54px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.output-dir; enabled: !root.running; horizontal-stretch: 1; }
+                        Button { text: "选择"; enabled: !root.running; clicked => { root.browse-output(); } }
+                        Button { text: "打开"; clicked => { root.open-output(); } }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "命名"; width: 54px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.template-text; enabled: !root.running; horizontal-stretch: 1; }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 112px;
+                border-radius: 8px;
+                background: #ffffff;
+                border-color: #dbe2ee;
+                border-width: 1px;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text { text: "质量"; width: 42px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.quality-text; enabled: !root.running; width: 64px; }
+                        Text { text: "最长边"; width: 58px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.max-resolution-text; enabled: !root.running; width: 86px; }
+                        Text { text: "线程"; width: 42px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.threads-text; enabled: !root.running; width: 64px; }
+                        Text { text: "speed"; width: 46px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.speed-text; enabled: !root.running; width: 64px; }
+                        CheckBox { text: "strip"; checked <=> root.strip-metadata; enabled: !root.running; }
+                        CheckBox { text: "skip existing"; checked <=> root.skip-existing; enabled: !root.running; }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "define"; width: 54px; vertical-alignment: center; color: #334155; }
+                        LineEdit { text <=> root.defines-text; enabled: !root.running; horizontal-stretch: 1; }
+                        Button { text: root.running ? "运行中" : "开始"; enabled: !root.running; clicked => { root.start-conversion(); } }
+                        Button { text: "取消"; enabled: root.running; clicked => { root.cancel-conversion(); } }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 14px;
+                border-radius: 7px;
+                background: #dce4f2;
+                clip: true;
+                Rectangle {
+                    width: parent.width * root.progress;
+                    height: parent.height;
+                    border-radius: 7px;
+                    background: root.running ? #2563eb : #16a34a;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 14px;
+
+                Rectangle {
+                    border-radius: 8px;
+                    background: #ffffff;
+                    border-color: #dbe2ee;
+                    border-width: 1px;
+                    horizontal-stretch: 1;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text { text: "任务列表"; font-weight: 700; color: #172033; }
+                        ScrollView {
+                            Text {
+                                text: root.task-list-text;
+                                color: #263244;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: 8px;
+                    background: #ffffff;
+                    border-color: #dbe2ee;
+                    border-width: 1px;
+                    horizontal-stretch: 1;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text { text: "日志"; font-weight: 700; color: #172033; }
+                        ScrollView {
+                            Text {
+                                text: root.log-text;
+                                color: #263244;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

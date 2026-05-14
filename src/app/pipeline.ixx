@@ -7,9 +7,12 @@ module;
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <mutex>
+#include <optional>
 #include <print>
 #include <ranges>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -29,14 +32,6 @@ struct WorkGroup {
   std::uintmax_t weight{};
   std::vector<ImageFile> files{};
 };
-
-std::string first_line(std::string text) {
-  const auto pos = text.find_first_of("\r\n");
-  if (pos != std::string::npos) {
-    text.resize(pos);
-  }
-  return text;
-}
 
 std::vector<WorkGroup> build_work_groups(const AppConfig& cfg,
                                          const std::vector<ImageFile>& files) {
@@ -63,13 +58,11 @@ std::vector<WorkGroup> build_work_groups(const AppConfig& cfg,
   return groups;
 }
 
-void print_result(const EncodeResult& result, std::mutex& print_mutex) {
-  std::scoped_lock lock{print_mutex};
+std::string format_result_line(const EncodeResult& result) {
   if (result.ok) {
     if (result.skipped) {
-      std::println("[SKIP] {:04} {} -> 已存在", result.index + 1,
-                   path_to_utf8(result.input_path.filename()));
-      return;
+      return std::format("[SKIP] {:04} {} -> 已存在", result.index + 1,
+                         path_to_utf8(result.input_path.filename()));
     }
 
     const double ratio =
@@ -77,93 +70,168 @@ void print_result(const EncodeResult& result, std::mutex& print_mutex) {
             ? 0.0
             : static_cast<double>(result.output_bytes) /
                   static_cast<double>(result.original_bytes);
-    std::println("[ OK ] {:04} {} -> {} ({}, {:.1f}%, {:.2f}s)",
-                 result.index + 1, path_to_utf8(result.input_path.filename()),
-                 path_to_utf8(result.output_path.filename()),
-                 format_size(result.output_bytes), ratio * 100.0,
-                 result.seconds);
-    return;
+    return std::format("[ OK ] {:04} {} -> {} ({}, {:.1f}%, {:.2f}s)",
+                       result.index + 1,
+                       path_to_utf8(result.input_path.filename()),
+                       path_to_utf8(result.output_path.filename()),
+                       format_size(result.output_bytes), ratio * 100.0,
+                       result.seconds);
   }
 
-  std::println("[FAIL] {:04} {} -> {}", result.index + 1,
-               path_to_utf8(result.input_path.filename()), result.message);
+  return std::format("[FAIL] {:04} {} -> {}", result.index + 1,
+                     path_to_utf8(result.input_path.filename()), result.message);
 }
 
 }  // namespace pipeline_detail
 
-// 顶层流水线返回进程退出码；单张图片错误会落到 CSV，不会让程序闪退。
-int run_pipeline(const AppConfig& cfg) {
+enum class BatchEventKind { message, warning, item_finished, summary };
+
+struct BatchSummary {
+  int ok_count{};
+  int failed_count{};
+  std::uintmax_t original_total{};
+  std::uintmax_t output_total{};
+  bool canceled{};
+  int exit_code{};
+};
+
+struct BatchProgress {
+  BatchEventKind kind{BatchEventKind::message};
+  std::size_t completed{};
+  std::size_t total{};
+  EncodeResult result{};
+  BatchSummary summary{};
+  std::string text{};
+};
+
+using ProgressCallback = std::function<void(const BatchProgress&)>;
+
+void emit_progress(const ProgressCallback& progress, BatchProgress event) {
+  try {
+    if (progress) {
+      progress(event);
+    }
+  } catch (...) {
+    // 进度回调不应该影响编码任务；UI 层异常会被吞掉，批处理继续写 CSV。
+  }
+}
+
+std::expected<BatchSummary, std::string> run_batch(
+    const AppConfig& cfg,
+    ProgressCallback progress = {},
+    std::stop_token stop_token = {}) {
   try {
     const auto runtime = resolve_magick_runtime(cfg);
     if (!runtime) {
-      std::println("[FAIL] {}", runtime.error());
-      return 1;
+      return std::unexpected{runtime.error()};
     }
 
     configure_magick_environment(*runtime);
     fs::create_directories(cfg.output_dir);
 
     FileLogger logger{cfg.output_dir};
-    ProcessRunner runner;
-
-    const std::vector<std::wstring> version_args{L"-version"};
-    const auto version =
-        runner.run(runtime->executable, version_args, std::chrono::seconds{15});
-    if (version.exit_code != 0) {
-      std::println("[FAIL] magick.exe 无法启动: {}",
-                   version.output.empty() ? "无输出" : version.output);
-      return 1;
-    }
-
-    logger.info(std::format("magick: {}", path_to_utf8(runtime->executable)));
-    logger.info(pipeline_detail::first_line(version.output));
+    logger.info(std::format("imagemagick runtime: {}", path_to_utf8(runtime->root)));
 
     auto files = scan_images(cfg);
     if (files.empty()) {
-      std::println("未找到图片。支持: jpg, jpeg, png, webp, bmp, tif, tiff, gif, jxl, jp2, heic, heif");
-      return 0;
+      emit_progress(progress, BatchProgress{
+                                  .kind = BatchEventKind::message,
+                                  .text =
+                                      "未找到图片。支持: jpg, jpeg, png, webp, bmp, "
+                                      "tif, tiff, gif, jxl, jp2, heic, heif"});
+      return BatchSummary{.exit_code = 0};
     }
 
-    std::println("ImageMagick: {}", path_to_utf8(runtime->executable));
-    std::println("Runtime: {}", runtime->bundled ? "vendor/imagemagick" : "external");
-    std::println("Quality: q{}", cfg.quality);
-    if (cfg.magick_speed) {
-      std::println("Speed: heic:speed={}", *cfg.magick_speed);
-    } else {
-      std::println("Speed: ImageMagick default");
-    }
+    emit_progress(progress, BatchProgress{
+                                .kind = BatchEventKind::message,
+                                .total = files.size(),
+                                .text = std::format("ImageMagick runtime: {}",
+                                                    path_to_utf8(runtime->root))});
+    emit_progress(progress, BatchProgress{
+                                .kind = BatchEventKind::message,
+                                .total = files.size(),
+                                .text = std::format("Runtime: {}",
+                                                    runtime->bundled ? "bundled"
+                                                                     : "external")});
+    emit_progress(progress, BatchProgress{.kind = BatchEventKind::message,
+                                          .total = files.size(),
+                                          .text = std::format("Quality: q{}",
+                                                              cfg.quality)});
+    emit_progress(progress, BatchProgress{
+                                .kind = BatchEventKind::message,
+                                .total = files.size(),
+                                .text = cfg.magick_speed
+                                            ? std::format("Speed: heic:speed={}",
+                                                          *cfg.magick_speed)
+                                            : "Speed: ImageMagick default"});
+
     auto work = pipeline_detail::build_work_groups(cfg, files);
     const int jobs = std::max(
         1, std::min<int>(cfg.max_jobs, static_cast<int>(work.size())));
-    std::println("Files: {}, Outputs: {}, Jobs: {}", files.size(),
-                 work.size(), jobs);
+    emit_progress(progress, BatchProgress{
+                                .kind = BatchEventKind::message,
+                                .total = files.size(),
+                                .text = std::format("Files: {}, Outputs: {}, Jobs: {}",
+                                                    files.size(), work.size(), jobs)});
 
     std::vector<EncodeResult> results(files.size());
+    for (const auto& image : files) {
+      results[image.index] = EncodeResult{.index = image.index,
+                                          .input_path = image.path,
+                                          .output_path = cfg.output_dir /
+                                                         output_name_for(cfg, image),
+                                          .original_bytes = image.bytes,
+                                          .quality = cfg.quality,
+                                          .speed = cfg.magick_speed.value_or(-1),
+                                          .message = "未处理。"};
+    }
+
     std::atomic<std::size_t> next{0};
-    std::mutex print_mutex;
+    std::atomic<std::size_t> completed{0};
 
     std::vector<std::jthread> workers;
     workers.reserve(static_cast<std::size_t>(jobs));
     for (int i = 0; i < jobs; ++i) {
       workers.emplace_back([&] {
-        MagickBackend backend{cfg, *runtime, runner, logger};
+        MagickBackend backend{cfg, *runtime, logger};
         while (true) {
+          if (stop_token.stop_requested()) {
+            break;
+          }
+
           const auto work_index = next.fetch_add(1);
           if (work_index >= work.size()) {
             break;
           }
           const auto& group = work[work_index];
           if (group.files.size() > 1) {
-            std::scoped_lock lock{print_mutex};
-            std::println("[WARN] 输出重名: {} 个输入将依次覆盖 {}",
-                         group.files.size(),
-                         path_to_utf8(cfg.output_dir /
-                                      output_name_for(cfg, group.files.back())));
+            emit_progress(progress, BatchProgress{
+                                        .kind = BatchEventKind::warning,
+                                        .completed = completed.load(),
+                                        .total = files.size(),
+                                        .text = std::format(
+                                            "[WARN] 输出重名: {} 个输入将依次覆盖 {}",
+                                            group.files.size(),
+                                            path_to_utf8(
+                                                cfg.output_dir /
+                                                output_name_for(
+                                                    cfg, group.files.back())))});
           }
           for (const auto& image : group.files) {
+            if (stop_token.stop_requested()) {
+              break;
+            }
             auto result = backend.encode(image);
-            pipeline_detail::print_result(result, print_mutex);
+            const auto event_result = result;
             results[result.index] = std::move(result);
+            const auto done = completed.fetch_add(1) + 1;
+            emit_progress(progress, BatchProgress{
+                                        .kind = BatchEventKind::item_finished,
+                                        .completed = done,
+                                        .total = files.size(),
+                                        .result = event_result,
+                                        .text = pipeline_detail::format_result_line(
+                                            event_result)});
           }
         }
       });
@@ -197,19 +265,49 @@ int run_pipeline(const AppConfig& cfg) {
             : static_cast<double>(output_total) /
                   static_cast<double>(original_total);
 
-    std::println("");
-    std::println("完成: 成功 {}，失败 {}", ok_count, failed_count);
-    std::println("体积: {} -> {} ({:.1f}%)", format_size(original_total),
-                 format_size(output_total), total_ratio * 100.0);
-    std::println("报告: {}", path_to_utf8(cfg.output_dir / L"summary.csv"));
-    return failed_count == 0 ? 0 : 2;
+    const bool canceled = stop_token.stop_requested();
+    BatchSummary summary{.ok_count = ok_count,
+                         .failed_count = failed_count,
+                         .original_total = original_total,
+                         .output_total = output_total,
+                         .canceled = canceled,
+                         .exit_code = canceled ? 130 : (failed_count == 0 ? 0 : 2)};
+    emit_progress(progress, BatchProgress{
+                                .kind = BatchEventKind::summary,
+                                .completed = completed.load(),
+                                .total = files.size(),
+                                .summary = summary,
+                                .text = std::format(
+                                    "{}: 成功 {}，失败 {}\n体积: {} -> {} ({:.1f}%)\n报告: {}",
+                                    canceled ? "已取消" : "完成", ok_count,
+                                    failed_count, format_size(original_total),
+                                    format_size(output_total), total_ratio * 100.0,
+                                    path_to_utf8(cfg.output_dir / L"summary.csv"))});
+    return summary;
   } catch (const std::exception& ex) {
-    std::println("[FAIL] {}", ex.what());
-    return 1;
+    return std::unexpected{std::string{ex.what()}};
   } catch (...) {
-    std::println("[FAIL] 未知异常，程序已安全退出。");
+    return std::unexpected{"未知异常，程序已安全退出。"};
+  }
+}
+
+// 顶层流水线返回进程退出码；单张图片错误会落到 CSV，不会让程序闪退。
+int run_pipeline(const AppConfig& cfg) {
+  std::mutex print_mutex;
+  const auto summary = run_batch(
+      cfg,
+      [&](const BatchProgress& event) {
+        std::scoped_lock lock{print_mutex};
+        if (event.kind == BatchEventKind::summary) {
+          std::println("");
+        }
+        std::println("{}", event.text);
+      });
+  if (!summary) {
+    std::println("[FAIL] {}", summary.error());
     return 1;
   }
+  return summary->exit_code;
 }
 
 }  // namespace avif

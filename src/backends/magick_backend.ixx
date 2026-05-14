@@ -4,10 +4,16 @@ module;
 #define NOMINMAX
 #endif
 
+#include <MagickWand/MagickWand.h>
+
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,27 +28,46 @@ import avif.core;
 export namespace avif {
 
 struct MagickRuntime {
-  fs::path executable{};
   fs::path root{};
   bool bundled{false};
 };
 
 namespace magick_detail {
 
-std::optional<fs::path> existing_file(fs::path path) {
+std::optional<fs::path> absolute_directory(fs::path path) {
   std::error_code ec;
-  if (fs::exists(path, ec) && fs::is_regular_file(path, ec) && !ec) {
-    return fs::absolute(path, ec);
+  path = fs::absolute(std::move(path), ec);
+  if (ec) {
+    return std::nullopt;
+  }
+  if (fs::is_regular_file(path, ec) && !ec) {
+    path = path.parent_path();
+  }
+  if (fs::is_directory(path, ec) && !ec) {
+    return path;
   }
   return std::nullopt;
 }
 
-std::optional<fs::path> existing_magick(fs::path path) {
+bool looks_like_magick_runtime(const fs::path& root) {
   std::error_code ec;
-  if (fs::is_directory(path, ec) && !ec) {
-    path /= L"magick.exe";
+  const bool has_wand_dll =
+      fs::exists(root / L"CORE_RL_MagickWand_.dll", ec) && !ec;
+  const bool has_wand_lib =
+      fs::exists(root / L"lib" / L"CORE_RL_MagickWand_.lib", ec) && !ec;
+  const bool has_config = fs::exists(root / L"configure.xml", ec) && !ec;
+  const bool has_include =
+      fs::exists(root / L"include" / L"MagickWand" / L"MagickWand.h", ec) &&
+      !ec;
+  return has_wand_dll || has_wand_lib || has_config || has_include;
+}
+
+std::optional<fs::path> existing_runtime_root(fs::path path) {
+  auto root = absolute_directory(std::move(path));
+  if (!root || !looks_like_magick_runtime(*root)) {
+    return std::nullopt;
   }
-  return existing_file(std::move(path));
+  return root;
 }
 
 void collect_ancestor_runtime_candidates(std::vector<fs::path>& candidates,
@@ -54,14 +79,16 @@ void collect_ancestor_runtime_candidates(std::vector<fs::path>& candidates,
   }
 
   for (auto current = start; !current.empty(); current = current.parent_path()) {
-    candidates.push_back(current / L"vendor" / L"imagemagick" / L"magick.exe");
+    candidates.push_back(current);
+    candidates.push_back(current / L"third_party" /
+                         L"imagemagick-runtime" / L"x64" / L"Release");
     if (current == current.root_path()) {
       break;
     }
   }
 }
 
-std::optional<fs::path> environment_magick() {
+std::optional<fs::path> environment_runtime() {
   std::wstring buffer(32768, L'\0');
   const DWORD size =
       GetEnvironmentVariableW(L"AVIF_MAGICK", buffer.data(),
@@ -70,82 +97,136 @@ std::optional<fs::path> environment_magick() {
     return std::nullopt;
   }
   buffer.resize(size);
-  return existing_magick(buffer);
+  return existing_runtime_root(buffer);
 }
 
 std::vector<fs::path> bundled_candidates() {
   std::vector<fs::path> candidates;
-  collect_ancestor_runtime_candidates(candidates, fs::current_path());
   collect_ancestor_runtime_candidates(candidates, executable_directory());
+  collect_ancestor_runtime_candidates(candidates, fs::current_path());
+  candidates.push_back(L"D:\\Scoop\\apps\\imagemagick\\current");
   return candidates;
+}
+
+void set_env_if_directory(std::wstring_view name, const fs::path& path) {
+  std::error_code ec;
+  if (fs::is_directory(path, ec) && !ec) {
+    const auto value = path.native();
+    SetEnvironmentVariableW(std::wstring{name}.c_str(), value.c_str());
+  }
+}
+
+std::string magick_exception(MagickWand* wand, std::string_view fallback) {
+  if (wand == nullptr) {
+    return std::string{fallback};
+  }
+
+  ExceptionType severity{};
+  char* raw = MagickGetException(wand, &severity);
+  if (raw == nullptr) {
+    return std::string{fallback};
+  }
+
+  std::string message{raw};
+  MagickRelinquishMemory(raw);
+  if (message.empty()) {
+    return std::string{fallback};
+  }
+  return message;
+}
+
+struct WandDeleter {
+  void operator()(MagickWand* wand) const noexcept {
+    if (wand != nullptr) {
+      DestroyMagickWand(wand);
+    }
+  }
+};
+
+using WandPtr = std::unique_ptr<MagickWand, WandDeleter>;
+
+void ensure_magick_initialized() {
+  static std::once_flag once;
+  std::call_once(once, [] { MagickWandGenesis(); });
+}
+
+std::expected<void, std::string> check(MagickWand* wand,
+                                       MagickBooleanType status,
+                                       std::string_view action) {
+  if (status != MagickFalse) {
+    return {};
+  }
+  return std::unexpected{std::format("{}: {}", action,
+                                     magick_exception(wand, "MagickWand 调用失败"))};
+}
+
+std::string define_key(std::string_view define) {
+  const auto pos = define.find('=');
+  if (pos == std::string_view::npos) {
+    return std::string{define};
+  }
+  return std::string{define.substr(0, pos)};
+}
+
+std::string define_value(std::string_view define) {
+  const auto pos = define.find('=');
+  if (pos == std::string_view::npos) {
+    return "true";
+  }
+  return std::string{define.substr(pos + 1)};
 }
 
 }  // namespace magick_detail
 
 void configure_magick_environment(const MagickRuntime& runtime) {
-  std::error_code ec;
-  const auto coder_dir = runtime.root / L"modules" / L"coders";
-  if (!fs::is_directory(coder_dir, ec) || ec) {
-    return;
-  }
-
   const auto root = runtime.root.native();
-  const auto coder_path = coder_dir.native();
-  const auto filter_path = (runtime.root / L"modules" / L"filters").native();
   SetEnvironmentVariableW(L"MAGICK_HOME", root.c_str());
   SetEnvironmentVariableW(L"MAGICK_CONFIGURE_PATH", root.c_str());
-  SetEnvironmentVariableW(L"MAGICK_CODER_MODULE_PATH", coder_path.c_str());
-  SetEnvironmentVariableW(L"MAGICK_FILTER_MODULE_PATH", filter_path.c_str());
+
+  magick_detail::set_env_if_directory(
+      L"MAGICK_CODER_MODULE_PATH", runtime.root / L"modules" / L"coders");
+  magick_detail::set_env_if_directory(
+      L"MAGICK_FILTER_MODULE_PATH", runtime.root / L"modules" / L"filters");
 }
 
 std::expected<MagickRuntime, std::string> resolve_magick_runtime(
     const AppConfig& cfg) {
   if (cfg.magick_path_overridden) {
-    if (const auto direct = magick_detail::existing_magick(cfg.magick_path)) {
-      return MagickRuntime{.executable = *direct,
-                           .root = direct->parent_path(),
-                           .bundled = false};
-    }
-    if (const auto from_path = find_executable(cfg.magick_path.native())) {
-      return MagickRuntime{.executable = *from_path,
-                           .root = from_path->parent_path(),
-                           .bundled = false};
+    if (const auto direct =
+            magick_detail::existing_runtime_root(cfg.magick_path)) {
+      return MagickRuntime{.root = *direct, .bundled = false};
     }
     return std::unexpected{
-        std::format("未找到指定的 magick.exe: {}", path_to_utf8(cfg.magick_path))};
+        std::format("未找到指定的 ImageMagick 运行时目录: {}",
+                    path_to_utf8(cfg.magick_path))};
   }
 
-  if (const auto from_env = magick_detail::environment_magick()) {
-    return MagickRuntime{.executable = *from_env,
-                         .root = from_env->parent_path(),
-                         .bundled = false};
+  if (const auto from_env = magick_detail::environment_runtime()) {
+    return MagickRuntime{.root = *from_env, .bundled = false};
   }
 
   for (const auto& candidate : magick_detail::bundled_candidates()) {
-    if (const auto bundled = magick_detail::existing_file(candidate)) {
-      return MagickRuntime{.executable = *bundled,
-                           .root = bundled->parent_path(),
-                           .bundled = true};
+    if (const auto bundled = magick_detail::existing_runtime_root(candidate)) {
+      const bool is_dev_fallback =
+          normalized_lower_path_key(*bundled) ==
+          normalized_lower_path_key(L"D:\\Scoop\\apps\\imagemagick\\current");
+      return MagickRuntime{.root = *bundled, .bundled = !is_dev_fallback};
     }
   }
 
-  if (const auto from_path = find_executable(L"magick.exe")) {
-    return MagickRuntime{.executable = *from_path,
-                         .root = from_path->parent_path(),
-                         .bundled = false};
-  }
-
   return std::unexpected{
-      "未找到 magick.exe。请确认 vendor/imagemagick 存在，或使用 --magick 指定路径。"};
+      "未找到 ImageMagick 运行时。请先运行 scripts\\build-magick.ps1，或用 --magick/AVIF_MAGICK 指定目录。"};
 }
 
 class MagickBackend {
  public:
   MagickBackend(const AppConfig& cfg,
                 const MagickRuntime& runtime,
-                const ProcessRunner& runner,
                 FileLogger& logger)
-      : cfg_{cfg}, runtime_{runtime}, runner_{runner}, logger_{logger} {}
+      : cfg_{cfg}, runtime_{runtime}, logger_{logger} {
+    (void)runtime_;
+    magick_detail::ensure_magick_initialized();
+  }
 
   EncodeResult encode(const ImageFile& image) const {
     const auto start = std::chrono::steady_clock::now();
@@ -156,7 +237,8 @@ class MagickBackend {
                         .original_bytes = image.bytes,
                         .output_bytes = 0,
                         .quality = cfg_.quality,
-                        .speed = cfg_.magick_speed.value_or(-1)};
+                        .speed = cfg_.magick_speed.value_or(-1),
+                        .command = command_description(image, output)};
 
     try {
       std::error_code ec;
@@ -176,57 +258,27 @@ class MagickBackend {
         return finish(result, start);
       }
 
-      std::vector<std::wstring> args;
-      args.reserve(16 + cfg_.magick_defines.size() * 2);
-      args.push_back(L"-quiet");
-      args.push_back(image.path.native());
-      args.push_back(L"-auto-orient");
-
-      if (cfg_.max_resolution > 0) {
-        args.push_back(L"-resize");
-        args.push_back(
-            std::format(L"{}x{}>", cfg_.max_resolution, cfg_.max_resolution));
-      }
-
-      if (cfg_.strip_metadata) {
-        args.push_back(L"-strip");
-      }
-
-      args.push_back(L"-quality");
-      args.push_back(std::to_wstring(cfg_.quality));
-      if (cfg_.magick_speed) {
-        args.push_back(L"-define");
-        args.push_back(std::format(L"heic:speed={}", *cfg_.magick_speed));
-      }
-
-      for (const auto& define : cfg_.magick_defines) {
-        args.push_back(L"-define");
-        args.push_back(define);
-      }
-
-      args.push_back(output.native());
-      const auto command = command_line_for(runtime_.executable, args);
-      result.command = utf8_from_wide(command);
-      logger_.info(std::format("encode: {}", result.command));
-
-      const auto timeout = std::chrono::minutes{
-          cfg_.encode_timeout_minutes > 0 ? cfg_.encode_timeout_minutes : 30};
-      const auto process = runner_.run(command, timeout);
-      if (process.timed_out) {
-        result.message = "ImageMagick 编码超时。";
+      auto wand = magick_detail::WandPtr{NewMagickWand()};
+      if (!wand) {
+        result.message = "无法创建 MagickWand。";
         logger_.error(result.message);
         return finish(result, start);
       }
-      if (process.exit_code != 0) {
-        result.message =
-            std::format("ImageMagick 退出码 {}: {}", process.exit_code,
-                        process.output.empty() ? "无输出" : process.output);
+
+      if (auto ok = read_and_prepare(*wand, image); !ok) {
+        result.message = ok.error();
+        logger_.error(result.message);
+        return finish(result, start);
+      }
+
+      if (auto ok = write_avif(*wand, output); !ok) {
+        result.message = ok.error();
         logger_.error(result.message);
         return finish(result, start);
       }
 
       if (!fs::exists(output, ec) || fs::file_size(output, ec) == 0 || ec) {
-        result.message = "ImageMagick 已结束，但没有生成有效输出文件。";
+        result.message = "MagickWand 已结束，但没有生成有效输出文件。";
         logger_.error(result.message);
         return finish(result, start);
       }
@@ -234,6 +286,7 @@ class MagickBackend {
       result.output_bytes = fs::file_size(output, ec);
       result.ok = true;
       result.message = "完成。";
+      logger_.info(std::format("encode: {}", result.command));
       return finish(result, start);
     } catch (const std::exception& ex) {
       result.message = std::format("异常: {}", ex.what());
@@ -254,9 +307,133 @@ class MagickBackend {
     return result;
   }
 
+  std::expected<void, std::string> read_and_prepare(MagickWand& wand,
+                                                    const ImageFile& image) const {
+    const auto input = path_to_utf8(image.path);
+    if (auto ok = magick_detail::check(&wand, MagickReadImage(&wand, input.c_str()),
+                                       "读取图片失败");
+        !ok) {
+      return ok;
+    }
+
+    if (auto ok = magick_detail::check(&wand, MagickAutoOrientImage(&wand),
+                                       "自动旋转失败");
+        !ok) {
+      return ok;
+    }
+
+    if (auto ok = resize_if_needed(wand); !ok) {
+      return ok;
+    }
+
+    if (cfg_.strip_metadata) {
+      if (auto ok = magick_detail::check(&wand, MagickStripImage(&wand),
+                                         "去除元数据失败");
+          !ok) {
+        return ok;
+      }
+    }
+
+    return {};
+  }
+
+  std::expected<void, std::string> resize_if_needed(MagickWand& wand) const {
+    if (cfg_.max_resolution <= 0) {
+      return {};
+    }
+
+    const auto width = MagickGetImageWidth(&wand);
+    const auto height = MagickGetImageHeight(&wand);
+    const auto longest = std::max(width, height);
+    if (longest <= static_cast<std::size_t>(cfg_.max_resolution)) {
+      return {};
+    }
+
+    const double scale =
+        static_cast<double>(cfg_.max_resolution) / static_cast<double>(longest);
+    const auto next_width =
+        std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(width * scale)));
+    const auto next_height =
+        std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(height * scale)));
+    return magick_detail::check(&wand,
+                                MagickResizeImage(&wand, next_width, next_height,
+                                                  LanczosFilter),
+                                "缩放图片失败");
+  }
+
+  std::expected<void, std::string> write_avif(MagickWand& wand,
+                                              const fs::path& output) const {
+    if (auto ok = magick_detail::check(
+            &wand,
+            MagickSetImageCompressionQuality(
+                &wand, static_cast<std::size_t>(cfg_.quality)),
+            "设置质量失败");
+        !ok) {
+      return ok;
+    }
+
+    if (cfg_.magick_speed) {
+      const auto value = std::to_string(*cfg_.magick_speed);
+      if (auto ok = magick_detail::check(&wand,
+                                         MagickSetOption(&wand, "heic:speed",
+                                                         value.c_str()),
+                                         "设置 heic:speed 失败");
+          !ok) {
+        return ok;
+      }
+    }
+
+    for (const auto& define : cfg_.magick_defines) {
+      const auto define_utf8 = utf8_from_wide(define);
+      const auto key = magick_detail::define_key(define_utf8);
+      const auto value = magick_detail::define_value(define_utf8);
+      if (key.empty()) {
+        return std::unexpected{"--define 不能为空。"};
+      }
+      if (auto ok = magick_detail::check(&wand,
+                                         MagickSetOption(&wand, key.c_str(),
+                                                         value.c_str()),
+                                         std::format("设置 define {} 失败", key));
+          !ok) {
+        return ok;
+      }
+    }
+
+    if (auto ok = magick_detail::check(&wand, MagickSetImageFormat(&wand, "AVIF"),
+                                       "设置 AVIF 格式失败");
+        !ok) {
+      return ok;
+    }
+
+    const auto output_utf8 = path_to_utf8(output);
+    return magick_detail::check(&wand,
+                                MagickWriteImage(&wand, output_utf8.c_str()),
+                                "写入 AVIF 失败");
+  }
+
+  std::string command_description(const ImageFile& image,
+                                  const fs::path& output) const {
+    std::string text =
+        std::format("MagickWand: {} -> {} -quality {}",
+                    path_to_utf8(image.path), path_to_utf8(output), cfg_.quality);
+    if (cfg_.magick_speed) {
+      text += std::format(" -define heic:speed={}", *cfg_.magick_speed);
+    }
+    for (const auto& define : cfg_.magick_defines) {
+      text += std::format(" -define {}", utf8_from_wide(define));
+    }
+    if (cfg_.max_resolution > 0) {
+      text += std::format(" -resize {}x{}>", cfg_.max_resolution,
+                          cfg_.max_resolution);
+    }
+    if (cfg_.strip_metadata) {
+      text += " -strip";
+    }
+    return text;
+  }
+
   const AppConfig& cfg_;
   const MagickRuntime& runtime_;
-  const ProcessRunner& runner_;
   FileLogger& logger_;
 };
 
