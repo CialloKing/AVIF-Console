@@ -52,6 +52,16 @@ function Remove-IncompleteGitClone([string]$Path) {
     }
 }
 
+function Remove-IncompleteGitClonesInContainer([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $Path -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-IncompleteGitClone $_.FullName
+    }
+}
+
 Initialize-GitEnvironment
 
 function Find-MSBuild {
@@ -204,10 +214,10 @@ if (Test-Path $CloneScript) {
         Remove-IncompleteGitClone (Join-Path $SourceRoot $RepoDir)
     }
     $DependenciesRoot = Join-Path $SourceRoot "Dependencies"
-    if (Test-Path -LiteralPath $DependenciesRoot) {
-        Get-ChildItem -LiteralPath $DependenciesRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            Remove-IncompleteGitClone $_.FullName
-        }
+    # These folders are containers created by ImageMagick's dependency script;
+    # only their children are git clones.
+    foreach ($Container in @("Dependencies", "OptionalDependencies", "NonWindowsDependencies")) {
+        Remove-IncompleteGitClonesInContainer (Join-Path $DependenciesRoot $Container)
     }
     Invoke-CmdScript $CloneScript
 } else {
