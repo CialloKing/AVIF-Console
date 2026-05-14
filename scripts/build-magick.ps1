@@ -188,6 +188,38 @@ function Copy-FilesIfExists([string]$Path, [string]$Destination, [string]$Filter
     }
 }
 
+function Repair-GeneratedProjectToolCommands([string]$ProjectRoot) {
+    if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter "*.vcxproj" -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $ProjectPath = $_.FullName
+        [xml]$ProjectXml = Get-Content -LiteralPath $ProjectPath -Raw
+        $Namespace = New-Object System.Xml.XmlNamespaceManager($ProjectXml.NameTable)
+        $Namespace.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
+
+        $Changed = $false
+        $CommandNodes = $ProjectXml.SelectNodes("//msb:CustomBuild/msb:Command", $Namespace)
+        foreach ($Node in $CommandNodes) {
+            $Command = $Node.InnerText
+            if ($Command.StartsWith('$(SolutionDir)Configure\Tools\', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $ExeEnd = $Command.IndexOf(".exe ", [System.StringComparison]::OrdinalIgnoreCase)
+                if ($ExeEnd -ge 0) {
+                    $Tool = $Command.Substring(0, $ExeEnd + 4)
+                    $Rest = $Command.Substring($ExeEnd + 4)
+                    $Node.InnerText = "`"$Tool`"$Rest"
+                    $Changed = $true
+                }
+            }
+        }
+
+        if ($Changed) {
+            $ProjectXml.Save($ProjectPath)
+        }
+    }
+}
+
 Write-Host "ImageMagick Windows 源码: $SourceRoot"
 
 $MSBuild = $null
@@ -274,6 +306,7 @@ if (-not $SkipBuild) {
     if (-not (Test-Path $Solution)) {
         throw "未找到生成的解决方案: $Solution"
     }
+    Repair-GeneratedProjectToolCommands (Join-Path $SourceRoot "ProjectFiles")
 
     $BuildArgs = @(
         "/m",
