@@ -10,6 +10,7 @@
 ## 环境
 
 - Windows + Visual Studio 2026 C++ 桌面开发组件
+- Visual Studio MFC 组件 `Microsoft.VisualStudio.Component.VC.ATLMFC`，用于构建 ImageMagick 官方 `Configure.sln`
 - CMake 3.30+
 - Rust/Cargo，用于 Slint C++ 后端构建
 - Git，用于拉取 Slint 和 ImageMagick 源码
@@ -25,7 +26,9 @@
 .\scripts\build-magick.ps1 -Configuration Release -Arch x64
 ```
 
-脚本会拉取 `https://github.com/ImageMagick/Windows`，先构建官方 `Configure.exe`，再生成并编译 IM7 方案。默认 `-Linkage Static`，只构建 MagickCore/MagickWand 与 AVIF/WebP coder，尽量减少分发 DLL；如果需要完整格式支持可加 `-FullBuild`，如果静态 delegate 链接不顺可改用 `-Linkage Dynamic`。
+脚本会拉取 `https://github.com/ImageMagick/Windows`，先构建官方 `Configure.exe`，再生成并编译 IM7 方案。源码默认放在仓库内的 `third_party\imagemagick-src`，运行时产物提取到 `third_party\imagemagick-runtime`。脚本会为当前进程的 git 子进程启用 `core.longpaths=true`，并强制 GitHub 依赖拉取走 HTTPS，避免 ImageMagick 依赖仓库的超长文件名和本机 SSH URL rewrite 干扰构建。默认 `-Linkage Static`，只构建 MagickCore/MagickWand 与 AVIF/WebP coder，尽量减少分发 DLL；如果需要完整格式支持可加 `-FullBuild`，如果静态 delegate 链接不顺可改用 `-Linkage Dynamic`。
+
+如果本机缺少 MFC，脚本会在拉取和编译前给出明确错误。确认允许 Visual Studio Installer 修改本机安装时，可以显式加 `-InstallMfc` 自动安装该组件。
 
 构建产物会把 headers、libs、可能存在的 DLL/modules、配置 XML 和许可文件提取到：
 
@@ -33,7 +36,7 @@
 third_party\imagemagick-runtime\x64\Release
 ```
 
-该目录被 `.gitignore` 忽略，不提交进仓库。若本机暂时没有自编译运行时，构建脚本会用 Scoop 的 ImageMagick 作为本地开发 fallback，并给出警告。
+该目录被 `.gitignore` 忽略，不提交进仓库。`debug.ps1` / `release.ps1` 默认会自动构建自编译 runtime；只有显式传 `-UseScoopFallback` 时才会临时使用 Scoop ImageMagick。
 
 ## 编译
 
@@ -42,6 +45,8 @@ Debug:
 ```powershell
 .\debug.ps1
 ```
+
+`debug.ps1` 会优先使用 `third_party\imagemagick-runtime\x64\Debug`。如果该目录不存在，会自动调用 `scripts\build-magick.ps1 -Configuration Debug -Arch x64 -Linkage Static` 构建自编译 ImageMagick。只是本机快速调试、允许临时使用 Scoop 时才传 `-UseScoopFallback`。
 
 Release:
 

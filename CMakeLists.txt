@@ -154,6 +154,30 @@ FetchContent_Declare(Slint
     SOURCE_SUBDIR api/cpp)
 FetchContent_MakeAvailable(Slint)
 
+function(avif_add_slint_sources target slint_file)
+    get_filename_component(slint_absolute "${slint_file}" REALPATH BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    get_filename_component(slint_base "${slint_absolute}" NAME_WE)
+
+    set(generated_header "${CMAKE_CURRENT_BINARY_DIR}/${slint_base}.h")
+    set(generated_cpp "${CMAKE_CURRENT_BINARY_DIR}/slint_generated_${slint_base}_1.cpp")
+
+    # Slint's depfile currently produces noisy MSBuild warnings when the repo path
+    # contains spaces. The UI has a single .slint file, so a direct dependency is
+    # enough and keeps Windows paths intact.
+    add_custom_command(
+        OUTPUT "${generated_header}" "${generated_cpp}"
+        COMMAND "$<TARGET_FILE:Slint::slint-compiler>" "${slint_absolute}"
+                -f cpp
+                -o "${generated_header}"
+                "--cpp-file=${generated_cpp}"
+        DEPENDS Slint::slint-compiler "${slint_absolute}"
+        COMMENT "Generating ${slint_base}.h"
+        VERBATIM)
+
+    target_sources(${target} PRIVATE "${generated_header}" "${generated_cpp}")
+    target_include_directories(${target} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
+endfunction()
+
 add_library(avif_core STATIC)
 avif_enable_common_options(avif_core)
 target_link_libraries(avif_core PUBLIC
@@ -181,6 +205,6 @@ target_link_libraries(AVIFStudio PRIVATE
     shell32
     uxtheme
     imm32)
-slint_target_sources(AVIFStudio ui/avif_studio.slint)
+avif_add_slint_sources(AVIFStudio ui/avif_studio.slint)
 avif_copy_slint_runtime(AVIFStudio)
 avif_copy_magick_runtime(AVIFStudio)

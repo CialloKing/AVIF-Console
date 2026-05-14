@@ -14,6 +14,14 @@
 .\scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Dynamic -FullBuild
 ```
 
+源码默认放在仓库内的 `third_party\imagemagick-src`。脚本会给当前进程内的 git 子进程启用 `core.longpaths=true`，以处理 ImageMagick 依赖仓库中部分测试文件的超长文件名；同时会把 GitHub 相关 URL 固定为 `https://github.com/`，避免本机全局 SSH URL rewrite 干扰自动构建。运行时产物提取到仓库的 `third_party\imagemagick-runtime`，源码和产物都不会提交进 Git。
+
+ImageMagick 官方 `Configure.sln` 需要 Visual Studio MFC。脚本会在拉取源码和编译前检查 `Microsoft.VisualStudio.Component.VC.ATLMFC`，缺少时直接给出修复命令；确认允许修改本机 Visual Studio 安装时，可以显式传：
+
+```powershell
+.\scripts\build-magick.ps1 -Configuration Release -Arch x64 -InstallMfc
+```
+
 默认输出：
 
 ```text
@@ -53,7 +61,7 @@ third_party\imagemagick-runtime\x64\Release
 
 ## 本地 fallback
 
-`release.ps1` 默认不会再悄悄使用 Scoop。没有自编译 runtime 时，它会自动运行 `scripts\build-magick.ps1`。如果只是本机临时调试，并且本机存在：
+`debug.ps1` / `release.ps1` 默认不会再悄悄使用 Scoop。没有对应配置的自编译 runtime 时，它们会自动运行 `scripts\build-magick.ps1`。如果只是本机临时调试，并且本机存在：
 
 ```text
 D:\Scoop\apps\imagemagick\current
@@ -63,9 +71,10 @@ D:\Scoop\apps\imagemagick\current
 
 ```powershell
 .\release.ps1 -UseScoopFallback
+.\debug.ps1 -UseScoopFallback
 ```
 
-`debug.ps1` 仍允许使用 Scoop fallback，方便快速开发；发布前应以 `release.ps1` 自动生成的自编译 runtime 为准。
+Scoop fallback 只用于快速开发；发布前应以 `release.ps1` 自动生成的自编译 runtime 为准。
 
 ## 验证
 

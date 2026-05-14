@@ -6,6 +6,7 @@ param(
     [ValidateSet("Static", "Dynamic")]
     [string]$MagickLinkage = "Static",
     [switch]$FullMagickBuild,
+    [switch]$InstallMfc,
     [switch]$UseScoopFallback
 )
 
@@ -31,13 +32,16 @@ if (-not $MagickRoot) {
     } else {
         Write-Host "未发现自编译 ImageMagick，开始自动构建 Release $MagickLinkage 运行时..."
         $MagickBuildScript = Join-Path $Repo "scripts\build-magick.ps1"
-        $MagickBuildArgs = @(
-            "-Configuration", "Release",
-            "-Arch", "x64",
-            "-Linkage", $MagickLinkage
-        )
+        $MagickBuildArgs = @{
+            Configuration = "Release"
+            Arch = "x64"
+            Linkage = $MagickLinkage
+        }
         if ($FullMagickBuild) {
-            $MagickBuildArgs += "-FullBuild"
+            $MagickBuildArgs.FullBuild = $true
+        }
+        if ($InstallMfc) {
+            $MagickBuildArgs.InstallMfc = $true
         }
 
         & $MagickBuildScript @MagickBuildArgs

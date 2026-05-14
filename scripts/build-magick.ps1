@@ -12,6 +12,7 @@ param(
     [string]$RuntimeRoot = "",
     [string]$RepositoryUrl = "https://github.com/ImageMagick/Windows.git",
     [switch]$FullBuild,
+    [switch]$InstallMfc,
     [switch]$SkipBuild
 )
 
@@ -24,6 +25,34 @@ if (-not $SourceRoot) {
 if (-not $RuntimeRoot) {
     $RuntimeRoot = Join-Path $Repo "third_party\imagemagick-runtime\$Arch\$Configuration"
 }
+
+function Add-GitProcessConfig([string]$Key, [string]$Value) {
+    [int]$GitConfigCount = 0
+    if (-not [int]::TryParse($env:GIT_CONFIG_COUNT, [ref]$GitConfigCount)) {
+        $GitConfigCount = 0
+    }
+
+    Set-Item -Path "Env:GIT_CONFIG_KEY_$GitConfigCount" -Value $Key
+    Set-Item -Path "Env:GIT_CONFIG_VALUE_$GitConfigCount" -Value $Value
+    $env:GIT_CONFIG_COUNT = [string]($GitConfigCount + 1)
+}
+
+function Initialize-GitEnvironment {
+    Add-GitProcessConfig "core.longpaths" "true"
+    Add-GitProcessConfig "url.https://github.com/.insteadOf" "https://github.com/"
+    Add-GitProcessConfig "url.https://github.com/.insteadOf" "git@github.com:"
+    Add-GitProcessConfig "url.https://github.com/.insteadOf" "ssh://git@github.com/"
+    Add-GitProcessConfig "url.https://github.com/.insteadOf" "ssh://git@ssh.github.com/"
+}
+
+function Remove-IncompleteGitClone([string]$Path) {
+    if ((Test-Path -LiteralPath $Path) -and
+        -not (Test-Path -LiteralPath (Join-Path $Path ".git"))) {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
+Initialize-GitEnvironment
 
 function Find-MSBuild {
     $VsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -39,6 +68,72 @@ function Find-MSBuild {
         return $Command.Source
     }
     throw "找不到 MSBuild。请确认 Visual Studio 2026 已安装 C++ 桌面工作负载。"
+}
+
+function Find-VSInstallationPath {
+    $VsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $VsWhere) {
+        $Found = & $VsWhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath | Select-Object -First 1
+        if ($Found) {
+            return $Found
+        }
+    }
+    throw "找不到 Visual Studio 安装目录。请确认 Visual Studio 2026 已安装。"
+}
+
+function Test-MfcInstalled([string]$VSInstallPath) {
+    $ToolsRoot = Join-Path $VSInstallPath "VC\Tools\MSVC"
+    if (-not (Test-Path -LiteralPath $ToolsRoot)) {
+        return $false
+    }
+
+    $MfcHeader = Get-ChildItem -LiteralPath $ToolsRoot -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        ForEach-Object { Join-Path $_.FullName "atlmfc\include\afxwin.h" } |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+    return [bool]$MfcHeader
+}
+
+function Install-MfcComponent([string]$VSInstallPath) {
+    $Installer = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vs_installer.exe"
+    if (-not (Test-Path -LiteralPath $Installer)) {
+        throw "找不到 Visual Studio Installer，无法自动安装 MFC。请手动安装组件 Microsoft.VisualStudio.Component.VC.ATLMFC。"
+    }
+
+    Write-Host "正在通过 Visual Studio Installer 安装 MFC 组件..."
+    & $Installer modify `
+        --installPath $VSInstallPath `
+        --add Microsoft.VisualStudio.Component.VC.ATLMFC `
+        --quiet `
+        --norestart `
+        --wait
+    if ($LASTEXITCODE -ne 0) {
+        throw "Visual Studio Installer 安装 MFC 失败，退出码 $LASTEXITCODE。"
+    }
+}
+
+function Assert-MfcAvailable([string]$VSInstallPath, [bool]$AllowInstall) {
+    if (Test-MfcInstalled $VSInstallPath) {
+        return
+    }
+
+    if ($AllowInstall) {
+        Install-MfcComponent $VSInstallPath
+        if (Test-MfcInstalled $VSInstallPath) {
+            return
+        }
+    }
+
+    throw @"
+缺少 Visual Studio MFC 组件，ImageMagick/Windows 的 Configure.sln 必须使用 MFC。
+请在 Visual Studio Installer 中安装:
+  C++ MFC for latest MSVC build tools (x86 & x64)
+组件 ID:
+  Microsoft.VisualStudio.Component.VC.ATLMFC
+也可以重新运行:
+  .\scripts\build-magick.ps1 -Configuration $Configuration -Arch $Arch -Linkage $Linkage -InstallMfc
+"@
 }
 
 function Invoke-CmdScript([string]$ScriptPath) {
@@ -84,6 +179,15 @@ function Copy-FilesIfExists([string]$Path, [string]$Destination, [string]$Filter
 }
 
 Write-Host "ImageMagick Windows 源码: $SourceRoot"
+
+$MSBuild = $null
+if (-not $SkipBuild) {
+    $MSBuild = Find-MSBuild
+    $VSInstallPath = Find-VSInstallationPath
+    Assert-MfcAvailable $VSInstallPath ([bool]$InstallMfc)
+    Write-Host "MSBuild: $MSBuild"
+}
+
 if (-not (Test-Path (Join-Path $SourceRoot ".git"))) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SourceRoot) | Out-Null
     git clone $RepositoryUrl $SourceRoot
@@ -96,13 +200,19 @@ git -C $SourceRoot pull --ff-only
 $CloneScript = Join-Path $SourceRoot "clone-repositories-im7.cmd"
 if (Test-Path $CloneScript) {
     Write-Host "同步 ImageMagick / Configure / Dependencies 源码..."
+    foreach ($RepoDir in @("ImageMagick", "Configure", "Dependencies")) {
+        Remove-IncompleteGitClone (Join-Path $SourceRoot $RepoDir)
+    }
+    $DependenciesRoot = Join-Path $SourceRoot "Dependencies"
+    if (Test-Path -LiteralPath $DependenciesRoot) {
+        Get-ChildItem -LiteralPath $DependenciesRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Remove-IncompleteGitClone $_.FullName
+        }
+    }
     Invoke-CmdScript $CloneScript
 } else {
     Write-Warning "未找到 clone-repositories-im7.cmd，跳过源码同步。"
 }
-
-$MSBuild = Find-MSBuild
-Write-Host "MSBuild: $MSBuild"
 
 if (-not $SkipBuild) {
     $ConfigureSolution = Join-Path $SourceRoot "Configure\Configure.sln"
