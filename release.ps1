@@ -2,7 +2,11 @@ param(
     [string]$MagickRoot = "",
     [string]$VcpkgRoot = "",
     [switch]$StaticRuntime,
-    [switch]$SharedSlint
+    [switch]$SharedSlint,
+    [ValidateSet("Static", "Dynamic")]
+    [string]$MagickLinkage = "Static",
+    [switch]$FullMagickBuild,
+    [switch]$UseScoopFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,9 +25,29 @@ if (-not $MagickRoot) {
     $SelfBuilt = Join-Path $Repo "third_party\imagemagick-runtime\x64\Release"
     if (Test-Path (Join-Path $SelfBuilt "include\MagickWand\MagickWand.h")) {
         $MagickRoot = $SelfBuilt
-    } elseif (Test-Path "D:\Scoop\apps\imagemagick\current\include\MagickWand\MagickWand.h") {
+    } elseif ($UseScoopFallback -and (Test-Path "D:\Scoop\apps\imagemagick\current\include\MagickWand\MagickWand.h")) {
         $MagickRoot = "D:\Scoop\apps\imagemagick\current"
-        Write-Warning "未发现自编译 ImageMagick，Release 构建临时使用 Scoop ImageMagick。"
+        Write-Warning "未发现自编译 ImageMagick，按 -UseScoopFallback 临时使用 Scoop ImageMagick。"
+    } else {
+        Write-Host "未发现自编译 ImageMagick，开始自动构建 Release $MagickLinkage 运行时..."
+        $MagickBuildScript = Join-Path $Repo "scripts\build-magick.ps1"
+        $MagickBuildArgs = @(
+            "-Configuration", "Release",
+            "-Arch", "x64",
+            "-Linkage", $MagickLinkage
+        )
+        if ($FullMagickBuild) {
+            $MagickBuildArgs += "-FullBuild"
+        }
+
+        & $MagickBuildScript @MagickBuildArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "ImageMagick 自动构建失败，退出码 $LASTEXITCODE。"
+        }
+        if (-not (Test-Path (Join-Path $SelfBuilt "include\MagickWand\MagickWand.h"))) {
+            throw "ImageMagick 自动构建完成后仍未找到运行时: $SelfBuilt"
+        }
+        $MagickRoot = $SelfBuilt
     }
 }
 

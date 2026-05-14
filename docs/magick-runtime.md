@@ -53,13 +53,19 @@ third_party\imagemagick-runtime\x64\Release
 
 ## 本地 fallback
 
-如果还没有自编译运行时，但本机存在：
+`release.ps1` 默认不会再悄悄使用 Scoop。没有自编译 runtime 时，它会自动运行 `scripts\build-magick.ps1`。如果只是本机临时调试，并且本机存在：
 
 ```text
 D:\Scoop\apps\imagemagick\current
 ```
 
-`debug.ps1` / `release.ps1` 会用它完成本地构建，并打印 warning。这个 fallback 只是为了开发方便，发布前仍建议跑 `scripts\build-magick.ps1`。
+可以显式传入：
+
+```powershell
+.\release.ps1 -UseScoopFallback
+```
+
+`debug.ps1` 仍允许使用 Scoop fallback，方便快速开发；发布前应以 `release.ps1` 自动生成的自编译 runtime 为准。
 
 ## 验证
 

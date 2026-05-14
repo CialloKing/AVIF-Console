@@ -49,6 +49,8 @@ Release:
 .\release.ps1
 ```
 
+`release.ps1` 会优先使用 `third_party\imagemagick-runtime\x64\Release`。如果该目录不存在，会自动调用 `scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Static` 构建自编译 ImageMagick。需要完整 ImageMagick 输入格式支持时可加 `-FullMagickBuild`；只是本机快速调试、允许临时使用 Scoop 时才传 `-UseScoopFallback`。
+
 默认静态链接 Slint，因此 `AVIFStudio.exe` 不再需要单独的 `slint_cpp.dll`。如需调试 Slint 共享库，可传 `-SharedSlint`；如确认全部依赖允许静态 CRT，可传 `-StaticRuntime` 进一步减少 VC 运行库依赖。
 
 显式指定运行时：
