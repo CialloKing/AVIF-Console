@@ -19,22 +19,27 @@ export module avif.config;
 export namespace avif {
 
 enum class Preset { fast, balanced, best, extreme };
+enum class OutputFormat { avif, webp };
+enum class CollisionMode { overwrite, skip, suffix_time, suffix_random };
 
 // 命令行只负责生成这个配置对象；后面的流水线不会再回头解析 argv。
 struct AppConfig {
-  std::filesystem::path input_dir{L"input"};
-  std::filesystem::path output_dir{L"Avifoutput"};
+  std::filesystem::path input_path{L"input"};
+  std::filesystem::path output_dir{};
   std::filesystem::path magick_path{};
-  std::wstring output_template{L"covers-{index}.avif"};
+  std::wstring output_template{L"{name}"};
   std::vector<std::wstring> magick_defines{};
   Preset preset{Preset::best};
+  OutputFormat output_format{OutputFormat::avif};
+  CollisionMode collision_mode{CollisionMode::overwrite};
   int quality{90};
   std::optional<int> magick_speed{};
   int max_jobs{static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))};
   int max_resolution{0};
   int encode_timeout_minutes{30};
-  bool skip_existing{false};
   bool strip_metadata{false};
+  bool write_summary{false};
+  bool write_log{false};
   bool magick_path_overridden{false};
 };
 
@@ -124,6 +129,37 @@ std::optional<Preset> parse_preset(std::wstring_view value) {
   return std::nullopt;
 }
 
+std::optional<OutputFormat> parse_output_format(std::wstring_view value) {
+  auto lower = lower_copy(value);
+  if (!lower.empty() && lower.front() == L'.') {
+    lower.erase(lower.begin());
+  }
+  if (lower == L"avif" || lower == L"heic") {
+    return OutputFormat::avif;
+  }
+  if (lower == L"webp") {
+    return OutputFormat::webp;
+  }
+  return std::nullopt;
+}
+
+std::optional<CollisionMode> parse_collision(std::wstring_view value) {
+  const auto lower = lower_copy(value);
+  if (lower == L"overwrite" || lower == L"replace" || lower == L"覆盖") {
+    return CollisionMode::overwrite;
+  }
+  if (lower == L"skip" || lower == L"skip-existing" || lower == L"跳过") {
+    return CollisionMode::skip;
+  }
+  if (lower == L"time" || lower == L"suffix-time" || lower == L"时间") {
+    return CollisionMode::suffix_time;
+  }
+  if (lower == L"random" || lower == L"suffix-random" || lower == L"随机") {
+    return CollisionMode::suffix_random;
+  }
+  return std::nullopt;
+}
+
 void apply_preset(AppConfig& cfg, Preset preset) {
   cfg.preset = preset;
   switch (preset) {
@@ -159,31 +195,44 @@ void print_help() {
   AVIFConsoleCli.exe [选项]
 
 常用选项:
-  -i, --input <目录>          输入目录，默认 input
-  -o, --output <目录>         输出目录，默认 Avifoutput
+  -i, --input <路径>          输入文件或目录，默认 input
+  -o, --output <目录>         输出目录；默认与输入同目录
+  -f, --format <avif|webp>    输出格式，默认 avif
   -q, --quality <1-100>       ImageMagick 质量，默认 90。也接受 q90 或 0.9
   -p, --preset <名称>         fast / balanced / best / extreme，默认 best
   -t, --threads <数量>        并发数量，默认 CPU 线程数
-  -m, --template <模板>       输出命名，默认 covers-{index}.avif
+  -m, --template <模板>       输出命名，默认 {name}
   --max-resolution <像素>     限制最长边；0 表示不缩放，默认 0
   --speed <0-8>              可选：传给 ImageMagick heic:speed；默认使用 Magick 自身默认值
   --define <key=value>        额外传给 MagickWand 的 define，可重复
+  --collision <策略>          overwrite / skip / time / random，默认 overwrite
   --backend magick            后端占位参数；当前仅支持 magick
   --magick <路径>             指定 ImageMagick 运行时目录
   --timeout-encode <分钟>     单张图片编码超时，默认 30
-  --strip                    去除元数据
-  --skip-existing            已有输出时跳过；默认覆盖
-  --overwrite                覆盖已有输出，默认行为
+  --strip                    去除 EXIF/ICC 等元数据，通常更小且更隐私
+  --summary                  生成 summary.csv
+  --log                      生成 log\avif-console.log
+  --skip-existing            已有输出时跳过
+  --overwrite                已有输出时覆盖，默认行为
+  --suffix-time              输出名追加时间后缀
+  --suffix-random            输出名追加随机后缀
   --help                     显示帮助
 
 模板变量:
   {index}  图片序号，从 1 开始
   {name}   原文件名，不含扩展名
   {ext}    原扩展名，不含点
+  {date}   扫描日期，例如 20260514
+  {time}   扫描时间，例如 193005
+  {datetime} 日期时间，例如 20260514-193005
+  {unix}   Unix 时间戳
+  {rand}   每张图一个随机 8 位十六进制
+  {hash}   文件内容 FNV-1a 64 位哈希
+  {hash8}  文件内容哈希前 8 位
 
 示例:
   AVIFConsoleCli.exe -i "D:\图片" -o Avifoutput -q q90
-  AVIFConsoleCli.exe -i input --max-resolution 2560 --strip
+  AVIFConsoleCli.exe -i input --format webp --template "{name}-{date}"
 )";
   std::println("{}", help);
 }
@@ -216,7 +265,7 @@ std::expected<ParseResult, std::string> parse_arguments(
       if (!value) {
         return std::unexpected{value.error()};
       }
-      cfg.input_dir = *value;
+      cfg.input_path = *value;
       continue;
     }
 
@@ -226,6 +275,19 @@ std::expected<ParseResult, std::string> parse_arguments(
         return std::unexpected{value.error()};
       }
       cfg.output_dir = *value;
+      continue;
+    }
+
+    if (lower == L"-f" || lower == L"--format" || lower == L"--output-format") {
+      const auto value = require_value(i, args[i]);
+      if (!value) {
+        return std::unexpected{value.error()};
+      }
+      const auto format = config_detail::parse_output_format(*value);
+      if (!format) {
+        return std::unexpected{"输出格式必须是 avif 或 webp。"};
+      }
+      cfg.output_format = *format;
       continue;
     }
 
@@ -352,6 +414,20 @@ std::expected<ParseResult, std::string> parse_arguments(
       continue;
     }
 
+    if (lower == L"--collision") {
+      const auto value = require_value(i, args[i]);
+      if (!value) {
+        return std::unexpected{value.error()};
+      }
+      const auto collision = config_detail::parse_collision(*value);
+      if (!collision) {
+        return std::unexpected{
+            "冲突策略必须是 overwrite、skip、time 或 random。"};
+      }
+      cfg.collision_mode = *collision;
+      continue;
+    }
+
     if (lower == L"--strip") {
       cfg.strip_metadata = true;
       continue;
@@ -363,12 +439,42 @@ std::expected<ParseResult, std::string> parse_arguments(
     }
 
     if (lower == L"--overwrite") {
-      cfg.skip_existing = false;
+      cfg.collision_mode = CollisionMode::overwrite;
       continue;
     }
 
     if (lower == L"--skip-existing") {
-      cfg.skip_existing = true;
+      cfg.collision_mode = CollisionMode::skip;
+      continue;
+    }
+
+    if (lower == L"--suffix-time") {
+      cfg.collision_mode = CollisionMode::suffix_time;
+      continue;
+    }
+
+    if (lower == L"--suffix-random") {
+      cfg.collision_mode = CollisionMode::suffix_random;
+      continue;
+    }
+
+    if (lower == L"--summary") {
+      cfg.write_summary = true;
+      continue;
+    }
+
+    if (lower == L"--no-summary") {
+      cfg.write_summary = false;
+      continue;
+    }
+
+    if (lower == L"--log") {
+      cfg.write_log = true;
+      continue;
+    }
+
+    if (lower == L"--no-log") {
+      cfg.write_log = false;
       continue;
     }
 

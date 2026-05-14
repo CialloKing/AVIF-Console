@@ -8,7 +8,15 @@ project(AVIFConsoleCpp
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+option(AVIF_STATIC_SLINT "Link Slint statically so AVIFStudio does not need slint_cpp.dll" ON)
+option(AVIF_STATIC_MSVC_RUNTIME "Use /MT or /MTd for smaller redistribution bundles when all dependencies allow it" OFF)
+
+if(AVIF_STATIC_MSVC_RUNTIME)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 foreach(config Debug Release RelWithDebInfo MinSizeRel)
     string(TOUPPER "${config}" config_upper)
@@ -44,21 +52,30 @@ if(NOT EXISTS "${MAGICK_ROOT}/include/MagickWand/MagickWand.h")
 endif()
 
 find_library(MAGICKWAND_LIBRARY
-    NAMES CORE_RL_MagickWand_
+    NAMES CORE_RL_MagickWand_ CORE_DB_MagickWand_
     PATHS "${MAGICK_ROOT}/lib" "${MAGICK_ROOT}"
     NO_DEFAULT_PATH
     REQUIRED)
 find_library(MAGICKCORE_LIBRARY
-    NAMES CORE_RL_MagickCore_
+    NAMES CORE_RL_MagickCore_ CORE_DB_MagickCore_
     PATHS "${MAGICK_ROOT}/lib" "${MAGICK_ROOT}"
     NO_DEFAULT_PATH
     REQUIRED)
+file(GLOB MAGICK_ALL_LIBRARIES CONFIGURE_DEPENDS
+    "${MAGICK_ROOT}/lib/*.lib"
+    "${MAGICK_ROOT}/*.lib")
+list(REMOVE_ITEM MAGICK_ALL_LIBRARIES "${MAGICKWAND_LIBRARY}" "${MAGICKCORE_LIBRARY}")
 
 add_library(ImageMagickWandRuntime INTERFACE)
 target_include_directories(ImageMagickWandRuntime INTERFACE "${MAGICK_ROOT}/include")
 target_link_libraries(ImageMagickWandRuntime INTERFACE
     "${MAGICKWAND_LIBRARY}"
-    "${MAGICKCORE_LIBRARY}")
+    "${MAGICKCORE_LIBRARY}"
+    ${MAGICK_ALL_LIBRARIES}
+    ws2_32
+    bcrypt
+    crypt32
+    shlwapi)
 
 function(avif_enable_common_options target)
     target_compile_features(${target} PUBLIC cxx_std_23)
@@ -109,19 +126,28 @@ function(avif_copy_slint_runtime target)
                     "$<TARGET_FILE:slint_cpp-shared>"
                     "$<TARGET_FILE_DIR:${target}>"
             VERBATIM)
-    else()
+    elseif(AVIF_STATIC_SLINT)
         add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${Slint_BINARY_DIR}/slint_cpp.dll"
-                    "$<TARGET_FILE_DIR:${target}>"
+            COMMAND ${CMAKE_COMMAND} -E rm -f
+                    "$<TARGET_FILE_DIR:${target}>/slint_cpp.dll"
             VERBATIM)
     endif()
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -f
+                "$<TARGET_FILE_DIR:${target}>/slint-compiler.exe"
+                "$<TARGET_FILE_DIR:${target}>/slint_compiler.pdb"
+        VERBATIM)
 endfunction()
 
 include(FetchContent)
+if(AVIF_STATIC_SLINT)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+endif()
 set(SLINT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SLINT_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(SLINT_FEATURE_INTERPRETER OFF CACHE BOOL "" FORCE)
+set(SLINT_FEATURE_RENDERER_SOFTWARE ON CACHE BOOL "" FORCE)
+set(SLINT_FEATURE_RENDERER_FEMTOVG OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(Slint
     GIT_REPOSITORY https://github.com/slint-ui/slint.git
     GIT_TAG v1.16.1
@@ -152,7 +178,9 @@ target_link_libraries(AVIFStudio PRIVATE
     avif_core
     Slint::Slint
     ole32
-    shell32)
+    shell32
+    uxtheme
+    imm32)
 slint_target_sources(AVIFStudio ui/avif_studio.slint)
 avif_copy_slint_runtime(AVIFStudio)
 avif_copy_magick_runtime(AVIFStudio)

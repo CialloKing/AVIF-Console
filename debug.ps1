@@ -1,6 +1,8 @@
 param(
     [string]$MagickRoot = "",
-    [string]$VcpkgRoot = ""
+    [string]$VcpkgRoot = "",
+    [switch]$StaticRuntime,
+    [switch]$SharedSlint
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +39,8 @@ if ($VcpkgRoot) {
 if ($MagickRoot) {
     $ConfigureArgs += "-DMAGICK_ROOT=$MagickRoot"
 }
+$ConfigureArgs += "-DAVIF_STATIC_MSVC_RUNTIME=$(if ($StaticRuntime) { 'ON' } else { 'OFF' })"
+$ConfigureArgs += "-DAVIF_STATIC_SLINT=$(if ($SharedSlint) { 'OFF' } else { 'ON' })"
 
 cmake @ConfigureArgs
 if ($LASTEXITCODE -ne 0) {
@@ -47,7 +51,24 @@ if ($LASTEXITCODE -ne 0) {
     throw "Debug 构建失败，退出码 $LASTEXITCODE。"
 }
 
+$OutputDir = Join-Path $Repo "bin\x64\Debug"
+$StaleArtifacts = @(
+    "AVIFConsoleCpp.exe",
+    "AVIFConsoleCpp.pdb",
+    "avif_core.dll",
+    "avif_core.pdb"
+)
+if (-not $SharedSlint) {
+    $StaleArtifacts += @("slint_cpp.dll", "slint-compiler.exe", "slint_compiler.pdb")
+}
+foreach ($Name in $StaleArtifacts) {
+    $Path = Join-Path $OutputDir $Name
+    if (Test-Path $Path) {
+        Remove-Item -LiteralPath $Path -Force
+    }
+}
+
 Write-Host ""
 Write-Host "Debug 输出:"
-Write-Host "  $Repo\bin\x64\Debug\AVIFConsoleCli.exe"
-Write-Host "  $Repo\bin\x64\Debug\AVIFStudio.exe"
+Write-Host "  $OutputDir\AVIFConsoleCli.exe"
+Write-Host "  $OutputDir\AVIFStudio.exe"

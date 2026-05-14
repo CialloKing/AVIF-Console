@@ -13,9 +13,9 @@
 3. 可选最长边缩放
 4. 可选 `MagickStripImage`
 5. `MagickSetImageCompressionQuality(q90 默认)`
-6. 可选 `MagickSetOption("heic:speed", value)`
+6. AVIF 输出时可选 `MagickSetOption("heic:speed", value)`
 7. `--define key=value` 映射到 `MagickSetOption(key, value)`
-8. `MagickSetImageFormat("AVIF")`
+8. `MagickSetImageFormat("AVIF" / "WEBP")`
 9. `MagickWriteImage`
 
 运行时查找顺序：
@@ -30,13 +30,14 @@
 
 ## 保留的功能
 
-- 批量扫描 `jpg/jpeg/png/webp/bmp/tif/tiff/gif/jxl/jp2/heic/heif`
-- 输出名模板 `{name}` / `{index}` / `{ext}`，CLI 默认 `covers-{index}.avif`
+- 批量扫描文件或目录，支持 `jpg/jpeg/png/webp/bmp/tif/tiff/gif/jxl/jp2/heic/heif/avif`
+- 输出名模板 `{name}` / `{index}` / `{ext}` / `{date}` / `{time}` / `{datetime}` / `{unix}` / `{rand}` / `{hash}` / `{hash8}`，CLI 默认 `{name}`
+- 输出格式可选 AVIF 或 WebP
 - `fast / balanced / best / extreme` 预设
 - `q90` 风格质量参数
 - 并行处理，处理时优先调度大文件
-- 重名输出按扫描顺序覆盖，最终唯一输出大小用于总体积统计
-- 日志与 `summary.csv`
+- 重名输出支持覆盖、跳过、追加时间后缀、追加随机后缀
+- 日志与 `summary.csv` 改为可选生成
 - 单张失败继续处理后续图片
 
 ## 新增内容
@@ -44,7 +45,7 @@
 - CMake 根工程，生成 `AVIFConsoleCli.exe` 和 `AVIFStudio.exe`
 - Slint 桌面 UI
 - `run_batch(config, progress_callback, stop_token)` 批处理服务，CLI/UI 共用
-- `scripts\build-magick.ps1` 用于拉取和提取自编译 ImageMagick Windows 运行时
+- `scripts\build-magick.ps1` 用于拉取、配置、编译并提取自编译 ImageMagick Windows 运行时
 
 ## 简化的部分
 
@@ -52,15 +53,16 @@
 - 质量参数改为 ImageMagick 的 `quality`，语义更直接。
 - 不再默认缩放到固定长边，避免用户误以为编码质量差其实是分辨率被改动。
 - 不再提交 Scoop/ImageMagick 二进制，仓库只保留构建脚本和文档。
+- Slint 默认静态链接，减少 UI 分发时的 DLL 数量。
 
 ## 模块划分
 
 - `avif.config`: 参数结构、预设、帮助文本、命令行解析。数值解析使用 vcpkg 的 `scnlib`。
 - `avif.core`: UTF-8/宽字符转换、图片扫描、日志、CSV 和少量 Win32 工具。
-- `avif.magick_backend`: MagickWand 运行时解析、环境变量配置、AVIF 编码。
+- `avif.magick_backend`: MagickWand 运行时解析、环境变量配置、AVIF/WebP 编码。
 - `avif.pipeline`: 多线程调度、进度事件和汇总。
 - `src\cli\main.cpp`: CLI 入口。
-- `src\ui\main.cpp`: Slint UI 入口和 Win32 文件夹选择。
+- `src\ui\main.cpp`: Slint UI 入口和 Win32 文件/文件夹选择。
 
 ## 进阶改动
 

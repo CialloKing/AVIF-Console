@@ -52,9 +52,11 @@ std::optional<fs::path> absolute_directory(fs::path path) {
 bool looks_like_magick_runtime(const fs::path& root) {
   std::error_code ec;
   const bool has_wand_dll =
-      fs::exists(root / L"CORE_RL_MagickWand_.dll", ec) && !ec;
+      (fs::exists(root / L"CORE_RL_MagickWand_.dll", ec) && !ec) ||
+      (fs::exists(root / L"CORE_DB_MagickWand_.dll", ec) && !ec);
   const bool has_wand_lib =
-      fs::exists(root / L"lib" / L"CORE_RL_MagickWand_.lib", ec) && !ec;
+      (fs::exists(root / L"lib" / L"CORE_RL_MagickWand_.lib", ec) && !ec) ||
+      (fs::exists(root / L"lib" / L"CORE_DB_MagickWand_.lib", ec) && !ec);
   const bool has_config = fs::exists(root / L"configure.xml", ec) && !ec;
   const bool has_include =
       fs::exists(root / L"include" / L"MagickWand" / L"MagickWand.h", ec) &&
@@ -230,17 +232,20 @@ class MagickBackend {
 
   EncodeResult encode(const ImageFile& image) const {
     const auto start = std::chrono::steady_clock::now();
-    const auto output = cfg_.output_dir / output_name_for(cfg_, image);
+    auto output = output_dir_for(cfg_) / output_name_for(cfg_, image);
     EncodeResult result{.index = image.index,
                         .input_path = image.path,
                         .output_path = output,
                         .original_bytes = image.bytes,
                         .output_bytes = 0,
                         .quality = cfg_.quality,
-                        .speed = cfg_.magick_speed.value_or(-1),
-                        .command = command_description(image, output)};
+                        .speed = cfg_.magick_speed.value_or(-1)};
 
     try {
+      output = resolve_output_path(image, output);
+      result.output_path = output;
+      result.command = command_description(image, output);
+
       std::error_code ec;
       fs::create_directories(output.parent_path(), ec);
       if (ec) {
@@ -249,13 +254,18 @@ class MagickBackend {
         return finish(result, start);
       }
 
-      if (cfg_.skip_existing && fs::exists(output, ec) &&
-          fs::file_size(output, ec) > 0) {
-        result.ok = true;
-        result.skipped = true;
-        result.output_bytes = fs::file_size(output, ec);
-        result.message = "已存在，跳过。";
-        return finish(result, start);
+      if (cfg_.collision_mode == CollisionMode::skip) {
+        ec.clear();
+        if (fs::exists(output, ec) && !ec) {
+          const auto existing_size = fs::file_size(output, ec);
+          if (!ec && existing_size > 0) {
+            result.ok = true;
+            result.skipped = true;
+            result.output_bytes = existing_size;
+            result.message = "已存在，跳过。";
+            return finish(result, start);
+          }
+        }
       }
 
       auto wand = magick_detail::WandPtr{NewMagickWand()};
@@ -271,7 +281,7 @@ class MagickBackend {
         return finish(result, start);
       }
 
-      if (auto ok = write_avif(*wand, output); !ok) {
+      if (auto ok = write_output(*wand, output); !ok) {
         result.message = ok.error();
         logger_.error(result.message);
         return finish(result, start);
@@ -305,6 +315,31 @@ class MagickBackend {
     const auto end = std::chrono::steady_clock::now();
     result.seconds = std::chrono::duration<double>(end - start).count();
     return result;
+  }
+
+  fs::path resolve_output_path(const ImageFile& image, fs::path output) const {
+    if (cfg_.collision_mode != CollisionMode::suffix_time &&
+        cfg_.collision_mode != CollisionMode::suffix_random) {
+      return output;
+    }
+
+    const auto extension = output.extension().wstring();
+    const auto stem = output.stem().wstring();
+    const auto suffix =
+        cfg_.collision_mode == CollisionMode::suffix_time
+            ? std::format(L"{}-{:04}", image.datetime_token, image.index + 1)
+            : image.random_token;
+
+    auto candidate = output;
+    candidate.replace_filename(stem + L"-" + suffix + extension);
+
+    std::error_code ec;
+    for (int counter = 2; fs::exists(candidate, ec) && !ec; ++counter) {
+      candidate = output;
+      candidate.replace_filename(
+          stem + L"-" + suffix + std::format(L"-{}", counter) + extension);
+    }
+    return candidate;
   }
 
   std::expected<void, std::string> read_and_prepare(MagickWand& wand,
@@ -361,8 +396,8 @@ class MagickBackend {
                                 "缩放图片失败");
   }
 
-  std::expected<void, std::string> write_avif(MagickWand& wand,
-                                              const fs::path& output) const {
+  std::expected<void, std::string> write_output(MagickWand& wand,
+                                                const fs::path& output) const {
     if (auto ok = magick_detail::check(
             &wand,
             MagickSetImageCompressionQuality(
@@ -372,7 +407,7 @@ class MagickBackend {
       return ok;
     }
 
-    if (cfg_.magick_speed) {
+    if (cfg_.output_format == OutputFormat::avif && cfg_.magick_speed) {
       const auto value = std::to_string(*cfg_.magick_speed);
       if (auto ok = magick_detail::check(&wand,
                                          MagickSetOption(&wand, "heic:speed",
@@ -399,8 +434,10 @@ class MagickBackend {
       }
     }
 
-    if (auto ok = magick_detail::check(&wand, MagickSetImageFormat(&wand, "AVIF"),
-                                       "设置 AVIF 格式失败");
+    const auto format = output_format_name(cfg_.output_format);
+    if (auto ok = magick_detail::check(
+            &wand, MagickSetImageFormat(&wand, format.c_str()),
+            std::format("设置 {} 格式失败", format));
         !ok) {
       return ok;
     }
@@ -408,15 +445,16 @@ class MagickBackend {
     const auto output_utf8 = path_to_utf8(output);
     return magick_detail::check(&wand,
                                 MagickWriteImage(&wand, output_utf8.c_str()),
-                                "写入 AVIF 失败");
+                                std::format("写入 {} 失败", format));
   }
 
   std::string command_description(const ImageFile& image,
                                   const fs::path& output) const {
     std::string text =
-        std::format("MagickWand: {} -> {} -quality {}",
+        std::format("MagickWand {}: {} -> {} -quality {}",
+                    output_format_name(cfg_.output_format),
                     path_to_utf8(image.path), path_to_utf8(output), cfg_.quality);
-    if (cfg_.magick_speed) {
+    if (cfg_.output_format == OutputFormat::avif && cfg_.magick_speed) {
       text += std::format(" -define heic:speed={}", *cfg_.magick_speed);
     }
     for (const auto& define : cfg_.magick_defines) {

@@ -1,11 +1,17 @@
 # ImageMagick 运行时构建与打包
 
-项目运行时直接链接 `MagickWand`，因此发布目录需要同时带上 ImageMagick DLL、coder/filter modules 和配置文件。仓库不提交这些二进制，统一由脚本生成。
+项目运行时直接链接 `MagickWand`。仓库不提交 ImageMagick 二进制，统一由脚本生成本地 runtime/development bundle。
 
 ## 构建命令
 
 ```powershell
 .\scripts\build-magick.ps1 -Configuration Release -Arch x64
+```
+
+脚本默认使用 `-Linkage Static`，先构建 ImageMagick 官方 `Configure.exe`，生成 `IM7.Static.x64.sln`，再优先只编译 MagickCore/MagickWand 与 AVIF(WebP/HEIC)、WebP coder。需要完整输入格式支持时加 `-FullBuild`；如果静态 delegate 链接不顺，可改用：
+
+```powershell
+.\scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Dynamic -FullBuild
 ```
 
 默认输出：
@@ -14,15 +20,13 @@
 third_party\imagemagick-runtime\x64\Release
 ```
 
-该目录包含：
+该目录按实际链接方式包含：
 
 - `include\MagickWand` / `include\MagickCore`
 - `lib\CORE_RL_MagickWand_.lib`
 - `lib\CORE_RL_MagickCore_.lib`
-- `CORE_RL_*.dll`
-- `modules\coders\IM_MOD_RL_heic_.dll`
-- `modules\coders\IM_MOD_RL_webp_.dll`
-- `modules\filters`
+- 静态构建时的 `CORE_RL_*.lib` coder/delegate libs
+- 动态构建时的 `CORE_RL_*.dll`、`modules\coders\IM_MOD_RL_heic_.dll`、`IM_MOD_RL_webp_.dll`
 - `configure.xml`、`delegates.xml`、`policy.xml` 等配置
 - `License` / `NOTICE`
 
@@ -40,7 +44,7 @@ third_party\imagemagick-runtime\x64\Release
 .\release.ps1 -MagickRoot ".\third_party\imagemagick-runtime\x64\Release"
 ```
 
-构建完成后，CMake 会把运行时 DLL、modules 和配置文件复制到 `AVIFConsoleCli.exe` / `AVIFStudio.exe` 所在目录。程序启动时会把这些路径设置到：
+构建完成后，CMake 会把存在的运行时 DLL、modules 和配置文件复制到 `AVIFConsoleCli.exe` / `AVIFStudio.exe` 所在目录。静态 ImageMagick 构建没有对应 DLL 时，不会额外复制。程序启动时会把这些路径设置到：
 
 - `MAGICK_HOME`
 - `MAGICK_CONFIGURE_PATH`
@@ -65,9 +69,20 @@ D:\Scoop\apps\imagemagick\current
 .\bin\x64\Release\AVIFConsoleCli.exe -i input -o Avifoutput -q q90
 ```
 
-如果想确认 AVIF/WebP coder 是否随 runtime 一起复制，可以检查：
+动态构建时，如果想确认 AVIF/WebP coder 是否随 runtime 一起复制，可以检查：
 
 ```powershell
 Get-ChildItem .\bin\x64\Release\modules\coders\IM_MOD_RL_*heic*.dll
 Get-ChildItem .\bin\x64\Release\modules\coders\IM_MOD_RL_*webp*.dll
 ```
+
+## 单文件分发
+
+CMake 默认静态链接 Slint，因此 UI 不再需要 `slint_cpp.dll`。真正单 exe 还要求 ImageMagick、AVIF/WebP delegate、scnlib 和 CRT 都能静态链接；推荐顺序是：
+
+```powershell
+.\scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Static
+.\release.ps1 -MagickRoot ".\third_party\imagemagick-runtime\x64\Release" -StaticRuntime
+```
+
+如果静态 delegate 或 CRT 与本机 vcpkg triplet 不兼容，保留少量 DLL 是更稳妥的发布方式。

@@ -16,6 +16,7 @@ module;
 #include <fstream>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -43,6 +44,11 @@ struct ImageFile {
   std::size_t index{};
   fs::path path{};
   std::uintmax_t bytes{};
+  std::wstring date_token{};
+  std::wstring time_token{};
+  std::wstring datetime_token{};
+  std::wstring unix_token{};
+  std::wstring random_token{};
 };
 
 struct EncodeResult {
@@ -143,6 +149,10 @@ void replace_all(std::wstring& text,
     text.replace(pos, token.size(), value);
     pos += value.size();
   }
+}
+
+bool contains_token(std::wstring_view text, std::wstring_view token) {
+  return text.find(token) != std::wstring_view::npos;
 }
 
 }  // namespace core_detail
@@ -387,11 +397,14 @@ class ProcessRunner {
 
 class FileLogger {
  public:
-  explicit FileLogger(fs::path output_dir)
-      : log_dir_{std::move(output_dir) / L"log"},
+  explicit FileLogger(fs::path output_dir, bool enabled = true)
+      : enabled_{enabled},
+        log_dir_{std::move(output_dir) / L"log"},
         log_file_{log_dir_ / L"avif-console.log"} {
-    fs::create_directories(log_dir_);
-    info("===== NEW SESSION START =====");
+    if (enabled_) {
+      fs::create_directories(log_dir_);
+      info("===== NEW SESSION START =====");
+    }
   }
 
   void info(std::string_view message) { append("INFO", message); }
@@ -400,6 +413,9 @@ class FileLogger {
 
  private:
   void append(std::string_view level, std::string_view message) {
+    if (!enabled_) {
+      return;
+    }
     std::scoped_lock lock{mutex_};
     std::ofstream stream{log_file_, std::ios::app | std::ios::binary};
     const auto now = std::chrono::floor<std::chrono::seconds>(
@@ -407,6 +423,7 @@ class FileLogger {
     stream << std::format("[{:%F %T}] [{}] {}\n", now, level, message);
   }
 
+  bool enabled_{true};
   fs::path log_dir_;
   fs::path log_file_;
   std::mutex mutex_;
@@ -419,23 +436,99 @@ bool is_supported_image_extension(const fs::path& path) {
   return ext == L".jpg" || ext == L".jpeg" || ext == L".png" ||
          ext == L".webp" || ext == L".bmp" || ext == L".tif" ||
          ext == L".tiff" || ext == L".gif" || ext == L".jxl" ||
-         ext == L".jp2" || ext == L".heic" || ext == L".heif";
+         ext == L".jp2" || ext == L".heic" || ext == L".heif" ||
+         ext == L".avif";
+}
+
+fs::path default_output_dir_for(const fs::path& input_path) {
+  std::error_code ec;
+  if (fs::is_regular_file(input_path, ec) && !ec) {
+    const auto parent = input_path.parent_path();
+    return parent.empty() ? fs::current_path() : parent;
+  }
+  return input_path;
+}
+
+fs::path output_dir_for(const AppConfig& cfg) {
+  if (!cfg.output_dir.empty()) {
+    return cfg.output_dir;
+  }
+  return default_output_dir_for(cfg.input_path);
+}
+
+std::wstring output_extension_for(OutputFormat format) {
+  switch (format) {
+    case OutputFormat::webp:
+      return L".webp";
+    case OutputFormat::avif:
+    default:
+      return L".avif";
+  }
+}
+
+std::string output_format_name(OutputFormat format) {
+  switch (format) {
+    case OutputFormat::webp:
+      return "WEBP";
+    case OutputFormat::avif:
+    default:
+      return "AVIF";
+  }
+}
+
+ImageFile make_image_file(std::size_t index,
+                          const fs::path& path,
+                          std::uintmax_t bytes,
+                          std::mt19937_64& rng) {
+  const auto now = std::chrono::system_clock::now();
+  const auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+  const auto unix_seconds = seconds.time_since_epoch().count();
+  const auto random_value = rng();
+  return ImageFile{.index = index,
+                   .path = path,
+                   .bytes = bytes,
+                   .date_token = std::format(L"{:%Y%m%d}", seconds),
+                   .time_token = std::format(L"{:%H%M%S}", seconds),
+                   .datetime_token = std::format(L"{:%Y%m%d-%H%M%S}", seconds),
+                   .unix_token = std::format(L"{}", unix_seconds),
+                   .random_token = std::format(L"{:08x}",
+                                               static_cast<unsigned int>(
+                                                   random_value & 0xffffffffu))};
 }
 
 std::vector<ImageFile> scan_images(const AppConfig& cfg) {
   std::error_code ec;
-  if (!fs::exists(cfg.input_dir, ec) || ec) {
+  const auto input_path = cfg.input_path;
+  if (!fs::exists(input_path, ec) || ec) {
     throw std::runtime_error(
-        std::format("输入文件夹不存在: {}", path_to_utf8(cfg.input_dir)));
-  }
-  if (!fs::is_directory(cfg.input_dir, ec) || ec) {
-    throw std::runtime_error(
-        std::format("输入路径不是文件夹: {}", path_to_utf8(cfg.input_dir)));
+        std::format("输入路径不存在: {}", path_to_utf8(input_path)));
   }
 
+  std::random_device random_device;
+  std::mt19937_64 rng{random_device()};
+
   std::vector<ImageFile> files;
+  if (fs::is_regular_file(input_path, ec) && !ec) {
+    if (!is_supported_image_extension(input_path)) {
+      throw std::runtime_error(
+          std::format("输入文件格式不受支持: {}", path_to_utf8(input_path)));
+    }
+    auto bytes = fs::file_size(input_path, ec);
+    if (ec) {
+      bytes = 0;
+      ec.clear();
+    }
+    files.push_back(make_image_file(0, input_path, bytes, rng));
+    return files;
+  }
+
+  if (!fs::is_directory(input_path, ec) || ec) {
+    throw std::runtime_error(
+        std::format("输入路径不是文件或文件夹: {}", path_to_utf8(input_path)));
+  }
+
   for (fs::recursive_directory_iterator it{
-           cfg.input_dir, fs::directory_options::skip_permission_denied, ec},
+           input_path, fs::directory_options::skip_permission_denied, ec},
        end;
        it != end; it.increment(ec)) {
     if (ec) {
@@ -455,8 +548,7 @@ std::vector<ImageFile> scan_images(const AppConfig& cfg) {
       bytes = 0;
       ec.clear();
     }
-    files.push_back(
-        ImageFile{.index = files.size(), .path = it->path(), .bytes = bytes});
+    files.push_back(make_image_file(files.size(), it->path(), bytes, rng));
     ec.clear();
   }
 
@@ -467,6 +559,24 @@ std::vector<ImageFile> scan_images(const AppConfig& cfg) {
     files[i].index = i;
   }
   return files;
+}
+
+std::wstring file_hash_token(const fs::path& path) {
+  constexpr std::uint64_t offset = 14695981039346656037ull;
+  constexpr std::uint64_t prime = 1099511628211ull;
+  std::uint64_t hash = offset;
+
+  std::ifstream stream{path, std::ios::binary};
+  std::array<char, 64 * 1024> buffer{};
+  while (stream) {
+    stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    const auto read = stream.gcount();
+    for (std::streamsize i = 0; i < read; ++i) {
+      hash ^= static_cast<unsigned char>(buffer[static_cast<std::size_t>(i)]);
+      hash *= prime;
+    }
+  }
+  return std::format(L"{:016x}", hash);
 }
 
 std::wstring output_name_for(const AppConfig& cfg, const ImageFile& image) {
@@ -480,10 +590,23 @@ std::wstring output_name_for(const AppConfig& cfg, const ImageFile& image) {
   core_detail::replace_all(name, L"{index}", std::format(L"{:04}", image.index + 1));
   core_detail::replace_all(name, L"{name}", stem);
   core_detail::replace_all(name, L"{ext}", ext);
-  if (fs::path{name}.extension().empty()) {
-    name += L".avif";
+  core_detail::replace_all(name, L"{date}", image.date_token);
+  core_detail::replace_all(name, L"{time}", image.time_token);
+  core_detail::replace_all(name, L"{datetime}", image.datetime_token);
+  core_detail::replace_all(name, L"{unix}", image.unix_token);
+  core_detail::replace_all(name, L"{rand}", image.random_token);
+
+  if (core_detail::contains_token(name, L"{hash}")) {
+    core_detail::replace_all(name, L"{hash}", file_hash_token(image.path));
   }
-  return name;
+  if (core_detail::contains_token(name, L"{hash8}")) {
+    core_detail::replace_all(name, L"{hash8}",
+                             file_hash_token(image.path).substr(0, 8));
+  }
+
+  fs::path output{name};
+  output.replace_extension(output_extension_for(cfg.output_format));
+  return output.native();
 }
 
 std::string format_size(std::uintmax_t bytes) {

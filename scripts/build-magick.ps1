@@ -5,9 +5,13 @@ param(
     [ValidateSet("x64")]
     [string]$Arch = "x64",
 
+    [ValidateSet("Static", "Dynamic")]
+    [string]$Linkage = "Static",
+
     [string]$SourceRoot = "",
     [string]$RuntimeRoot = "",
     [string]$RepositoryUrl = "https://github.com/ImageMagick/Windows.git",
+    [switch]$FullBuild,
     [switch]$SkipBuild
 )
 
@@ -49,10 +53,33 @@ function Invoke-CmdScript([string]$ScriptPath) {
     }
 }
 
-function Copy-IfExists([string]$Path, [string]$Destination) {
+function Invoke-MSBuild([string]$MSBuild, [string]$Solution, [string[]]$ExtraArgs) {
+    Write-Host "MSBuild: $Solution"
+    & $MSBuild $Solution @ExtraArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "MSBuild 失败，退出码 $LASTEXITCODE。"
+    }
+}
+
+function Get-NewestFile([string]$Root, [string]$Filter) {
+    Get-ChildItem -Path $Root -Recurse -Filter $Filter -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function Copy-TreeIfExists([string]$Path, [string]$Destination) {
     if (Test-Path $Path) {
         New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-        Copy-Item -LiteralPath $Path -Destination $Destination -Force
+        Copy-Item -LiteralPath $Path -Destination $Destination -Recurse -Force
+    }
+}
+
+function Copy-FilesIfExists([string]$Path, [string]$Destination, [string]$Filter) {
+    if (Test-Path $Path) {
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        Get-ChildItem -Path $Path -Filter $Filter -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $Destination -Force
+        }
     }
 }
 
@@ -68,83 +95,117 @@ git -C $SourceRoot pull --ff-only
 
 $CloneScript = Join-Path $SourceRoot "clone-repositories-im7.cmd"
 if (Test-Path $CloneScript) {
-    Write-Host "同步 ImageMagick / delegate 源码..."
+    Write-Host "同步 ImageMagick / Configure / Dependencies 源码..."
     Invoke-CmdScript $CloneScript
 } else {
-    Write-Warning "未找到 clone-repositories-im7.cmd，跳过 delegate 同步。"
+    Write-Warning "未找到 clone-repositories-im7.cmd，跳过源码同步。"
 }
+
+$MSBuild = Find-MSBuild
+Write-Host "MSBuild: $MSBuild"
 
 if (-not $SkipBuild) {
-    $MSBuild = Find-MSBuild
-    Write-Host "MSBuild: $MSBuild"
-
-    $KnownSolutions = @(
-        Join-Path $SourceRoot "ImageMagick\VisualMagick\IM7.Dynamic.sln",
-        Join-Path $SourceRoot "VisualMagick\IM7.Dynamic.sln",
-        Join-Path $SourceRoot "IM7.Dynamic.sln",
-        Join-Path $SourceRoot "ImageMagick.sln"
-    ) | Where-Object { Test-Path $_ }
-
-    if (-not $KnownSolutions) {
-        $KnownSolutions = Get-ChildItem -Path $SourceRoot -Recurse -Filter "*.sln" |
-            Where-Object { $_.Name -match "IM7|ImageMagick|Dynamic" } |
-            Sort-Object FullName |
-            ForEach-Object { $_.FullName }
+    $ConfigureSolution = Join-Path $SourceRoot "Configure\Configure.sln"
+    if (-not (Test-Path $ConfigureSolution)) {
+        throw "未找到 Configure\Configure.sln。clone-repositories-im7.cmd 可能没有完整同步 Configure 仓库。"
     }
 
-    if (-not $KnownSolutions) {
-        throw "没有找到可构建的 ImageMagick 解决方案。请先按 ImageMagick/Windows 文档生成 IM7.Dynamic.sln，然后重新运行本脚本。"
+    Invoke-MSBuild -MSBuild $MSBuild -Solution $ConfigureSolution -ExtraArgs @(
+        "/m",
+        "/restore",
+        "/p:Configuration=Release",
+        "/p:Platform=$Arch"
+    )
+
+    $ConfigureExe = Get-NewestFile (Join-Path $SourceRoot "Configure") "Configure*.exe"
+    if (-not $ConfigureExe) {
+        throw "未找到 Configure.exe，无法生成 ImageMagick 解决方案。"
     }
 
-    $Solution = $KnownSolutions | Select-Object -First 1
-    Write-Host "构建: $Solution"
-    & $MSBuild $Solution /m /restore /p:Configuration=$Configuration /p:Platform=$Arch
-    if ($LASTEXITCODE -ne 0) {
-        throw "ImageMagick 构建失败，退出码 $LASTEXITCODE。"
+    $ConfigureArgs = @(
+        "/noWizard",
+        "/VS2026",
+        "/$Arch",
+        "/Q16",
+        "/noHdri",
+        "/noOpenMP",
+        "/onlyMagick"
+    )
+    if ($Linkage -eq "Static") {
+        $ConfigureArgs += "/static"
+        $ConfigureArgs += "/linkRuntime"
+    } else {
+        $ConfigureArgs += "/dynamic"
+    }
+
+    Write-Host "生成 ImageMagick $Linkage 解决方案..."
+    Push-Location $ConfigureExe.Directory.FullName
+    try {
+        & $ConfigureExe.FullName @ConfigureArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Configure.exe 失败，退出码 $LASTEXITCODE。"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    $SolutionName = "IM7.$Linkage.$Arch.sln"
+    $Solution = Join-Path $SourceRoot $SolutionName
+    if (-not (Test-Path $Solution)) {
+        throw "未找到生成的解决方案: $Solution"
+    }
+
+    $BuildArgs = @(
+        "/m",
+        "/restore",
+        "/p:Configuration=$Configuration",
+        "/p:Platform=$Arch"
+    )
+
+    if ($FullBuild) {
+        Invoke-MSBuild -MSBuild $MSBuild -Solution $Solution -ExtraArgs $BuildArgs
+    } else {
+        $Flavor = if ($Configuration -eq "Debug") { "DB" } else { "RL" }
+        $CoderPrefix = if ($Linkage -eq "Static") { "CORE_$Flavor" } else { "IM_MOD_$Flavor" }
+        $Targets = @(
+            "CORE_${Flavor}_MagickCore_",
+            "CORE_${Flavor}_MagickWand_",
+            "${CoderPrefix}_heic_",
+            "${CoderPrefix}_webp_"
+        ) -join ";"
+
+        try {
+            Invoke-MSBuild -MSBuild $MSBuild -Solution $Solution -ExtraArgs ($BuildArgs + "/t:$Targets")
+        } catch {
+            Write-Warning "AVIF/WebP 最小目标构建失败，改为构建完整 ImageMagick 方案。原因: $($_.Exception.Message)"
+            Invoke-MSBuild -MSBuild $MSBuild -Solution $Solution -ExtraArgs $BuildArgs
+        }
     }
 }
 
-Write-Host "提取运行时: $RuntimeRoot"
+Write-Host "提取运行时/开发文件: $RuntimeRoot"
+if (Test-Path $RuntimeRoot) {
+    Remove-Item -LiteralPath $RuntimeRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeRoot "include") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeRoot "lib") | Out-Null
 
-$WandDll = Get-ChildItem -Path $SourceRoot -Recurse -Filter "CORE_RL_MagickWand_.dll" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-if (-not $WandDll) {
-    throw "未找到 CORE_RL_MagickWand_.dll，无法提取运行时。"
-}
-$BinRoot = $WandDll.Directory.FullName
+$Artifacts = Join-Path $SourceRoot "Artifacts"
+$BinRoot = Join-Path $Artifacts "bin"
+$LibRoot = Join-Path $Artifacts "lib"
+$IncludeRoot = Join-Path $Artifacts "include"
+$ConfigRoot = Join-Path $Artifacts "config"
+$LicenseRoot = Join-Path $Artifacts "license"
 
-Get-ChildItem -Path $BinRoot -Filter "*.dll" | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $RuntimeRoot -Force
-}
-Get-ChildItem -Path $BinRoot -Filter "*.exe" | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $RuntimeRoot -Force
-}
-Get-ChildItem -Path $BinRoot -File | Where-Object {
-    $_.Extension -in @(".xml", ".icc", ".txt")
-} | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $RuntimeRoot -Force
-}
-
-$LibRoot = Get-ChildItem -Path $SourceRoot -Recurse -Filter "CORE_RL_MagickWand_.lib" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-if ($LibRoot) {
-    Get-ChildItem -Path $LibRoot.Directory.FullName -Filter "*.lib" | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $RuntimeRoot "lib") -Force
+if (-not (Test-Path $IncludeRoot)) {
+    $Header = Get-NewestFile $SourceRoot "MagickWand.h"
+    if (-not $Header) {
+        throw "未找到 MagickWand.h，无法提取 include。"
     }
+    $IncludeRoot = Split-Path -Parent $Header.Directory.FullName
 }
 
-$Header = Get-ChildItem -Path $SourceRoot -Recurse -Filter "MagickWand.h" |
-    Where-Object { $_.Directory.Name -eq "MagickWand" } |
-    Select-Object -First 1
-if (-not $Header) {
-    throw "未找到 MagickWand.h，无法提取 include。"
-}
-$IncludeRoot = Split-Path -Parent $Header.Directory.FullName
 foreach ($Dir in @("MagickWand", "MagickCore", "Magick++")) {
     $SourceDir = Join-Path $IncludeRoot $Dir
     if (Test-Path $SourceDir) {
@@ -152,20 +213,32 @@ foreach ($Dir in @("MagickWand", "MagickCore", "Magick++")) {
     }
 }
 
+Copy-FilesIfExists $BinRoot $RuntimeRoot "*.dll"
+Copy-FilesIfExists $BinRoot $RuntimeRoot "*.exe"
+Copy-FilesIfExists $BinRoot $RuntimeRoot "*.xml"
+Copy-FilesIfExists $BinRoot $RuntimeRoot "*.icc"
+Copy-FilesIfExists $BinRoot $RuntimeRoot "*.txt"
+Copy-FilesIfExists $ConfigRoot $RuntimeRoot "*.xml"
+Copy-FilesIfExists $ConfigRoot $RuntimeRoot "*.icc"
+Copy-FilesIfExists $ConfigRoot $RuntimeRoot "*.txt"
+Copy-FilesIfExists $LibRoot (Join-Path $RuntimeRoot "lib") "*.lib"
+
+if (-not (Get-ChildItem -Path (Join-Path $RuntimeRoot "lib") -Filter "CORE_*_MagickWand_.lib" -File -ErrorAction SilentlyContinue)) {
+    $WandLib = Get-NewestFile $SourceRoot "CORE_*_MagickWand_.lib"
+    if ($WandLib) {
+        Copy-FilesIfExists $WandLib.Directory.FullName (Join-Path $RuntimeRoot "lib") "*.lib"
+    }
+}
+
 $ModuleRoot = Join-Path $BinRoot "modules"
 if (-not (Test-Path $ModuleRoot)) {
-    $HeicModule = Get-ChildItem -Path $SourceRoot -Recurse -Filter "IM_MOD_RL_heic_.dll" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
+    $HeicModule = Get-NewestFile $SourceRoot "IM_MOD_*_heic_.dll"
     if ($HeicModule) {
         $ModuleRoot = Split-Path -Parent (Split-Path -Parent $HeicModule.Directory.FullName)
     }
 }
-if (Test-Path $ModuleRoot) {
-    Copy-Item -LiteralPath $ModuleRoot -Destination $RuntimeRoot -Recurse -Force
-} else {
-    Write-Warning "未找到 modules 目录。AVIF/WebP coder 可能无法在运行时加载。"
-}
+Copy-TreeIfExists $ModuleRoot $RuntimeRoot
+Copy-TreeIfExists $LicenseRoot $RuntimeRoot
 
 foreach ($Notice in @("LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt")) {
     $Found = Get-ChildItem -Path $SourceRoot -Recurse -File -Filter $Notice -ErrorAction SilentlyContinue |
@@ -175,8 +248,17 @@ foreach ($Notice in @("LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt")) {
     }
 }
 
+$CopiedDlls = @(Get-ChildItem -Path $RuntimeRoot -Filter "*.dll" -File -ErrorAction SilentlyContinue).Count
+$CopiedLibs = @(Get-ChildItem -Path (Join-Path $RuntimeRoot "lib") -Filter "*.lib" -File -ErrorAction SilentlyContinue).Count
+
 Write-Host ""
-Write-Host "ImageMagick runtime 已提取到:"
+Write-Host "ImageMagick $Linkage runtime 已提取到:"
 Write-Host "  $RuntimeRoot"
+Write-Host "DLL 数量: $CopiedDlls"
+Write-Host "LIB 数量: $CopiedLibs"
 Write-Host "后续构建:"
 Write-Host "  .\release.ps1 -MagickRoot `"$RuntimeRoot`""
+Write-Host ""
+Write-Host "说明:"
+Write-Host "  默认 Static 会尽量减少分发 DLL；如果静态 delegate 链接失败，可改用 -Linkage Dynamic。"
+Write-Host "  默认只构建 MagickCore/MagickWand 与 AVIF(WebP/HEIC) 和 WebP coder；需要完整输入格式支持时加 -FullBuild。"

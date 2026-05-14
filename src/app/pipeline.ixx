@@ -37,10 +37,15 @@ std::vector<WorkGroup> build_work_groups(const AppConfig& cfg,
                                          const std::vector<ImageFile>& files) {
   std::vector<WorkGroup> groups;
   std::unordered_map<std::wstring, std::size_t> index_by_output;
+  const auto output_dir = output_dir_for(cfg);
 
   for (const auto& image : files) {
-    const auto output = cfg.output_dir / output_name_for(cfg, image);
-    const auto key = normalized_lower_path_key(output);
+    const auto output = output_dir / output_name_for(cfg, image);
+    auto key = normalized_lower_path_key(output);
+    if (cfg.collision_mode == CollisionMode::suffix_time ||
+        cfg.collision_mode == CollisionMode::suffix_random) {
+      key += std::format(L"#{}", image.index);
+    }
     const auto [it, inserted] = index_by_output.emplace(key, groups.size());
     if (inserted) {
       groups.push_back(WorkGroup{});
@@ -51,7 +56,7 @@ std::vector<WorkGroup> build_work_groups(const AppConfig& cfg,
     group.files.push_back(image);
   }
 
-  // 不同输出路径之间按总大小调度；同一路径内保留扫描顺序，重名时后者覆盖前者。
+  // 不同输出路径之间按总大小调度；覆盖/跳过模式下同一路径保留扫描顺序。
   std::ranges::sort(groups, [](const WorkGroup& left, const WorkGroup& right) {
     return left.weight > right.weight;
   });
@@ -127,9 +132,10 @@ std::expected<BatchSummary, std::string> run_batch(
     }
 
     configure_magick_environment(*runtime);
-    fs::create_directories(cfg.output_dir);
+    const auto output_dir = output_dir_for(cfg);
+    fs::create_directories(output_dir);
 
-    FileLogger logger{cfg.output_dir};
+    FileLogger logger{output_dir, cfg.write_log};
     logger.info(std::format("imagemagick runtime: {}", path_to_utf8(runtime->root)));
 
     auto files = scan_images(cfg);
@@ -138,7 +144,7 @@ std::expected<BatchSummary, std::string> run_batch(
                                   .kind = BatchEventKind::message,
                                   .text =
                                       "未找到图片。支持: jpg, jpeg, png, webp, bmp, "
-                                      "tif, tiff, gif, jxl, jp2, heic, heif"});
+                                      "tif, tiff, gif, jxl, jp2, heic, heif, avif"});
       return BatchSummary{.exit_code = 0};
     }
 
@@ -160,10 +166,13 @@ std::expected<BatchSummary, std::string> run_batch(
     emit_progress(progress, BatchProgress{
                                 .kind = BatchEventKind::message,
                                 .total = files.size(),
-                                .text = cfg.magick_speed
-                                            ? std::format("Speed: heic:speed={}",
-                                                          *cfg.magick_speed)
-                                            : "Speed: ImageMagick default"});
+                                .text = cfg.output_format == OutputFormat::avif
+                                            ? (cfg.magick_speed
+                                                   ? std::format(
+                                                         "Speed: heic:speed={}",
+                                                         *cfg.magick_speed)
+                                                   : "Speed: ImageMagick default")
+                                            : "Speed: WebP uses ImageMagick defaults"});
 
     auto work = pipeline_detail::build_work_groups(cfg, files);
     const int jobs = std::max(
@@ -178,7 +187,7 @@ std::expected<BatchSummary, std::string> run_batch(
     for (const auto& image : files) {
       results[image.index] = EncodeResult{.index = image.index,
                                           .input_path = image.path,
-                                          .output_path = cfg.output_dir /
+                                          .output_path = output_dir /
                                                          output_name_for(cfg, image),
                                           .original_bytes = image.bytes,
                                           .quality = cfg.quality,
@@ -204,7 +213,8 @@ std::expected<BatchSummary, std::string> run_batch(
             break;
           }
           const auto& group = work[work_index];
-          if (group.files.size() > 1) {
+          if (group.files.size() > 1 &&
+              cfg.collision_mode == CollisionMode::overwrite) {
             emit_progress(progress, BatchProgress{
                                         .kind = BatchEventKind::warning,
                                         .completed = completed.load(),
@@ -213,7 +223,7 @@ std::expected<BatchSummary, std::string> run_batch(
                                             "[WARN] 输出重名: {} 个输入将依次覆盖 {}",
                                             group.files.size(),
                                             path_to_utf8(
-                                                cfg.output_dir /
+                                                output_dir /
                                                 output_name_for(
                                                     cfg, group.files.back())))});
           }
@@ -258,7 +268,9 @@ std::expected<BatchSummary, std::string> run_batch(
       output_total += bytes;
     }
 
-    write_csv(cfg.output_dir, results);
+    if (cfg.write_summary) {
+      write_csv(output_dir, results);
+    }
     const double total_ratio =
         original_total == 0
             ? 0.0
@@ -278,11 +290,15 @@ std::expected<BatchSummary, std::string> run_batch(
                                 .total = files.size(),
                                 .summary = summary,
                                 .text = std::format(
-                                    "{}: 成功 {}，失败 {}\n体积: {} -> {} ({:.1f}%)\n报告: {}",
+                                    "{}: 成功 {}，失败 {}\n体积: {} -> {} ({:.1f}%){}",
                                     canceled ? "已取消" : "完成", ok_count,
                                     failed_count, format_size(original_total),
                                     format_size(output_total), total_ratio * 100.0,
-                                    path_to_utf8(cfg.output_dir / L"summary.csv"))});
+                                    cfg.write_summary
+                                        ? std::format("\n报告: {}",
+                                                      path_to_utf8(output_dir /
+                                                                   L"summary.csv"))
+                                        : "")});
     return summary;
   } catch (const std::exception& ex) {
     return std::unexpected{std::string{ex.what()}};
