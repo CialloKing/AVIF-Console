@@ -52,6 +52,18 @@ third_party\imagemagick-runtime\x64\Release
 .\release.ps1 -MagickRoot ".\third_party\imagemagick-runtime\x64\Release"
 ```
 
+静态 ImageMagick runtime 不带 DLL，`release.ps1` / `debug.ps1` 会自动切换到 MSVC `/MT` / `/MTd`，并使用 `x64-windows-static` vcpkg triplet。若本机缺少 `scnlib:x64-windows-static`，脚本会调用 vcpkg 自动安装；不希望自动安装时可传：
+
+```powershell
+.\release.ps1 -NoVcpkgInstall
+```
+
+如果要手动指定 triplet：
+
+```powershell
+.\release.ps1 -VcpkgTriplet x64-windows-static
+```
+
 构建完成后，CMake 会把存在的运行时 DLL、modules 和配置文件复制到 `AVIFConsoleCli.exe` / `AVIFStudio.exe` 所在目录。静态 ImageMagick 构建没有对应 DLL 时，不会额外复制。程序启动时会把这些路径设置到：
 
 - `MAGICK_HOME`
@@ -97,7 +109,7 @@ CMake 默认静态链接 Slint，因此 UI 不再需要 `slint_cpp.dll`。真正
 
 ```powershell
 .\scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Static
-.\release.ps1 -MagickRoot ".\third_party\imagemagick-runtime\x64\Release" -StaticRuntime
+.\release.ps1 -MagickRoot ".\third_party\imagemagick-runtime\x64\Release"
 ```
 
-如果静态 delegate 或 CRT 与本机 vcpkg triplet 不兼容，保留少量 DLL 是更稳妥的发布方式。
+脚本会自动选择 `/MT` 和 `x64-windows-static`。如果静态 delegate 或 CRT 与本机 vcpkg triplet 不兼容，保留少量 DLL 是更稳妥的发布方式，可以改用 `-Linkage Dynamic` 或显式传 `-DynamicRuntime`。

@@ -14,9 +14,9 @@
 - CMake 3.30+
 - Rust/Cargo，用于 Slint C++ 后端构建
 - Git，用于拉取 Slint 和 ImageMagick 源码
-- vcpkg 已安装 `scnlib:x64-windows`
+- vcpkg 已安装 `scnlib:x64-windows`；静态 ImageMagick/CRT 构建会自动使用并补齐 `scnlib:x64-windows-static`
 
-默认 vcpkg 路径按 `VCPKG_ROOT` 或 `D:\Scoop\apps\vcpkg\current` 查找；路径不同可传 `-VcpkgRoot`。
+默认 vcpkg 路径按 `VCPKG_ROOT` 或 `D:\Scoop\apps\vcpkg\current` 查找；路径不同可传 `-VcpkgRoot`。如需手动指定 triplet，可传 `-VcpkgTriplet`；如不希望脚本自动安装缺失的 `scnlib` triplet，可传 `-NoVcpkgInstall`。
 
 ## 自编译 ImageMagick
 
@@ -56,7 +56,7 @@ Release:
 
 `release.ps1` 会优先使用 `third_party\imagemagick-runtime\x64\Release`。如果该目录不存在，会自动调用 `scripts\build-magick.ps1 -Configuration Release -Arch x64 -Linkage Static` 构建自编译 ImageMagick。需要完整 ImageMagick 输入格式支持时可加 `-FullMagickBuild`；只是本机快速调试、允许临时使用 Scoop 时才传 `-UseScoopFallback`。
 
-默认静态链接 Slint，因此 `AVIFStudio.exe` 不再需要单独的 `slint_cpp.dll`。如需调试 Slint 共享库，可传 `-SharedSlint`；如确认全部依赖允许静态 CRT，可传 `-StaticRuntime` 进一步减少 VC 运行库依赖。
+默认静态链接 Slint，因此 `AVIFStudio.exe` 不再需要单独的 `slint_cpp.dll`。自编译静态 ImageMagick 会自动切到 `/MT` 和 `x64-windows-static`，以避免 CRT 混链；如需调试 Slint 共享库，可传 `-SharedSlint`，如确实要强制动态 CRT 可传 `-DynamicRuntime`。
 
 显式指定运行时：
 

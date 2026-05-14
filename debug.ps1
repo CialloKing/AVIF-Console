@@ -1,12 +1,15 @@
 param(
     [string]$MagickRoot = "",
     [string]$VcpkgRoot = "",
+    [string]$VcpkgTriplet = "",
     [switch]$StaticRuntime,
+    [switch]$DynamicRuntime,
     [switch]$SharedSlint,
     [ValidateSet("Static", "Dynamic")]
     [string]$MagickLinkage = "Static",
     [switch]$FullMagickBuild,
     [switch]$InstallMfc,
+    [switch]$NoVcpkgInstall,
     [switch]$UseScoopFallback
 )
 
@@ -19,6 +22,42 @@ if (-not $VcpkgRoot) {
         $VcpkgRoot = $env:VCPKG_ROOT
     } elseif (Test-Path "D:\Scoop\apps\vcpkg\current") {
         $VcpkgRoot = "D:\Scoop\apps\vcpkg\current"
+    }
+}
+
+function Test-MagickRuntimeLooksStatic([string]$Root) {
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return $false
+    }
+
+    $Dll = Get-ChildItem -LiteralPath $Root -Filter "*.dll" -File -Recurse -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    return $null -eq $Dll
+}
+
+function Ensure-VcpkgPackage([string]$Root, [string]$Triplet, [string]$Port, [string]$PackageShareName, [bool]$NoInstall) {
+    if (-not $Root) {
+        throw "未找到 vcpkg。请设置 VCPKG_ROOT，或传入 -VcpkgRoot。"
+    }
+
+    $ShareDir = Join-Path $Root "installed\$Triplet\share\$PackageShareName"
+    if (Test-Path -LiteralPath $ShareDir -PathType Container) {
+        return
+    }
+
+    if ($NoInstall) {
+        throw "未安装 $Port`:$Triplet。请先运行: `"$Root\vcpkg.exe`" install $Port`:$Triplet"
+    }
+
+    $VcpkgExe = Join-Path $Root "vcpkg.exe"
+    if (-not (Test-Path -LiteralPath $VcpkgExe -PathType Leaf)) {
+        throw "未找到 vcpkg.exe: $VcpkgExe"
+    }
+
+    Write-Host "未发现 $Port`:$Triplet，开始使用 vcpkg 安装..."
+    & $VcpkgExe install "$Port`:$Triplet"
+    if ($LASTEXITCODE -ne 0) {
+        throw "vcpkg install $Port`:$Triplet 失败，退出码 $LASTEXITCODE。"
     }
 }
 
@@ -55,6 +94,22 @@ if (-not $MagickRoot) {
     }
 }
 
+if ($StaticRuntime -and $DynamicRuntime) {
+    throw "不能同时指定 -StaticRuntime 和 -DynamicRuntime。"
+}
+
+$UseStaticRuntime = [bool]$StaticRuntime
+if (-not $StaticRuntime -and -not $DynamicRuntime -and (Test-MagickRuntimeLooksStatic $MagickRoot)) {
+    $UseStaticRuntime = $true
+    Write-Host "检测到静态 ImageMagick runtime，自动使用 /MTd 运行库。"
+}
+
+if (-not $VcpkgTriplet) {
+    $VcpkgTriplet = if ($UseStaticRuntime) { "x64-windows-static" } else { "x64-windows" }
+}
+
+Ensure-VcpkgPackage $VcpkgRoot $VcpkgTriplet "scnlib" "scnlib" $NoVcpkgInstall
+
 $ConfigureArgs = @(
     "-S", $Repo,
     "-B", $BuildDir,
@@ -63,11 +118,12 @@ $ConfigureArgs = @(
 )
 if ($VcpkgRoot) {
     $ConfigureArgs += "-DVCPKG_ROOT=$VcpkgRoot"
+    $ConfigureArgs += "-DVCPKG_TRIPLET=$VcpkgTriplet"
 }
 if ($MagickRoot) {
     $ConfigureArgs += "-DMAGICK_ROOT=$MagickRoot"
 }
-$ConfigureArgs += "-DAVIF_STATIC_MSVC_RUNTIME=$(if ($StaticRuntime) { 'ON' } else { 'OFF' })"
+$ConfigureArgs += "-DAVIF_STATIC_MSVC_RUNTIME=$(if ($UseStaticRuntime) { 'ON' } else { 'OFF' })"
 $ConfigureArgs += "-DAVIF_STATIC_SLINT=$(if ($SharedSlint) { 'OFF' } else { 'ON' })"
 
 cmake @ConfigureArgs

@@ -179,6 +179,15 @@ function Copy-TreeIfExists([string]$Path, [string]$Destination) {
     }
 }
 
+function Copy-ChildrenIfExists([string]$Path, [string]$Destination) {
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+        }
+    }
+}
+
 function Copy-FilesIfExists([string]$Path, [string]$Destination, [string]$Filter) {
     if (Test-Path $Path) {
         New-Item -ItemType Directory -Force -Path $Destination | Out-Null
@@ -186,6 +195,14 @@ function Copy-FilesIfExists([string]$Path, [string]$Destination, [string]$Filter
             Copy-Item -LiteralPath $_.FullName -Destination $Destination -Force
         }
     }
+}
+
+function Copy-NoticeFile([System.IO.FileInfo]$File, [string]$DestinationRoot) {
+    $Target = Join-Path $DestinationRoot $File.Name
+    if (Test-Path -LiteralPath $Target -PathType Container) {
+        $Target = Join-Path $DestinationRoot ("ImageMagick-" + $File.Name)
+    }
+    Copy-Item -LiteralPath $File.FullName -Destination $Target -Force
 }
 
 function Repair-GeneratedProjectToolCommands([string]$ProjectRoot) {
@@ -359,8 +376,10 @@ if (-not (Test-Path $IncludeRoot)) {
     $IncludeRoot = Split-Path -Parent $Header.Directory.FullName
 }
 
+Copy-ChildrenIfExists $IncludeRoot (Join-Path $RuntimeRoot "include")
+$ImageMagickRoot = Join-Path $SourceRoot "ImageMagick"
 foreach ($Dir in @("MagickWand", "MagickCore", "Magick++")) {
-    $SourceDir = Join-Path $IncludeRoot $Dir
+    $SourceDir = Join-Path $ImageMagickRoot $Dir
     if (Test-Path $SourceDir) {
         Copy-Item -LiteralPath $SourceDir -Destination (Join-Path $RuntimeRoot "include") -Recurse -Force
     }
@@ -397,7 +416,7 @@ foreach ($Notice in @("LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt")) {
     $Found = Get-ChildItem -Path $SourceRoot -Recurse -File -Filter $Notice -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($Found) {
-        Copy-Item -LiteralPath $Found.FullName -Destination $RuntimeRoot -Force
+        Copy-NoticeFile $Found $RuntimeRoot
     }
 }
 
