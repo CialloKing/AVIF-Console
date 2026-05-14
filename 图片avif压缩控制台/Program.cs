@@ -435,74 +435,82 @@ namespace AvifEncoder
 
 
 
-
-
-        // ========== 先验分布表（基于 400 张图片 VMAF 目标 → 最优 CRF 统计） ==========
+        /// <summary>
+        /// 根据目标 VMAF 返回先验中位数及大致搜索范围（基于真实图片统计）
+        /// 使用分段线性插值，整数点完全准确，外推采用局部斜率
+        /// </summary>
         private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> VmafPriorTable = new()
 {
-    (90, 37, 30, 50),
-    (91, 35, 29, 48),
-    (92, 33, 27, 45),
-    (93, 31, 26, 43),
-    (94, 28, 22, 40),
-    (95, 25, 18, 35),
-    (96, 18, 11, 28),
+    // 数据使用实际中位数，Lo/Hi 为真实 min/max
+    (90, 38, 26, 58),
+    (91, 36, 24, 57),
+    (92, 34, 20, 56),
+    (93, 32, 16, 54),
+    (94, 29, 13, 52),
+    (95, 25,  9, 49),
+    (96, 19,  5, 43),
 };
 
-        /// <summary>
-        /// 根据目标 VMAF（0‑100）线性插值返回中位数、下界、上界（均已钳制在 1‑63）。
-        /// 外推使用最近边缘的斜率。
-        /// </summary>
-        private static (int median, int lo, int hi) GetPriorFromVmaf(double targetVmaf)
+        public static (int median, int lo, int hi) GetPriorFromVmaf(double targetVmaf)
         {
-            if (targetVmaf <= VmafPriorTable[0].TargetVmaf)
+            // 找到 targetVmaf 所在的区间
+            int idx = 0;
+            while (idx < VmafPriorTable.Count && VmafPriorTable[idx].TargetVmaf < targetVmaf)
+                idx++;
+
+            double median, lo, hi;
+
+            if (idx == 0)
             {
-                var first = VmafPriorTable[0];
-                double delta = first.TargetVmaf - targetVmaf;
-                int shiftMedian = (int)Math.Round(delta * 2.5);
-                int shiftRange = (int)Math.Round(delta * 3.5);
-                return (
-                    ClampCrf(first.Median + shiftMedian),
-                    ClampCrf(first.Lo + shiftRange),
-                    ClampCrf(first.Hi + shiftRange)
-                );
+                // 目标小于最小表项，用第1段外推 (0,1)
+                median = Extrapolate(targetVmaf, VmafPriorTable[0], VmafPriorTable[1], e => e.Median);
+                lo = Extrapolate(targetVmaf, VmafPriorTable[0], VmafPriorTable[1], e => e.Lo);
+                hi = Extrapolate(targetVmaf, VmafPriorTable[0], VmafPriorTable[1], e => e.Hi);
+            }
+            else if (idx == VmafPriorTable.Count)
+            {
+                // 目标大于最大表项，用最后1段外推 (n-2, n-1)
+                var left = VmafPriorTable[^2];
+                var right = VmafPriorTable[^1];
+                median = Extrapolate(targetVmaf, left, right, e => e.Median);
+                lo = Extrapolate(targetVmaf, left, right, e => e.Lo);
+                hi = Extrapolate(targetVmaf, left, right, e => e.Hi);
+            }
+            else
+            {
+                // 线性插值
+                var left = VmafPriorTable[idx - 1];
+                var right = VmafPriorTable[idx];
+                double t = (targetVmaf - left.TargetVmaf) / (right.TargetVmaf - left.TargetVmaf);
+                median = left.Median + t * (right.Median - left.Median);
+                lo = left.Lo + t * (right.Lo - left.Lo);
+                hi = left.Hi + t * (right.Hi - left.Hi);
             }
 
-            var last = VmafPriorTable[^1];
-            if (targetVmaf >= last.TargetVmaf)
-            {
-                double delta = targetVmaf - last.TargetVmaf;
-                int shiftMedian = (int)Math.Round(delta * 2.5);
-                int shiftRange = (int)Math.Round(delta * 3.5);
-                return (
-                    ClampCrf(last.Median - shiftMedian),
-                    ClampCrf(last.Lo - shiftRange),
-                    ClampCrf(last.Hi - shiftRange)
-                );
-            }
+            int medianInt = ClampCrf((int)Math.Round(median));
+            int loInt = ClampCrf((int)Math.Round(lo));
+            int hiInt = ClampCrf((int)Math.Round(hi));
 
-            for (int i = 0; i < VmafPriorTable.Count - 1; i++)
-            {
-                var a = VmafPriorTable[i];
-                var b = VmafPriorTable[i + 1];
-                if (targetVmaf >= a.TargetVmaf && targetVmaf <= b.TargetVmaf)
-                {
-                    double t = (targetVmaf - a.TargetVmaf) / (b.TargetVmaf - a.TargetVmaf);
-                    int median = (int)Math.Round(a.Median + (b.Median - a.Median) * t);
-                    int lo = (int)Math.Round(a.Lo + (b.Lo - a.Lo) * t);
-                    int hi = (int)Math.Round(a.Hi + (b.Hi - a.Hi) * t);
-                    return (ClampCrf(median), ClampCrf(lo), ClampCrf(hi));
-                }
-            }
+            // 确保 lo ≤ median ≤ hi
+            if (loInt > medianInt) loInt = medianInt - 1;
+            if (hiInt < medianInt) hiInt = medianInt + 1;
 
-            // fallback
-            return (ClampCrf((int)targetVmaf), 1, 63);
+            return (medianInt, loInt, hiInt);
         }
 
+        /// <summary> 使用局部两点斜率进行外推 </summary>
+        private static double Extrapolate(double targetVmaf,
+    (double TargetVmaf, int Median, int Lo, int Hi) left,
+    (double TargetVmaf, int Median, int Lo, int Hi) right,
+    Func<(double TargetVmaf, int Median, int Lo, int Hi), int> selector)  // 修正此处类型
+        {
+            double slope = (selector(right) - selector(left)) / (right.TargetVmaf - left.TargetVmaf);
+            double delta = targetVmaf - left.TargetVmaf;
+            return selector(left) + slope * delta;
+        }
+
+        // ClampCrf 保持不变
         private static int ClampCrf(int value) => Math.Clamp(value, 0, 63);
-
-
-
 
 
 
