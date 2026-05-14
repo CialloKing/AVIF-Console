@@ -111,6 +111,9 @@ if (-not $VcpkgTriplet) {
 Ensure-VcpkgPackage $VcpkgRoot $VcpkgTriplet "scnlib" "scnlib" $NoVcpkgInstall
 
 $ConfigureArgs = @(
+    "-U", "scn_DIR",
+    "-U", "FastFloat_DIR",
+    "-U", "fast_float_DIR",
     "-S", $Repo,
     "-B", $BuildDir,
     "-G", "Visual Studio 18 2026",

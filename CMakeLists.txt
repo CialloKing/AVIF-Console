@@ -37,6 +37,17 @@ set(VCPKG_TRIPLET "${AVIF_DEFAULT_VCPKG_TRIPLET}" CACHE STRING "vcpkg target tri
 if(VCPKG_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}")
 endif()
+
+foreach(package_dir_var IN ITEMS scn_DIR FastFloat_DIR)
+    if(DEFINED ${package_dir_var})
+        string(FIND "${${package_dir_var}}" "/${VCPKG_TRIPLET}/" package_triplet_position)
+        if(package_triplet_position EQUAL -1)
+            message(STATUS "Clearing stale cached ${package_dir_var}: ${${package_dir_var}}")
+            unset(${package_dir_var} CACHE)
+        endif()
+    endif()
+endforeach()
+
 message(STATUS "AVIF Studio vcpkg triplet: ${VCPKG_TRIPLET}")
 message(STATUS "AVIF Studio MSVC runtime: ${CMAKE_MSVC_RUNTIME_LIBRARY}")
 

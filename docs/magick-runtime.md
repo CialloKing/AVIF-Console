@@ -64,6 +64,8 @@ third_party\imagemagick-runtime\x64\Release
 .\release.ps1 -VcpkgTriplet x64-windows-static
 ```
 
+脚本会在每次配置时清理 `scn_DIR` / `FastFloat_DIR` 这类 CMake 包路径缓存，避免之前用 `x64-windows` 配置过的构建目录继续链接动态 CRT 版本的 `scn.lib`。
+
 构建完成后，CMake 会把存在的运行时 DLL、modules 和配置文件复制到 `AVIFConsoleCli.exe` / `AVIFStudio.exe` 所在目录。静态 ImageMagick 构建没有对应 DLL 时，不会额外复制。程序启动时会把这些路径设置到：
 
 - `MAGICK_HOME`
