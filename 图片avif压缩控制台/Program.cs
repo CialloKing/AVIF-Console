@@ -116,7 +116,7 @@ namespace AvifEncoder
         public bool UserSpecifiedMaxJobs { get; set; } = false;
 
         // 预缩放：长边最大像素数，0 或负数表示禁用
-        public int MaxResolution { get; set; } = 2560;
+        public int MaxResolution { get; set; } = 0;
 
         // 是否将缩放应用于最终输出
         public bool ApplyScalingToOutput { get; set; } = true;
@@ -4096,7 +4096,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
     class Program
     {
-
+        // 在 Program 类顶部
+        private const string AppVersion = "1.0";
 
 
         [DllImport("kernel32.dll")]
@@ -4112,7 +4113,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         static void PrintHelp()
         {
             Console.WriteLine(@"
-AVIF 编码器 —— Linux 风格命令行工具
+AVIF 编码器 —— Linux 风格CLI命令行工具
 
 用法:
   AvifEncoder --input <目录> --output <目录> [选项]
@@ -4146,8 +4147,13 @@ AVIF 编码器 —— Linux 风格命令行工具
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
-      --prior-search            启用先验引导搜索（中位数+哨兵，通常更快）
-      --max-resolution <像素>  长边最大分辨率 (默认 2560, 0 禁用预缩放)
+      --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）,不启用的情况下默认使用标准二分搜索
+      --max-resolution <像素>  预缩放：编码前将图片等比缩放，使长边不超过该值。
+                               设为 0 则禁用预缩放，完全按原始分辨率编码（默认 0）。
+                               开启后，搜索和质量评估也使用缩放后的图片。
+                               若希望搜索用小图加速，但最终保留原图尺寸，需要加上 --output-full-res。
+      --output-full-res        最终输出保留原始分辨率（仅搜索/指标使用缩放后图）。
+      --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
@@ -4159,7 +4165,7 @@ AVIF 编码器 —— Linux 风格命令行工具
 通用选项:
   -v, --verbose                详细输出
   -q, --quiet                  安静模式，仅输出错误
-  -D, --dry-run                仅打印配置，不实际编码
+  -D, --dry-run                仅打印配置，不实际编码，用于验证命令行是否正确，或查看程序将如何执行
   -V, --version                显示版本信息
   -h, --help                   显示此帮助信息
 
@@ -4653,7 +4659,7 @@ AVIF 编码器 —— Linux 风格命令行工具
             // 显示版本
             if (opts.ShowVersion)
             {
-                Console.WriteLine("AvifEncoder v2.0 (Linux-style CLI)");
+                Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
                 return;
             }
 
