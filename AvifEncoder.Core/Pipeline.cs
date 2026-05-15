@@ -2853,11 +2853,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                 if (EncoderUtils.IsLibAom(cfg.Encoder))
                 {
                     rowMt = "-row-mt 0";
-                    // libaom 内部线程数设为 1，进一步减少内部并行
-                    if (string.IsNullOrEmpty(effectiveAom))
-                        effectiveAom = "threads=1";
-                    else if (!effectiveAom.Contains("threads="))
-                        effectiveAom += ":threads=1";
+                    // 全局 -threads 1 已控制线程数，无需在 -aom-params 中注入 threads
                 }
                 else
                 {
