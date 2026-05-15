@@ -1879,16 +1879,22 @@ namespace AvifEncoder
         }
 
         private EncodeResult BuildResult(int index, string outputFileName, string name,
-    string inputPath, string outputPath,
-    FinalEncodeResult encodeResult, CRFSearchResult searchResult,
-    EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
+string inputPath, string outputPath,
+FinalEncodeResult encodeResult, CRFSearchResult searchResult,
+EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime)
         {
+            // ★ 检测是否是“搜索已失败且最终被迫使用 CRF=0（MinCRF=0）”的情景
+            bool crf0Unreachable = encodeResult.Success
+                                   && !searchResult.SearchBasedCRF
+                                   && searchResult.Crf == 0
+                                   && _config.MinCRF == 0;
+
             var result = new EncodeResult
             {
                 Index = index,
                 FileName = outputFileName,
                 OriginalFileName = name,
-                InputPath = inputPath,                 // ★ 记录原始输入路径
+                InputPath = inputPath,
                 OriginalSize = encodeResult.Success ? _fs.GetFileLength(inputPath) : 0,
                 OutputSize = encodeResult.Success ? _fs.GetFileLength(outputPath) : 0,
                 UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
@@ -1897,8 +1903,11 @@ namespace AvifEncoder
                 SearchTime = searchResult.SearchTime,
                 TotalTime = DateTime.Now - fileStartTime,
                 Retries = encodeResult.Retries,
-                Success = encodeResult.Success,
-                ErrorMessage = encodeResult.FailReason,
+                // 若 CRF=0 仍不达标，即便编码过程成功了也标记为失败
+                Success = encodeResult.Success && !crf0Unreachable,
+                ErrorMessage = crf0Unreachable
+                    ? "CRF=0 仍无法达到质量目标，编码已用最佳质量但未达标"
+                    : encodeResult.FailReason,
                 PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
                 SourcePixelFormat = encInfo.SourcePixFmt,
                 Mode = _config.AutoSource ? "自适应" : "手动",
@@ -1910,7 +1919,7 @@ namespace AvifEncoder
                 FinalPSNR_Y = metrics?.PSNR_Y,
                 FinalMSSSIM = metrics?.MS_SSIM,
                 FinalMixScore = metrics == null ? null : ComputeMixScore(metrics),
-                SearchEvaluations = searchResult.SearchEvalCount   // ★ 新增
+                SearchEvaluations = searchResult.SearchEvalCount
             };
             MarkProcessed(result);
             return result;
