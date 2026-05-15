@@ -101,8 +101,15 @@ namespace AvifEncoder
         public bool UserSetBitDepth { get; set; } = false;
         public string OutputNameFormat { get; set; } = "covers-{index}.avif";
 
-        /// <summary> 若输出文件已存在，是否直接覆盖（不自动重命名） </summary>
-        public bool Overwrite { get; set; } = false;
+        /// <summary> 输出文件冲突时的处理策略 </summary>
+        public enum ConflictStrategy
+        {
+            Rename,    // 自动追加 _1, _2 … 后缀（默认）
+            Overwrite, // 直接覆盖已存在的文件
+            Skip       // 存在时跳过该文件
+        }
+        /// <summary> 当前冲突处理策略 </summary>
+        public ConflictStrategy FileConflictStrategy { get; set; } = ConflictStrategy.Rename;
 
         // 自定义 CRF 搜索范围
         public int MinCRF { get; set; } = 0;
@@ -402,7 +409,7 @@ namespace AvifEncoder
         private readonly string _ffprobePath;
 
 
-        private const double SSIMMargin = 0.001;
+        private const double SSIMMargin = 0.0002;
 
         private readonly ProgressTracker _progress = new ProgressTracker();
 
@@ -642,25 +649,30 @@ namespace AvifEncoder
             _fs.CreateDirectory(targetDir);
 
             string candidate = Path.Combine(targetDir, fileName);
-            // 若启用覆盖模式，直接返回原路径（不自动重命名）
-            if (_config.Overwrite)
-                return candidate;
-
-            // ★ 自动追加序号以避免同名冲突
-            if (_fs.FileExists(candidate))
+            switch (_config.FileConflictStrategy)
             {
-                string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
-                string ext = Path.GetExtension(fileName);   // 通常 .avif
-                int counter = 1;
-                do
-                {
-                    fileName = $"{nameNoExt}_{counter}{ext}";
-                    candidate = Path.Combine(targetDir, fileName);
-                    counter++;
-                } while (_fs.FileExists(candidate));
+                case PresetConfig.ConflictStrategy.Overwrite:
+                    // 直接返回原路径，允许覆盖
+                    return candidate;
+                case PresetConfig.ConflictStrategy.Skip:
+                    // 跳过模式：不重命名，直接返回候选路径（后续会判断跳过）
+                    return candidate;
+                default: // Rename
+                    // 自动追加序号以避免同名冲突
+                    if (_fs.FileExists(candidate))
+                    {
+                        string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
+                        string ext = Path.GetExtension(fileName);
+                        int counter = 1;
+                        do
+                        {
+                            fileName = $"{nameNoExt}_{counter}{ext}";
+                            candidate = Path.Combine(targetDir, fileName);
+                            counter++;
+                        } while (_fs.FileExists(candidate));
+                    }
+                    return candidate;
             }
-
-            return candidate;
         }
 
 
@@ -1981,13 +1993,14 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
         {
             if (isRetry) return null;
 
-            string outputPath = GetOutputPath(inputPath, index);   // ★ 使用新方法保持子目录结构
+            string outputPath = GetOutputPath(inputPath, index);
             if (_fs.FileExists(outputPath))
             {
-                // 覆盖模式：不跳过，继续编码以覆盖旧文件
-                if (config.Overwrite)
+                // 覆盖模式：不跳过，继续编码（覆盖旧文件）
+                if (config.FileConflictStrategy == PresetConfig.ConflictStrategy.Overwrite)
                     return null;
 
+                // 跳过模式：直接返回已存在的文件信息
                 string name = Path.GetFileName(inputPath);
                 SafeWriteLine($"[SKIP] {name} (已存在，跳过)");
                 _logger.LogInfo($"跳过: {name}");
@@ -1996,7 +2009,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                     Index = index,
                     FileName = Path.GetFileName(outputPath),
                     OriginalFileName = name,
-                    InputPath = inputPath,                // ★ 赋值
+                    InputPath = inputPath,
                     OriginalSize = _fs.GetFileLength(inputPath),
                     OutputSize = _fs.GetFileLength(outputPath),
                     Skipped = true
