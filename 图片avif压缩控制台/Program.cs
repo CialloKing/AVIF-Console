@@ -711,7 +711,7 @@ namespace AvifEncoder
                 config.MaxJobs = Math.Max(config.MaxJobs, ffmpegPoolSize);
             }
 
-            _maxFfmpegConcurrency = Math.Min(config.MaxJobs, ffmpegPoolSize);
+            _maxFfmpegConcurrency = config.MaxJobs;
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
         }
