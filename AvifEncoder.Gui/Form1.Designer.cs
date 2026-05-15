@@ -74,6 +74,8 @@
             chkProxy = new CheckBox();
             chkDryRun = new CheckBox();
             chkVerbose = new CheckBox();
+            cmbConflict = new ComboBox();
+            label13 = new Label();
             ((System.ComponentModel.ISupportInitialize)numJobs).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
             grpCrfMode.SuspendLayout();
@@ -514,11 +516,30 @@
             chkVerbose.Text = "详细日志";
             chkVerbose.UseVisualStyleBackColor = true;
             // 
+            // cmbConflict
+            // 
+            cmbConflict.FormattingEnabled = true;
+            cmbConflict.Location = new Point(1082, 535);
+            cmbConflict.Name = "cmbConflict";
+            cmbConflict.Size = new Size(182, 32);
+            cmbConflict.TabIndex = 39;
+            // 
+            // label13
+            // 
+            label13.AutoSize = true;
+            label13.Location = new Point(1082, 508);
+            label13.Name = "label13";
+            label13.Size = new Size(136, 24);
+            label13.TabIndex = 40;
+            label13.Text = "当文件已存在时";
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1567, 919);
+            Controls.Add(label13);
+            Controls.Add(cmbConflict);
             Controls.Add(chkVerbose);
             Controls.Add(chkDryRun);
             Controls.Add(chkProxy);
@@ -620,5 +641,7 @@
         private CheckBox chkProxy;
         private CheckBox chkDryRun;
         private CheckBox chkVerbose;
+        private ComboBox cmbConflict;
+        private Label label13;
     }
 }

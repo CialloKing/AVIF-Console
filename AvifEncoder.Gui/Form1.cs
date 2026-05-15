@@ -37,6 +37,15 @@ namespace AvifEncoder.Gui
             numCrfMin.Enabled = false;
             numCrfMax.Enabled = false;
             rbCrfFix.Checked = true;
+            // ★ 插入冲突策略初始化
+            cmbConflict.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbConflict.Items.AddRange(new[]
+            {
+                "自动重命名 (默认)",
+                "覆盖已存在文件",
+                "跳过已存在文件"
+            });
+            cmbConflict.SelectedIndex = 0;
             // 绑定事件    
             chkLossless.CheckedChanged += chkLossless_CheckedChanged;
             cmbQualityMode.SelectedIndexChanged += cmbQualityMode_SelectedIndexChanged;
@@ -272,6 +281,14 @@ namespace AvifEncoder.Gui
             config.SerialEncode = chkSerialEncode.Checked;
             config.UsePriorSearch = chkPriorSearch.Checked;
             config.UseProxySearch = chkProxy.Checked;
+
+            // ★ 插入冲突策略读取
+            config.FileConflictStrategy = cmbConflict.SelectedIndex switch
+            {
+                1 => PresetConfig.ConflictStrategy.Overwrite,
+                2 => PresetConfig.ConflictStrategy.Skip,
+                _ => PresetConfig.ConflictStrategy.Rename
+            };
 
             // ==================== 4. 创建日志（界面+文件） ====================
             var guiLogger = new GuiLogger(rtbLog);
