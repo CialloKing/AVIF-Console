@@ -101,6 +101,9 @@ namespace AvifEncoder
         public bool UserSetBitDepth { get; set; } = false;
         public string OutputNameFormat { get; set; } = "covers-{index}.avif";
 
+        /// <summary> 若输出文件已存在，是否直接覆盖（不自动重命名） </summary>
+        public bool Overwrite { get; set; } = false;
+
         // 自定义 CRF 搜索范围
         public int MinCRF { get; set; } = 0;
         public int MaxCRF { get; set; } = 63;
@@ -639,6 +642,10 @@ namespace AvifEncoder
             _fs.CreateDirectory(targetDir);
 
             string candidate = Path.Combine(targetDir, fileName);
+            // 若启用覆盖模式，直接返回原路径（不自动重命名）
+            if (_config.Overwrite)
+                return candidate;
+
             // ★ 自动追加序号以避免同名冲突
             if (_fs.FileExists(candidate))
             {
@@ -1977,6 +1984,10 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             string outputPath = GetOutputPath(inputPath, index);   // ★ 使用新方法保持子目录结构
             if (_fs.FileExists(outputPath))
             {
+                // 覆盖模式：不跳过，继续编码以覆盖旧文件
+                if (config.Overwrite)
+                    return null;
+
                 string name = Path.GetFileName(inputPath);
                 SafeWriteLine($"[SKIP] {name} (已存在，跳过)");
                 _logger.LogInfo($"跳过: {name}");

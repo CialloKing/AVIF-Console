@@ -76,10 +76,12 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
       --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）
                                不启用的情况下默认使用标准二分搜索
+
       --max-resolution <像素>   预缩放：编码前将图片等比缩放，使长边不超过该值。
                                设为 0 则禁用预缩放，完全按原始分辨率编码（默认 0）。
                                开启后，搜索和质量评估也使用缩放后的图片。
                                若希望搜索用小图加速，但最终保留原图尺寸，需要加上 --output-full-res。
+
       --output-full-res        最终输出保留原始分辨率（仅搜索/指标使用缩放后图）。
       --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
@@ -95,6 +97,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -v, --verbose                详细输出
   -q, --quiet                  安静模式，仅输出错误
   -D, --dry-run                仅打印配置，不实际编码，用于验证命令行是否正确，或查看程序将如何执行
+  -y, --overwrite              覆盖已存在的输出文件（不覆盖时默认自动添加 _1 等后缀）
   -V, --version                显示版本信息
   -h, --help                   显示此帮助信息
 
@@ -144,6 +147,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             public bool Quiet = false;
             public bool ShowVersion = false;
             public bool DryRun = false;
+            public bool Overwrite = false;                     // -y / --overwrite
             public bool SerialEncode { get; set; } = false;
 
             // 在 private class ParsedOptions 中添加
@@ -253,6 +257,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         case "quiet": opts.Quiet = true; break;
                         case "version": opts.ShowVersion = true; break;
                         case "dry-run": opts.DryRun = true; break;
+                        case "overwrite": opts.Overwrite = true; break;    // ★ 新增
                         case "help": PrintHelp(); return null!;
                         case "prior-search": opts.UsePriorSearch = true; break;
                         case "serial-encode":
@@ -343,6 +348,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             case 'q': opts.Quiet = true; break;
                             case 'V': opts.ShowVersion = true; break;
                             case 'D': opts.DryRun = true; break;
+                            case 'y': opts.Overwrite = true; break;       // ★ 新增
                             case 'h': PrintHelp(); return null!;
                             default: throw new Exception($"未知短选项 -{c}");
                         }
@@ -498,6 +504,9 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
             //---------- 13. 先验搜索模式 ----------
             config.UsePriorSearch = opts.UsePriorSearch;
+
+            //---------- 14. 覆盖模式 ----------
+            config.Overwrite = opts.Overwrite;
 
             return config;
         }
