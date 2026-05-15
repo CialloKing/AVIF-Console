@@ -2016,8 +2016,14 @@ namespace AvifEncoder
                     tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
             }
             // ★ 新增：强制关闭分块并行
+            //对于大分辨率图片无法转换，已修改
+            // 极限压缩模式：只保留 AV1 规范允许的必要瓦片分割，关闭额外并行
             if (config.SerialEncode)
-                tileCols = 0;
+            {
+                // 宽度 ≤ 4096 时无需瓦片，tileCols = 0；
+                // 宽度 > 4096 时取最小合法列数，确保每个 tile 宽度 ≤ 4096。
+                tileCols = GetMinLegalTileCols(w);
+            }
 
             int crf = config.BaseCRF;
             if (isLosslessMode && !isTrulyLossless) crf = 0;
@@ -2368,17 +2374,17 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             string safeRowMt;
             // ===== 极限压缩模式（关闭所有并行）=====
-            if (config.SerialEncode)                           // 使用新属性名
+            if (config.SerialEncode)
             {
-                safeTileCols = 0;
+                // 安全模式也必须遵守 AV1 瓦片宽度 ≤ 4096 的限制
+                safeTileCols = GetMinLegalTileCols(imageWidth);
                 if (EncoderUtils.IsLibAom(config.Encoder))
                 {
                     safeRowMt = "-row-mt 0";
-                    // 确保 aomPart 包含 threads=1
                     if (string.IsNullOrEmpty(aomPart))
                         aomPart = "-aom-params threads=1";
                     else if (!aomPart.Contains("threads="))
-                        aomPart += " -aom-params threads=1";   // 简化追加
+                        aomPart += " -aom-params threads=1";
                 }
                 else
                 {
@@ -2738,11 +2744,12 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             // ===== 极限压缩：强制关闭所有并行 =====
             if (cfg.SerialEncode)
             {
-                tileCols = 0;                          // 瓦片列数强制为 0
+                // 宽度 ≤ 4096 时 tileCols = 0；否则采用最小合法列数，保证每个 tile ≤ 4096 像素
+                tileCols = GetMinLegalTileCols(imageWidth);
                 if (EncoderUtils.IsLibAom(cfg.Encoder))
                 {
-                    rowMt = "-row-mt 0";              // 显式关闭行多线程
-                                                      // libaom 内部线程数设为 1
+                    rowMt = "-row-mt 0";
+                    // libaom 内部线程数设为 1，进一步减少内部并行
                     if (string.IsNullOrEmpty(effectiveAom))
                         effectiveAom = "threads=1";
                     else if (!effectiveAom.Contains("threads="))
@@ -4146,15 +4153,20 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -l, --lossless               无损模式 (真无损或数学无损)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
-      --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程），以追求更高压缩率（编码速度会明显变慢）
-      --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）,不启用的情况下默认使用标准二分搜索
-      --max-resolution <像素>  预缩放：编码前将图片等比缩放，使长边不超过该值。
+
+      --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程）
+                               仅保留 AV1 规范必须的瓦片分割（宽图自动分片）
+                               以追求更高压缩率（编码速度会明显变慢）
+      --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）
+                               不启用的情况下默认使用标准二分搜索
+      --max-resolution <像素>   预缩放：编码前将图片等比缩放，使长边不超过该值。
                                设为 0 则禁用预缩放，完全按原始分辨率编码（默认 0）。
                                开启后，搜索和质量评估也使用缩放后的图片。
                                若希望搜索用小图加速，但最终保留原图尺寸，需要加上 --output-full-res。
       --output-full-res        最终输出保留原始分辨率（仅搜索/指标使用缩放后图）。
       --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
+
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
       --timeout-safe <分钟>    安全模式全扫描超时 (默认 180)
