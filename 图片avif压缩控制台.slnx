@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="AvifEncoder.Core/AvifEncoder.Core.csproj" Id="310a1526-81bf-4b75-b5ba-5c5c8ff3fef3" />
   <Project Path="图片avif压缩控制台/图片avif压缩控制台.csproj" />
 </Solution>
