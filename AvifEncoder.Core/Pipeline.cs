@@ -2132,15 +2132,35 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        crf = config.BaseCRF;
-                        SafeWriteLine($"  [WARN] [{name}] 所有搜索失败，使用 BaseCRF ({crf}) 直接编码");
+                        // ★ 新逻辑：若搜索无解且 MinCRF=0，则直接使用 CRF=0 进行最终编码
+                        if (config.MinCRF == 0)
+                        {
+                            crf = 0;
+                            SafeWriteLine($"  [WARN] [{name}] 搜索未达目标，CRF=0 也无法满足，将使用 CRF=0 进行最终编码");
+                            _logger.LogInfo($"搜索失败但 MinCRF=0，强制使用 CRF=0 编码: {name}");
+                        }
+                        else
+                        {
+                            crf = config.BaseCRF;
+                            SafeWriteLine($"  [WARN] [{name}] 所有搜索失败，使用 BaseCRF ({crf}) 直接编码");
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    crf = config.BaseCRF;
-                    _logger.LogInfo($"搜索异常，回退直接编码: {name} - {ex.Message}");
-                    SafeWriteLine($" [WARN] [{name}] CRF搜索异常，使用 BaseCRF ({crf}) 直接编码");
+                    // 若最小CRF为0，异常时也尝试使用0编码（目标无法达成，但0是质量上限）
+                    if (config.MinCRF == 0)
+                    {
+                        crf = 0;
+                        _logger.LogInfo($"搜索异常但 MinCRF=0，强制使用 CRF=0 编码: {name} - {ex.Message}");
+                        SafeWriteLine($" [WARN] [{name}] 搜索异常，使用 CRF=0 进行最终编码");
+                    }
+                    else
+                    {
+                        crf = config.BaseCRF;
+                        _logger.LogInfo($"搜索异常，回退直接编码: {name} - {ex.Message}");
+                        SafeWriteLine($" [WARN] [{name}] CRF搜索异常，使用 BaseCRF ({crf}) 直接编码");
+                    }
                 }
             }
 
