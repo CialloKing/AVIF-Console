@@ -2125,12 +2125,22 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
 
                     if (!searchOk)
                     {
-                        SafeWriteLine($" [RETRY] [{name}] 普通搜索失败，开始安全模式全扫描 (yuv420p, cpu‑used 0)...");
-                        (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(
-                            inputPath, config, name, config.MinCRF, config.MaxCRF);
+                        // 当 MinCRF=0 时，CRF=0 已是质量上限，跳过耗时的安全扫描
+                        if (config.MinCRF == 0)
+                        {
+                            SafeWriteLine($"  [WARN] [{name}] 搜索未达目标，MinCRF=0，跳过安全扫描，将直接使用 CRF=0 最终编码");
+                            // searchOk 保持 false，后续 else 分支会处理
+                        }
+                        else
+                        {
+                            SafeWriteLine($" [RETRY] [{name}] 普通搜索失败，开始安全模式全扫描 (yuv420p, cpu‑used 0)...");
+                            (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(
+                                inputPath, config, name, config.MinCRF, config.MaxCRF);
+                        }
                     }
 
                     swSearch.Stop();
+
                     searchTime = swSearch.Elapsed;
 
                     if (searchOk)
@@ -3488,6 +3498,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
 
                 // 标准二分无解 → 回退安全扫描
+                // 标准二分无解 → 若 MinCRF=0 则直接失败，否则回退安全扫描
+                if (userMin == 0)
+                {
+                    SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
+                    return (cfg.BaseCRF, true, false, totalEvalCount);
+                }
+
                 SafeWriteLine($"  [{name}] [FALLBACK] 标准二分无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
                 var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
                 if (safeOk)
@@ -3539,6 +3556,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
 
                 // Proxy 失败 → 回退安全扫描
+                // Proxy 失败 → 若 MinCRF=0 则直接失败，否则回退安全扫描
+                if (userMin == 0)
+                {
+                    SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
+                    return (cfg.BaseCRF, true, false, totalEvalCount);
+                }
+
                 SafeWriteLine($"  [{name}] [FALLBACK] Proxy 区间无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
                 var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
                 if (safeOk)
@@ -3661,6 +3685,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
 
             // 二分未找到可行解 → 回退安全扫描
+            // 二分未找到可行解 → 若 MinCRF=0 则直接失败，否则回退安全扫描
+            if (userMin == 0)
+            {
+                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
+                return (cfg.BaseCRF, true, false, totalEvalCount);
+            }
+
             SafeWriteLine($"  [{name}] [FALLBACK] 二分未找到可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
             var (safeOk2, safeCrf2, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
             if (safeOk2)
