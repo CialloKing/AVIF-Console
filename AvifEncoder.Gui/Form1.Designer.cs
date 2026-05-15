@@ -151,7 +151,7 @@
             // 
             // btnStart
             // 
-            btnStart.Location = new Point(12, 587);
+            btnStart.Location = new Point(12, 627);
             btnStart.Name = "btnStart";
             btnStart.Size = new Size(98, 36);
             btnStart.TabIndex = 7;
@@ -161,7 +161,7 @@
             // 
             // progressBar1
             // 
-            progressBar1.Location = new Point(118, 587);
+            progressBar1.Location = new Point(118, 627);
             progressBar1.Name = "progressBar1";
             progressBar1.Size = new Size(1296, 36);
             progressBar1.Style = ProgressBarStyle.Marquee;
@@ -170,9 +170,9 @@
             // 
             // rtbLog
             // 
-            rtbLog.Location = new Point(118, 629);
+            rtbLog.Location = new Point(118, 669);
             rtbLog.Name = "rtbLog";
-            rtbLog.Size = new Size(1296, 278);
+            rtbLog.Size = new Size(1296, 238);
             rtbLog.TabIndex = 9;
             rtbLog.Text = "";
             // 
@@ -269,6 +269,7 @@
             // 
             // cmbQualityMode
             // 
+            cmbQualityMode.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbQualityMode.FormattingEnabled = true;
             cmbQualityMode.Location = new Point(120, 509);
             cmbQualityMode.Name = "cmbQualityMode";
@@ -441,7 +442,7 @@
             // 
             // numMaxRes
             // 
-            numMaxRes.Location = new Point(682, 537);
+            numMaxRes.Location = new Point(118, 581);
             numMaxRes.Maximum = new decimal(new int[] { 8192, 0, 0, 0 });
             numMaxRes.Name = "numMaxRes";
             numMaxRes.Size = new Size(180, 30);
@@ -450,7 +451,7 @@
             // label12
             // 
             label12.AutoSize = true;
-            label12.Location = new Point(682, 511);
+            label12.Location = new Point(118, 554);
             label12.Name = "label12";
             label12.Size = new Size(332, 24);
             label12.TabIndex = 32;
@@ -518,8 +519,9 @@
             // 
             // cmbConflict
             // 
+            cmbConflict.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbConflict.FormattingEnabled = true;
-            cmbConflict.Location = new Point(1082, 535);
+            cmbConflict.Location = new Point(682, 536);
             cmbConflict.Name = "cmbConflict";
             cmbConflict.Size = new Size(182, 32);
             cmbConflict.TabIndex = 39;
@@ -527,7 +529,7 @@
             // label13
             // 
             label13.AutoSize = true;
-            label13.Location = new Point(1082, 508);
+            label13.Location = new Point(682, 509);
             label13.Name = "label13";
             label13.Size = new Size(136, 24);
             label13.TabIndex = 40;
@@ -537,7 +539,7 @@
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1567, 919);
+            ClientSize = new Size(1567, 975);
             Controls.Add(label13);
             Controls.Add(cmbConflict);
             Controls.Add(chkVerbose);
