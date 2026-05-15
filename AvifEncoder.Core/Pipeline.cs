@@ -2478,15 +2478,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             // ===== 极限压缩模式（关闭所有并行）=====
             if (config.SerialEncode)
             {
-                // 安全模式也必须遵守 AV1 瓦片宽度 ≤ 4096 的限制
                 safeTileCols = GetMinLegalTileCols(imageWidth);
                 if (EncoderUtils.IsLibAom(config.Encoder))
                 {
                     safeRowMt = "-row-mt 0";
-                    if (string.IsNullOrEmpty(aomPart))
-                        aomPart = "-aom-params threads=1";
-                    else if (!aomPart.Contains("threads="))
-                        aomPart += " -aom-params threads=1";
                 }
                 else
                 {

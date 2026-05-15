@@ -58,6 +58,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-psnr <dB>       直接设置 PSNR-Y 目标 (典型 30-50)
       --target-msssim <0-1>    直接设置 MS-SSIM 目标
       --target-mix <0-1>       直接设置加权混合评分目标
+
       --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
 
@@ -98,7 +99,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -q, --quiet                  安静模式，仅输出错误
   -D, --dry-run                仅打印配置，不实际编码，用于验证命令行是否正确，或查看程序将如何执行
   -y, --overwrite              覆盖已存在的输出文件（默认行为是自动添加 _1 等后缀）
-  -n, --no-clobber             不覆盖已存在的文件，直接跳过
+  -n, --no-clobber             已存在的文件，直接跳过
   -V, --version                显示版本信息
   -h, --help                   显示此帮助信息
 
