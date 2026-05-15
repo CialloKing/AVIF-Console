@@ -3461,7 +3461,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string name = displayName ?? Path.GetFileName(input);
             double target = cfg.TargetSSIM + SSIMMargin;
             string metricMode = cfg.MetricMode ?? "vmaf";
-            SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={target:F4})");
+            // ★ 使用 FormatScore 将 0-1 目标值转换为用户可读的原生格式
+            string targetDisplay = FormatScore(target, metricMode);
+            SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
