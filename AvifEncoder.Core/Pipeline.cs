@@ -281,11 +281,21 @@ namespace AvifEncoder
 
     public static class Logger
     {
-        private static FileLogger? _instance;
+        private static ILogger? _instance;
 
-        public static void Init(string outputDir) => _instance = new FileLogger(outputDir);
-        public static void SetInstance(FileLogger logger) => _instance = logger;
+        /// <summary>初始化默认文件日志器（控制台/批处理场景）</summary>
+        public static void Init(string outputDir)
+        {
+            _instance = new FileLogger(outputDir);
+        }
 
+        /// <summary>注入自定义日志器（如 GuiLogger）</summary>
+        public static void SetInstance(ILogger logger)
+        {
+            _instance = logger;
+        }
+
+        // 静态方法全部委托给 ILogger 实例
         public static void Log(string msg) => _instance?.LogInfo(msg);
         public static void SSIM(string input, int crf, double ssim)
             => _instance?.LogMetric("ssim", $"{input} | CRF={crf} | SSIM={ssim}");
