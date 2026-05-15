@@ -621,6 +621,10 @@ namespace AvifEncoder
         /// <summary>
         /// 根据输入文件路径与索引生成输出完整路径，并保持子目录结构。
         /// </summary>
+        /// <summary>
+        /// 根据输入文件路径与索引生成输出完整路径，并保持子目录结构。
+        /// ★ 新增同名检测：若文件名已存在，自动追加 _1、_2 … 以避免覆盖。
+        /// </summary>
         private string GetOutputPath(string inputFilePath, int index)
         {
             // 获取相对于输入根目录的相对路径
@@ -633,7 +637,23 @@ namespace AvifEncoder
                 : Path.Combine(_outputDir, relDir);
 
             _fs.CreateDirectory(targetDir);
-            return Path.Combine(targetDir, fileName);
+
+            string candidate = Path.Combine(targetDir, fileName);
+            // ★ 自动追加序号以避免同名冲突
+            if (_fs.FileExists(candidate))
+            {
+                string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
+                string ext = Path.GetExtension(fileName);   // 通常 .avif
+                int counter = 1;
+                do
+                {
+                    fileName = $"{nameNoExt}_{counter}{ext}";
+                    candidate = Path.Combine(targetDir, fileName);
+                    counter++;
+                } while (_fs.FileExists(candidate));
+            }
+
+            return candidate;
         }
 
 
