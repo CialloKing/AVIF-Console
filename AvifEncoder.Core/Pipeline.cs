@@ -403,6 +403,7 @@ namespace AvifEncoder
 
         private readonly ProgressTracker _progress = new ProgressTracker();
 
+        private readonly IProgress<int>? _guiProgress;   // ★ 新增字段，不与 _progress 冲突
 
         private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
 
@@ -699,7 +700,8 @@ namespace AvifEncoder
                     ILogger logger,
                     IProcessRunner? processRunner = null,
                     PresetConfig.IFileSystem? fileSystem = null,   // 改为完整限定名
-                    ICacheManager? cacheManager = null)
+                    ICacheManager? cacheManager = null,
+                    IProgress<int>? progress = null)
         {
             _fs = fileSystem ?? new PresetConfig.RealFileSystem();
 
@@ -729,6 +731,8 @@ namespace AvifEncoder
             _maxFfmpegConcurrency = config.MaxJobs;
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
             _ffmpegSlots = new SemaphoreSlim(ffmpegPoolSize);
+            _guiProgress = progress;       // ★ 改为 _guiProgress
+
         }
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
@@ -2600,6 +2604,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         {
             _progress.MarkFileProcessed();
             PrintProgress(r);
+
+            // ★ 向 GUI 报告进度（0 ~ 100）
+            if (_progress.TotalFiles > 0)
+            {
+                int pct = _progress.ProcessedCount * 100 / _progress.TotalFiles;
+                _guiProgress?.Report(Math.Min(pct, 100));
+            }
         }
 
 

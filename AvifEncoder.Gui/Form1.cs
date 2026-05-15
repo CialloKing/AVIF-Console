@@ -309,12 +309,23 @@ namespace AvifEncoder.Gui
                 }
 
                 // 实际运行流水线
+                // 创建进度报告器，在 UI 线程更新进度条
+                var progress = new Progress<int>(percent =>
+                {
+                    // 因为 AvifPipeline 可能在其他线程调用，需要 Invoke 回到 UI 线程
+                    if (progressBar1.InvokeRequired)
+                        progressBar1.Invoke(() => UpdateProgress(percent));
+                    else
+                        UpdateProgress(percent);
+                });
+
                 var pipeline = new AvifPipeline(
                     txtInput.Text, txtOutput.Text, config,
                     logger: logger,
                     processRunner: new RealProcessRunner(),
                     fileSystem: new RealFileSystem(),
-                    cacheManager: new CacheManager());
+                    cacheManager: new CacheManager(),
+                    progress: progress);   // ★ 传入进度对象
 
                 await Task.Run(() => pipeline.RunAsync());
                 logger.LogInfo("全部完成！");
@@ -329,6 +340,13 @@ namespace AvifEncoder.Gui
                 progressBar1.Style = ProgressBarStyle.Blocks;
                 progressBar1.Value = 0;
             }
+        }
+
+        private void UpdateProgress(int percent)
+        {
+            if (progressBar1.Style != ProgressBarStyle.Blocks)
+                progressBar1.Style = ProgressBarStyle.Blocks;
+            progressBar1.Value = Math.Min(percent, 100);
         }
         private void label1_Click(object sender, EventArgs e)
         {
