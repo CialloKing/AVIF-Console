@@ -435,9 +435,9 @@
             chkLossless.AutoSize = true;
             chkLossless.Location = new Point(1082, 167);
             chkLossless.Name = "chkLossless";
-            chkLossless.Size = new Size(108, 28);
+            chkLossless.Size = new Size(263, 28);
             chkLossless.TabIndex = 30;
-            chkLossless.Text = "无损模式";
+            chkLossless.Text = "无损模式(有bug不建议使用)";
             chkLossless.UseVisualStyleBackColor = true;
             // 
             // numMaxRes

@@ -2026,16 +2026,18 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
         {
             string name = Path.GetFileName(inputPath);
             bool isLosslessMode = config.Lossless;
-            // ★ 修改：不再区分源格式，只要启用无损选项，所有图片都使用真正的无损编码
-            bool isTrulyLossless = isLosslessMode;
-
+            bool isTrulyLossless = isLosslessMode;   // ★ 已修改
             string srcFmt = await GetSourcePixelFormat(inputPath);
             bool hasAlpha = await SourceHasAlpha(inputPath);
             string actualPixFmt = await GetPixelFormatForFileAsync(inputPath, isLosslessMode, isTrulyLossless, hasAlpha);
-
-            // ... 省略中间 ...
-
-            // ★ 移除原有的有损源数学无损警告（现在所有图片都是真无损）
+            // ===== 补全缺失的 pixInfo、w、h =====
+            string pixInfo;
+            if (config.AutoSource && !isLosslessMode)
+                pixInfo = $"源: {srcFmt} -> 输出: {actualPixFmt}";
+            else
+                pixInfo = actualPixFmt;
+            var (w, h) = await GetResolutionAsync(inputPath);
+            if (w == 0 || h == 0) return null;
 
             // 硬件编码器 Alpha 警告等保持原有逻辑
             bool alphaDropped = false;

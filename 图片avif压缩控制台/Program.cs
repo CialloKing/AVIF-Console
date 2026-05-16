@@ -67,7 +67,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -b, --bit-depth <位数>       输出位深: 8 或 10
 
 其他编码选项:
-  -l, --lossless               无损模式 (真无损或数学无损)
+  -l, --lossless               无损模式 (有bug，不建议使用)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
   -r, --recursive              递归处理子目录
 
