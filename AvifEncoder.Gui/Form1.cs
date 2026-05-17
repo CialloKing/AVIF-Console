@@ -337,14 +337,14 @@ namespace AvifEncoder.Gui
 
         private async void btnStart_Click(object? sender, EventArgs e)
         {
-            // 验证路径 ...
-            // 1. 验证必填路径
+            // 验证必填路径
             if (string.IsNullOrWhiteSpace(txtInput.Text) || string.IsNullOrWhiteSpace(txtOutput.Text))
             {
                 MessageBox.Show("请输入输入和输出目录");
                 return;
             }
-            // 不再使用 CreateFromPreset，直接从 UI 构建配置
+
+            // 直接从 UI 构建配置
             var config = new PresetConfig();
 
             // 编码器
@@ -449,9 +449,68 @@ namespace AvifEncoder.Gui
                 _ => PresetConfig.ConflictStrategy.Rename
             };
 
-            // 日志、流水线启动等后续代码保持不变...
+            // ========== 以下是新增的运行与异常处理部分 ==========
+            SetControlsEnabled(false);
+            progressBar1.Style = ProgressBarStyle.Marquee;
+            progressBar1.Value = 0;
+
+            try
+            {
+                ILogger fileLogger = new FileLogger(txtOutput.Text, new PresetConfig.RealFileSystem());
+                GuiLogger guiLogger = new GuiLogger(rtbLog);
+                ILogger logger = new CompositeLogger(fileLogger, guiLogger);
+
+                IProgress<int> progress = new Progress<int>(percent =>
+                {
+                    // 切换到非 Marquee 模式并更新进度
+                    if (progressBar1.InvokeRequired)
+                        progressBar1.Invoke((Action)(() => UpdateProgress(percent)));
+                    else
+                        UpdateProgress(percent);
+                });
+
+                using var pipeline = new AvifPipeline(
+                    txtInput.Text, txtOutput.Text, config,
+                    logger: logger,
+                    processRunner: new RealProcessRunner(),
+                    fileSystem: new PresetConfig.RealFileSystem(),
+                    cacheManager: new CacheManager(),
+                    progress: progress);
+
+                await pipeline.RunAsync();
+
+                AppendLog("===== 全部完成 =====");
+                MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"严重错误: {ex.Message}");
+                MessageBox.Show($"处理过程中发生未预期的错误:\n{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                SetControlsEnabled(true);
+                progressBar1.Style = ProgressBarStyle.Blocks;
+            }
+        }
+        private void SetControlsEnabled(bool enabled)
+        {
+            btnStart.Enabled = enabled;
+            cmbPreset.Enabled = enabled;
+            cmbEncoder.Enabled = enabled;
+            // 可根据需要继续添加其他控件，例如：
+            // chkLossless.Enabled = enabled;
+            // numCrfFix.Enabled = enabled;
+            // ...
         }
 
+        private void AppendLog(string message)
+        {
+            if (rtbLog.InvokeRequired)
+                rtbLog.Invoke((Action)(() => rtbLog.AppendText(message + Environment.NewLine)));
+            else
+                rtbLog.AppendText(message + Environment.NewLine);
+        }
         private void UpdateProgress(int percent)
         {
             if (progressBar1.Style != ProgressBarStyle.Blocks)

@@ -824,17 +824,18 @@ namespace AvifEncoder
             return stdout;
         }
 
+
+
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            FinalCleanup();               // ★ 新增：保证临时文件被清理
             _globalCts?.Cancel();
             _globalCts?.Dispose();
-            _globalCts = null;            // ← 新增：防止已释放对象被引用
+            _globalCts = null;              // ← 新增：防止已释放对象被引用
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
         }
-
-
 
 
 
@@ -1246,31 +1247,35 @@ namespace AvifEncoder
         // ==================== 主入口 ====================
         public async Task RunAsync()
         {
-            _globalCts = new CancellationTokenSource();
-            Console.CancelKeyPress += (s, e) =>
+            try
             {
-                e.Cancel = true;
-                SafeWriteLine("\n[WARN] 正在安全停止，请稍候...");
-                _globalCts.Cancel();
-            };
+                _globalCts = new CancellationTokenSource();
+                Console.CancelKeyPress += (s, e) =>
+                {
+                    e.Cancel = true;
+                    SafeWriteLine("\n[WARN] 正在安全停止，请稍候...");
+                    _globalCts.Cancel();
+                };
 
-            Console.OutputEncoding = Encoding.UTF8;
-            _progress.Start(DateTime.Now);
-            // （Init 已由构造函数中的 new FileLogger(_outputDir) 完成，直接删除）
-            //Logger.Init(_outputDir);
+                Console.OutputEncoding = Encoding.UTF8;
+                _progress.Start(DateTime.Now);
 
-            _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
+                _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
 
-            await PrintStartupInfoAsync();
+                await PrintStartupInfoAsync();
 
-            var files = await ScanAndPrepareFilesAsync();
-            if (files == null || files.Count == 0) return;
+                var files = await ScanAndPrepareFilesAsync();
+                if (files == null || files.Count == 0) return;
 
-            var results = await ProcessInitialBatchAsync(files);
-            results = await RetryFailuresAsync(results);
+                var results = await ProcessInitialBatchAsync(files);
+                results = await RetryFailuresAsync(results);
 
-            PrintSummaryAndExport(results);
-            FinalCleanup();
+                PrintSummaryAndExport(results);
+            }
+            finally
+            {
+                FinalCleanup();   // 无论成功、失败、异常都会执行
+            }
         }
 
         // ==================== 辅助方法 ====================
