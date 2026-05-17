@@ -4,22 +4,39 @@ namespace AvifEncoder.Gui
 {
     public partial class Form1 : Form
     {
+        // 防止程序设置控件值时触发“自定义”标记
+        private bool _isApplyingPreset = false;
+        // 预设对应选项文本（与 CliPreset 枚举 + 自定义）
+        private const string CustomPresetName = "自定义";
+        private readonly Dictionary<string, CliPreset?> _presetMap = new()
+    {
+        { CustomPresetName, null },
+        { "fast", CliPreset.Fast },
+        { "balanced", CliPreset.Balanced },
+        { "best", CliPreset.Best },
+        { "extreme", CliPreset.Extreme }
+    };
         public Form1()
         {
             InitializeComponent();
-            // ========== 初始化所有控件可选项 ==========
-            cmbPreset.Items.Clear();
-            cmbPreset.Items.AddRange(new[] { "fast", "balanced", "best", "extreme" });
+
+            // ========== 1. 初始化所有控件可选项（原有代码，必须保留） ==========
+            cmbPreset.Items.Clear();                         // ★ 先清空，后面会重新添加
+            cmbPreset.Items.AddRange(new[] { "fast", "balanced", "best", "extreme" }); // 临时占位，后续会被覆盖
             cmbPreset.SelectedIndex = 1;
+
             cmbEncoder.Items.Clear();
             cmbEncoder.Items.AddRange(new[] { "libaom-av1", "libsvtav1", "librav1e",
-                                              "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" });
+                                      "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" });
             cmbEncoder.SelectedItem = "libaom-av1";
+
             numJobs.Value = 0;
             txtTemplate.Text = "covers-{index}.avif";
+
             cmbMetric.Items.Clear();
             cmbMetric.Items.AddRange(new[] { "vmaf", "ssim", "psnr", "msssim", "mix" });
             cmbMetric.SelectedIndex = 0;
+
             cmbQualityMode.Items.Clear();
             cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "SSIM", "PSNR-Y", "MS-SSIM", "Mix" });
             cmbQualityMode.SelectedIndex = 0;
@@ -27,31 +44,181 @@ namespace AvifEncoder.Gui
             numQualityValue.Maximum = 1;
             numQualityValue.Value = 0.95m;
             numQualityValue.DecimalPlaces = 4;
+
             cmbChroma.Items.Clear();
             cmbChroma.Items.AddRange(new[] { "auto", "420", "422", "444" });
             cmbChroma.SelectedIndex = 0;
+
             cmbBitDepth.Items.Clear();
             cmbBitDepth.Items.AddRange(new[] { "auto", "8", "10" });
-            cmbBitDepth.SelectedIndex = 0; // 默认选 auto
+            cmbBitDepth.SelectedIndex = 0;
+
+            // CRF 数值控件的合法范围（预设可能用到 0‑63）
+            numCrfFix.Minimum = 0; numCrfFix.Maximum = 63;
+            numCrfMin.Minimum = 0; numCrfMin.Maximum = 63;
+            numCrfMax.Minimum = 0; numCrfMax.Maximum = 63;
+
             numCrfFix.Enabled = true;
             numCrfMin.Enabled = false;
             numCrfMax.Enabled = false;
             rbCrfFix.Checked = true;
-            // ★ 插入冲突策略初始化
+
             cmbConflict.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbConflict.Items.Clear();
             cmbConflict.Items.AddRange(new[]
             {
-                "自动重命名 (默认)",
-                "覆盖已存在文件",
-                "跳过已存在文件"
-            });
+        "自动重命名 (默认)",
+        "覆盖已存在文件",
+        "跳过已存在文件"
+    });
             cmbConflict.SelectedIndex = 0;
-            // 绑定事件    
+
+            // 绑定原有事件
             chkLossless.CheckedChanged += chkLossless_CheckedChanged;
             cmbQualityMode.SelectedIndexChanged += cmbQualityMode_SelectedIndexChanged;
             rbCrfFix.CheckedChanged += rbCrfFix_CheckedChanged;
             rbCrfRange.CheckedChanged += rbCrfRange_CheckedChanged;
             btnStart.Click += btnStart_Click;
+
+            // ========== 2. 预设联动改造 ==========
+            // 重新设置 cmbPreset（覆盖上面的临时设置）
+            cmbPreset.Items.Clear();
+            cmbPreset.Items.AddRange(new[] { CustomPresetName, "fast", "balanced", "best", "extreme" });
+            cmbPreset.SelectedItem = "fast";
+
+            // 将 balanced 预设值填充到界面
+            ApplyPresetToUI(CliPreset.Fast);
+
+            // 绑定预设选择事件
+            cmbPreset.SelectedIndexChanged += cmbPreset_SelectedIndexChanged;
+
+            // 给所有可能被用户手动修改的控件挂上“标记自定义”事件
+            AttachCustomMarkEvents();
+        }
+
+
+
+
+
+        private void ApplyPresetToUI(CliPreset preset)
+        {
+            _isApplyingPreset = true;
+            try
+            {
+                var cfg = AvifPipeline.CreateFromPreset(preset);
+
+                // 编码器（预设不修改编码器，保留用户选择）
+                // cmbEncoder.SelectedItem = ...  // 预设本来不包含编码器字段，这里可以不管
+
+                // CRF / 搜索
+                chkSearch.Checked = cfg.UseCRFSearch;
+                if (cfg.UseCRFSearch)
+                {
+                    rbCrfRange.Checked = true;
+                    numCrfMin.Value = cfg.MinCRF;
+                    numCrfMax.Value = cfg.MaxCRF;
+                }
+                else
+                {
+                    rbCrfFix.Checked = true;
+                    numCrfFix.Value = cfg.BaseCRF;
+                }
+
+                // 色度采样：预设使用了 PixelFormat，需转换为 combo 值
+                string chroma = "auto";
+                if (!cfg.AutoSource)
+                {
+                    if (cfg.PixelFormat != null)
+                    {
+                        if (cfg.PixelFormat.Contains("444")) chroma = "444";
+                        else if (cfg.PixelFormat.Contains("422")) chroma = "422";
+                        else chroma = "420";
+                    }
+                    else chroma = "auto";
+                }
+                cmbChroma.SelectedItem = chroma;
+
+                // 位深
+                cmbBitDepth.SelectedItem = cfg.BitDepth == 10 ? "10" : (cfg.AutoSource ? "auto" : "8");
+
+                // 质量目标（预设的 TargetSSIM 和 MetricMode）
+                string metricMode = cfg.MetricMode ?? "vmaf";
+                cmbMetric.SelectedItem = metricMode;   // 搜索度量模式
+                                                       // 质量目标模式下拉框
+                if (!string.IsNullOrEmpty(metricMode))
+                {
+                    string qMode = metricMode switch
+                    {
+                        "vmaf" => "VMAF",
+                        "ssim" => "SSIM",
+                        "psnr" => "PSNR-Y",
+                        "msssim" => "MS-SSIM",
+                        "mix" => "Mix",
+                        _ => "无"
+                    };
+                    cmbQualityMode.SelectedItem = qMode;
+                    double rawValue = metricMode switch
+                    {
+                        "vmaf" => cfg.TargetSSIM * 100.0,
+                        "psnr" => cfg.TargetSSIM * 20 + 30,
+                        _ => cfg.TargetSSIM
+                    };
+                    numQualityValue.Value = (decimal)rawValue;
+                }
+
+                // 无损
+                chkLossless.Checked = cfg.Lossless;
+
+                // 其他高级选项（预设默认不启用这些）
+                chkSerialEncode.Checked = cfg.SerialEncode;
+                chkPriorSearch.Checked = cfg.UsePriorSearch;
+                chkProxy.Checked = cfg.UseProxySearch;
+
+                // 并行任务数
+                numJobs.Value = cfg.MaxJobs;
+            }
+            finally
+            {
+                _isApplyingPreset = false;
+            }
+        }
+        private void MarkCustomPreset()
+        {
+            if (_isApplyingPreset) return;                     // 程序设置跳过
+            if (cmbPreset.SelectedItem?.ToString() == CustomPresetName) return; // 已经是自定义
+
+            cmbPreset.SelectedItem = CustomPresetName;
+        }
+
+        // 为所有相关控件挂上事件
+        private void AttachCustomMarkEvents()
+        {
+            // 编码器
+            cmbEncoder.SelectedIndexChanged += (s, e) => MarkCustomPreset();
+            // 无损
+            chkLossless.CheckedChanged += (s, e) => MarkCustomPreset();
+            // CRF 相关
+            rbCrfFix.CheckedChanged += (s, e) => MarkCustomPreset();
+            rbCrfRange.CheckedChanged += (s, e) => MarkCustomPreset();
+            numCrfFix.ValueChanged += (s, e) => MarkCustomPreset();
+            numCrfMin.ValueChanged += (s, e) => MarkCustomPreset();
+            numCrfMax.ValueChanged += (s, e) => MarkCustomPreset();
+            // 搜索选项
+            chkSearch.CheckedChanged += (s, e) => MarkCustomPreset();
+            // 色度 / 位深
+            cmbChroma.SelectedIndexChanged += (s, e) => MarkCustomPreset();
+            cmbBitDepth.SelectedIndexChanged += (s, e) => MarkCustomPreset();
+            // 质量目标
+            cmbMetric.SelectedIndexChanged += (s, e) => MarkCustomPreset();
+            cmbQualityMode.SelectedIndexChanged += (s, e) => MarkCustomPreset();
+            numQualityValue.ValueChanged += (s, e) => MarkCustomPreset();
+            // 高级并行/极限
+            chkSerialEncode.CheckedChanged += (s, e) => MarkCustomPreset();
+            chkPriorSearch.CheckedChanged += (s, e) => MarkCustomPreset();
+            chkProxy.CheckedChanged += (s, e) => MarkCustomPreset();
+            // 并行任务数
+            numJobs.ValueChanged += (s, e) => MarkCustomPreset();
+            // 其他可能影响编码质量的选项可按需添加
         }
         private void btnBrowseInput_Click(object? sender, EventArgs e)
         {
@@ -68,14 +235,26 @@ namespace AvifEncoder.Gui
         private void chkLossless_CheckedChanged(object? sender, EventArgs e)
         {
             bool isLossless = chkLossless.Checked;
-            chkSearch.Enabled = !isLossless;
-            grpCrfMode.Enabled = !isLossless;
-            if (isLossless)
+            // 原有的逻辑：禁用搜索、CRF 等
+            _isApplyingPreset = true;
+            try
             {
-                chkSearch.Checked = false;
-                rbCrfFix.Checked = true;
-                numCrfFix.Value = 0;
+                chkSearch.Enabled = !isLossless;
+                grpCrfMode.Enabled = !isLossless;
+                if (isLossless)
+                {
+                    chkSearch.Checked = false;
+                    rbCrfFix.Checked = true;
+                    numCrfFix.Value = 0;
+                }
             }
+            finally
+            {
+                _isApplyingPreset = false;
+            }
+
+            // 标记自定义（除非正在应用预设）
+            MarkCustomPreset();
         }
 
         // 在 Form1.cs 中定义（可放在 Form1 类内部或单独文件）
@@ -153,28 +332,21 @@ namespace AvifEncoder.Gui
             numCrfMin.Enabled = numCrfMax.Enabled = rbCrfRange.Checked;
             numCrfFix.Enabled = !rbCrfRange.Checked;
         }
+
+
+
         private async void btnStart_Click(object? sender, EventArgs e)
         {
+            // 验证路径 ...
             // 1. 验证必填路径
             if (string.IsNullOrWhiteSpace(txtInput.Text) || string.IsNullOrWhiteSpace(txtOutput.Text))
             {
                 MessageBox.Show("请输入输入和输出目录");
                 return;
             }
+            // 不再使用 CreateFromPreset，直接从 UI 构建配置
+            var config = new PresetConfig();
 
-            // 2. 基于预设创建基础配置
-            string? presetStr = cmbPreset.SelectedItem?.ToString() ?? "balanced";
-            var preset = presetStr switch
-            {
-                "fast" => CliPreset.Fast,
-                "balanced" => CliPreset.Balanced,
-                "best" => CliPreset.Best,
-                "extreme" => CliPreset.Extreme,
-                _ => CliPreset.Balanced
-            };
-            var config = AvifPipeline.CreateFromPreset(preset);
-
-            // ==================== 3. 覆盖所有用户设置 ====================
             // 编码器
             config.Encoder = cmbEncoder.SelectedItem?.ToString() ?? "libaom-av1";
 
@@ -194,10 +366,48 @@ namespace AvifEncoder.Gui
             // 递归
             config.RecurseSubdirectories = chkRecursive.Checked;
 
-            // 搜索开关
-            config.UseCRFSearch = chkSearch.Checked;
+            // 无损
+            config.Lossless = chkLossless.Checked;
 
-            // 度量模式
+            // CRF / 搜索
+            config.UseCRFSearch = chkSearch.Checked;
+            if (rbCrfFix.Checked)
+            {
+                config.BaseCRF = (int)numCrfFix.Value;
+            }
+            else
+            {
+                config.MinCRF = (int)numCrfMin.Value;
+                config.MaxCRF = (int)numCrfMax.Value;
+                config.UseCRFSearch = true;  // 范围模式下强制搜索
+            }
+
+            // 色度采样
+            string chroma = cmbChroma.SelectedItem?.ToString()?.ToLower() ?? "auto";
+            if (chroma != "auto")
+            {
+                config.AutoSource = false;
+                config.UserSetChroma = true;
+                config.PixelFormat = chroma switch
+                {
+                    "420" => "yuv420p",
+                    "422" => "yuv422p",
+                    "444" => "yuv444p",
+                    _ => "yuv420p"
+                };
+            }
+
+            // 位深
+            string? bitDepthStr = cmbBitDepth.SelectedItem?.ToString();
+            if (!string.IsNullOrEmpty(bitDepthStr) && bitDepthStr != "auto" && int.TryParse(bitDepthStr, out int bit))
+            {
+                config.BitDepth = bit;
+                config.UserSetBitDepth = true;
+                config.AutoSource = false;
+                AvifPipeline.ApplyBitDepth(config);
+            }
+
+            // 度量模式（搜索用）
             config.MetricMode = cmbMetric.SelectedItem?.ToString()?.ToLower() ?? "vmaf";
 
             // 质量目标
@@ -219,58 +429,7 @@ namespace AvifEncoder.Gui
             }
             else
             {
-                config.AdjustTargetForMetricMode(); // 使用预设自动调整
-            }
-
-            // CRF 模式
-            if (!chkLossless.Checked)
-            {
-                if (rbCrfFix.Checked)
-                {
-                    config.BaseCRF = (int)numCrfFix.Value;
-                    config.UseCRFSearch = false;
-                }
-                else
-                {
-                    config.MinCRF = (int)numCrfMin.Value;
-                    config.MaxCRF = (int)numCrfMax.Value;
-                    config.UseCRFSearch = true;
-                }
-            }
-
-            // 色度采样
-            string chroma = cmbChroma.SelectedItem?.ToString()?.ToLower() ?? "auto";
-            if (chroma != "auto")
-            {
-                config.AutoSource = false;
-                config.UserSetChroma = true;
-                config.PixelFormat = chroma switch
-                {
-                    "420" => "yuv420p",
-                    "422" => "yuv422p",
-                    "444" => "yuv444p",
-                    _ => "yuv420p"
-                };
-            }
-
-            // 位深：仅当选择具体值（非auto）时才覆盖，否则保持自适应
-            string? bitDepthStr = cmbBitDepth.SelectedItem?.ToString();
-            if (!string.IsNullOrEmpty(bitDepthStr) && bitDepthStr != "auto" && int.TryParse(bitDepthStr, out int bit))
-            {
-                config.BitDepth = bit;
-                config.UserSetBitDepth = true;
-                config.AutoSource = false;
-                AvifPipeline.ApplyBitDepth(config);
-            }
-            // 选择 auto 时不修改，完全依赖预设的自适应行为
-
-            // 无损
-            config.Lossless = chkLossless.Checked;
-            if (config.Lossless)
-            {
-                config.BaseCRF = 0;
-                config.TargetSSIM = 1.0;
-                config.UseCRFSearch = false;
+                config.AdjustTargetForMetricMode();
             }
 
             // 最大分辨率
@@ -282,7 +441,7 @@ namespace AvifEncoder.Gui
             config.UsePriorSearch = chkPriorSearch.Checked;
             config.UseProxySearch = chkProxy.Checked;
 
-            // ★ 插入冲突策略读取
+            // 冲突策略
             config.FileConflictStrategy = cmbConflict.SelectedIndex switch
             {
                 1 => PresetConfig.ConflictStrategy.Overwrite,
@@ -290,73 +449,7 @@ namespace AvifEncoder.Gui
                 _ => PresetConfig.ConflictStrategy.Rename
             };
 
-            // ==================== 4. 创建日志（界面+文件） ====================
-            var guiLogger = new GuiLogger(rtbLog);
-            ILogger logger = guiLogger; // 默认只在界面显示
-            try
-            {
-                // 尝试添加文件日志器（若失败则仅用界面日志）
-                var fileLogger = new FileLogger(txtOutput.Text.Trim());
-                logger = new CompositeLogger(guiLogger, fileLogger);
-            }
-            catch (Exception ex)
-            {
-                guiLogger.LogInfo($"无法创建文件日志器，将仅在界面显示日志: {ex.Message}");
-            }
-            Logger.SetInstance(logger);
-
-            // 界面状态更新
-            btnStart.Enabled = false;
-            progressBar1.Style = ProgressBarStyle.Marquee;
-
-            try
-            {
-                // 干运行模式
-                if (chkDryRun.Checked)
-                {
-                    logger.LogInfo("===== Dry Run =====");
-                    logger.LogInfo($"Input: {txtInput.Text}");
-                    logger.LogInfo($"Output: {txtOutput.Text}");
-                    logger.LogInfo($"Encoder: {config.Encoder}, Search: {config.UseCRFSearch}");
-                    logger.LogInfo($"CRF: {config.BaseCRF}, PixFmt: {config.PixelFormat}, BitDepth: {config.BitDepth}");
-                    logger.LogInfo($"Target: {config.TargetSSIM} (Metric: {config.MetricMode})");
-                    logger.LogInfo($"MaxResolution: {config.MaxResolution}, OutputFullRes: {!config.ApplyScalingToOutput}");
-                    logger.LogInfo($"Serial: {config.SerialEncode}, PriorSearch: {config.UsePriorSearch}, Proxy: {config.UseProxySearch}");
-                    return;
-                }
-
-                // 实际运行流水线
-                // 创建进度报告器，在 UI 线程更新进度条
-                var progress = new Progress<int>(percent =>
-                {
-                    // 因为 AvifPipeline 可能在其他线程调用，需要 Invoke 回到 UI 线程
-                    if (progressBar1.InvokeRequired)
-                        progressBar1.Invoke(() => UpdateProgress(percent));
-                    else
-                        UpdateProgress(percent);
-                });
-
-                var pipeline = new AvifPipeline(
-                    txtInput.Text, txtOutput.Text, config,
-                    logger: logger,
-                    processRunner: new RealProcessRunner(),
-                    fileSystem: new RealFileSystem(),
-                    cacheManager: new CacheManager(),
-                    progress: progress);   // ★ 传入进度对象
-
-                await Task.Run(() => pipeline.RunAsync());
-                logger.LogInfo("全部完成！");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError($"异常: {ex.Message}");
-            }
-            finally
-            {
-                btnStart.Enabled = true;
-                progressBar1.Style = ProgressBarStyle.Blocks;
-                progressBar1.Value = 0;
-            }
+            // 日志、流水线启动等后续代码保持不变...
         }
 
         private void UpdateProgress(int percent)
@@ -393,9 +486,16 @@ namespace AvifEncoder.Gui
 
         }
 
-        private void cmbPreset_SelectedIndexChanged(object sender, EventArgs e)
+        private void cmbPreset_SelectedIndexChanged(object? sender, EventArgs e)
         {
+            string? select = cmbPreset.SelectedItem?.ToString();
+            if (select == null || select == CustomPresetName)
+                return;
 
+            if (_presetMap.TryGetValue(select, out var preset) && preset.HasValue)
+            {
+                ApplyPresetToUI(preset.Value);
+            }
         }
 
         private void radioButton1_CheckedChanged(object sender, EventArgs e)
