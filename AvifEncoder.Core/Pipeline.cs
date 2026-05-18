@@ -1892,15 +1892,16 @@ namespace AvifEncoder
                 // 尝试附加 XPSNR 信息（使用 yuv444p 保留完整色彩）
                 try
                 {
-                    var (xpY, xpU, xpV, wXp) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                    metrics.XPSNR_Y = xpY;
-                    metrics.XPSNR_U = xpU;
-                    metrics.XPSNR_V = xpV;
-                    metrics.W_XPSNR = wXp;
+                    var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                    metrics.XPSNR_Y = y;
+                    metrics.XPSNR_U = u;
+                    metrics.XPSNR_V = v;
+                    metrics.W_XPSNR = weighted;
+                    _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogInfo($"XPSNR 计算异常: {ex.Message}");
+                    _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}");
                 }
 
                 _cache.SetMetrics(cacheKey, metrics);
@@ -3425,44 +3426,66 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
         /// </summary>
         /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
-        private async Task<(double? y, double? u, double? v, double? w)> ComputeXPSNRAsync(
-            string refPath, string distPath, string pixFmt = "yuv444p")
+        /// <summary>
+        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
+        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+        /// </summary>
+        private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
+    string refPath, string distPath, string pixFmt = "yuv444p")
         {
             if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
                 return (null, null, null, null);
 
-            // 获取参考图分辨率和位深，用于确定 maxPixel 值
-            var (w, h) = await GetResolutionAsync(refPath);
-            var info = await GetProbeInfoAsync(refPath);
+            // 去除长路径前缀，避免 FFmpeg 解析异常
+            string CleanPath(string p)
+            {
+                if (p.StartsWith(@"\\?\")) p = p.Substring(4);
+                return Path.GetFullPath(p);
+            }
+            string safeRef = CleanPath(refPath);
+            string safeDist = CleanPath(distPath);
+
             int bitDepth = 8;
-            if (info != null && info.PixFmt.Contains("10le"))
-                bitDepth = 10;
-            // 若失真图位深不同，取较大值（通常 AVIF 可能为 10bit）
-            var distInfo = await GetProbeInfoAsync(distPath);
-            if (distInfo != null && distInfo.PixFmt.Contains("10le"))
-                bitDepth = Math.Max(bitDepth, 10);
+            try
+            {
+                var infoRef = await GetProbeInfoAsync(refPath);
+                if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
+                    bitDepth = 10;
+                var infoDist = await GetProbeInfoAsync(distPath);
+                if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
+                    bitDepth = Math.Max(bitDepth, 10);
+            }
+            catch { }
             double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
 
-            // 统一帧率，消除 timebase 警告
-            string args = $"-i \"{distPath}\" -i \"{refPath}\" -lavfi \"[0:v]fps=1[dist];[1:v]fps=1[ref];[dist][ref]format={pixFmt},xpsnr\" -f null -";
+            // 只统一像素格式，不改变帧率，避免 xpsnr 接收不到帧对
+            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" -lavfi \"[0:v]format={pixFmt}[dist];[1:v]format={pixFmt}[ref];[dist][ref]xpsnr\" -f null -";
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
                 _globalCts?.Token ?? default);
 
-            if (exitCode != 0 || string.IsNullOrWhiteSpace(stderr))
-                return (null, null, null, null);
+            string combinedOutput = stdout + stderr;
 
-            // 匹配行：XPSNR  y:53.8127  u:58.5950  v:59.8228  (minimum:53.8127)
-            var match = Regex.Match(stderr, @"XPSNR\s+y:\s*([0-9.]+)\s+u:\s*([0-9.]+)\s+v:\s*([0-9.]+)");
-            if (!match.Success) return (null, null, null, null);
+            if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
+            {
+                _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
+                return (null, null, null, null);
+            }
+
+            var match = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*([0-9.]+)\s+u:\s*([0-9.]+)\s+v:\s*([0-9.]+)");
+            if (!match.Success)
+            {
+                _logger.LogInfo($"XPSNR 正则匹配失败。输出尾部:\n{combinedOutput.TrimEnd().Split('\n').TakeLast(3).Aggregate((a, b) => a + "\n" + b)}");
+                return (null, null, null, null);
+            }
 
             if (!double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double y) ||
-            !double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double u) ||
-            !double.TryParse(match.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+                !double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double u) ||
+                !double.TryParse(match.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
                 return (null, null, null, null);
 
-            double wxpsnr = ComputeWXPSNR(y, u, v, maxVal);
-            return (y, u, v, wxpsnr);
+            double wXpsnr = ComputeWXPSNR(y, u, v, maxVal);
+            return (y, u, v, wXpsnr);
         }
 
         /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
