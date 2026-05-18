@@ -272,6 +272,12 @@ namespace AvifEncoder
         public double? FinalMSSSIM { get; set; }
         public double? FinalMixScore { get; set; }
 
+        // ---- 新增：XPSNR 分数 ----
+        public double? FinalXPSNR_Y { get; set; }
+        public double? FinalXPSNR_U { get; set; }
+        public double? FinalXPSNR_V { get; set; }
+        public double? FinalWXPSNR { get; set; }          // 加权综合
+
 
         public int SearchEvaluations { get; set; }   // ★ 新增：搜索阶段实际成功评估CRF点的次数
 
@@ -286,6 +292,14 @@ namespace AvifEncoder
         public double PSNR_Y { get; set; }
         public double MS_SSIM { get; set; }
         public double VMAF { get; set; }
+
+        // ---- 新增：XPSNR 各通道分数 ----
+        public double? XPSNR_Y { get; set; }
+        public double? XPSNR_U { get; set; }
+        public double? XPSNR_V { get; set; }
+
+        /// <summary>加权 XPSNR (Y:U:V = 6:1:1)，未计算时返回 null</summary>
+        public double? W_XPSNR { get; set; }
     }
 
 
@@ -1875,8 +1889,22 @@ namespace AvifEncoder
 
             if (metrics != null)
             {
+                // 尝试附加 XPSNR 信息（使用 yuv444p 保留完整色彩）
+                try
+                {
+                    var (xpY, xpU, xpV, wXp) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                    metrics.XPSNR_Y = xpY;
+                    metrics.XPSNR_U = xpU;
+                    metrics.XPSNR_V = xpV;
+                    metrics.W_XPSNR = wXp;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogInfo($"XPSNR 计算异常: {ex.Message}");
+                }
+
                 _cache.SetMetrics(cacheKey, metrics);
-                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F6}, PSNR-Y={metrics.PSNR_Y:F4}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}");
+                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F6}, PSNR-Y={metrics.PSNR_Y:F4}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}, XPSNR Y={metrics.XPSNR_Y?.ToString("F4") ?? "N/A"}, U={metrics.XPSNR_U?.ToString("F4") ?? "N/A"}, V={metrics.XPSNR_V?.ToString("F4") ?? "N/A"}, W={metrics.W_XPSNR?.ToString("F4") ?? "N/A"}");
                 return (metrics.SSIM, metrics);
             }
 
@@ -1948,6 +1976,12 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 FinalPSNR_Y = metrics?.PSNR_Y,
                 FinalMSSSIM = metrics?.MS_SSIM,
                 FinalMixScore = metrics == null ? null : ComputeMixScore(metrics),
+
+                // ---- 新增：XPSNR 分数 ----
+                FinalXPSNR_Y = metrics?.XPSNR_Y,
+                FinalXPSNR_U = metrics?.XPSNR_U,
+                FinalXPSNR_V = metrics?.XPSNR_V,
+                FinalWXPSNR = metrics?.W_XPSNR,
                 SearchEvaluations = searchResult.SearchEvalCount
             };
             MarkProcessed(result);
@@ -3206,9 +3240,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 {
     "文件名", "原始文件名", "原始大小", "输出大小", "压缩率",
     "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
+    "XPSNR-Y", "XPSNR-U", "XPSNR-V", "W-XPSNR",   // 新增四列
     "编码耗时(秒)", "搜索耗时(秒)", "总耗时(秒)", "重试次数",
     "像素格式", "源像素格式", "模式", "安全模式",
-    "AOM参数", "完整命令行",   // ← 交换后的顺序
+    "AOM参数", "完整命令行",
     "缓存复用", "状态", "失败原因",
     "搜索评估次数"
 };
@@ -3381,7 +3416,65 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
         }
 
+        /// <summary>
+        /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W‑XPSNR (6:1:1)。
+        /// 失败时各字段为 null。
+        /// </summary>
+        /// <summary>
+        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
+        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+        /// </summary>
+        /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
+        private async Task<(double? y, double? u, double? v, double? w)> ComputeXPSNRAsync(
+            string refPath, string distPath, string pixFmt = "yuv444p")
+        {
+            if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
+                return (null, null, null, null);
 
+            // 获取参考图分辨率和位深，用于确定 maxPixel 值
+            var (w, h) = await GetResolutionAsync(refPath);
+            var info = await GetProbeInfoAsync(refPath);
+            int bitDepth = 8;
+            if (info != null && info.PixFmt.Contains("10le"))
+                bitDepth = 10;
+            // 若失真图位深不同，取较大值（通常 AVIF 可能为 10bit）
+            var distInfo = await GetProbeInfoAsync(distPath);
+            if (distInfo != null && distInfo.PixFmt.Contains("10le"))
+                bitDepth = Math.Max(bitDepth, 10);
+            double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
+
+            // 统一帧率，消除 timebase 警告
+            string args = $"-i \"{distPath}\" -i \"{refPath}\" -lavfi \"[0:v]fps=1[dist];[1:v]fps=1[ref];[dist][ref]format={pixFmt},xpsnr\" -f null -";
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
+                _globalCts?.Token ?? default);
+
+            if (exitCode != 0 || string.IsNullOrWhiteSpace(stderr))
+                return (null, null, null, null);
+
+            // 匹配行：XPSNR  y:53.8127  u:58.5950  v:59.8228  (minimum:53.8127)
+            var match = Regex.Match(stderr, @"XPSNR\s+y:\s*([0-9.]+)\s+u:\s*([0-9.]+)\s+v:\s*([0-9.]+)");
+            if (!match.Success) return (null, null, null, null);
+
+            if (!double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double y) ||
+            !double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double u) ||
+            !double.TryParse(match.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+                return (null, null, null, null);
+
+            double wxpsnr = ComputeWXPSNR(y, u, v, maxVal);
+            return (y, u, v, wxpsnr);
+        }
+
+        /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
+        /// <param name="maxVal">像素最大值，8‑bit=255, 10‑bit=1023</param>
+        private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
+        {
+            double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
+            double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
+            double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
+            double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
+            return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
+        }
 
 
 
@@ -3989,6 +4082,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         psnrY,
         msssim,
         mix,
+        // 新增 XPSNR 四列
+        // 新增 XPSNR 四列
+        r.FinalXPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+        r.FinalXPSNR_U?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+        r.FinalXPSNR_V?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+        r.FinalWXPSNR?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
         r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
         r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
         r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
