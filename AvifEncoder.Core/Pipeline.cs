@@ -1338,7 +1338,12 @@ namespace AvifEncoder
             }
             _fs.CreateDirectory(_outputDir);
 
-            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+            var extensions = new[]
+{
+    ".jpg", ".jpeg", ".png", ".webp",
+    ".bmp", ".tif", ".tiff", ".gif",
+    ".jp2", ".j2k", ".jpx"   // 可选：JPEG 2000
+};
 
             // 根据配置选择是否递归遍历子文件夹
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
