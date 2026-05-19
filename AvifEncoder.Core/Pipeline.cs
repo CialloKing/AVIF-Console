@@ -842,8 +842,19 @@ namespace AvifEncoder
         }
         private static double ComputeMixScore(QualityMetrics m)
         {
+            // 归一化各原生指标
             double vmafNorm = m.VMAF / 100.0;
             double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+
+            // 如果 W‑XPSNR 有效，采用五指标加权模型
+            if (m.W_XPSNR.HasValue)
+            {
+                // XPSNR 常见范围 40~60 dB，映射到 0~1
+                double xpsnrNorm = Math.Clamp((m.W_XPSNR.Value - 40) / 20.0, 0, 1);
+                // 权重分配：VMAF 0.50 + SSIM 0.05 + MS‑SSIM 0.08 + PSNR‑Y 0.05 + W‑XPSNR 0.32 = 1.00
+                return 0.50 * vmafNorm + 0.05 * m.SSIM + 0.08 * m.MS_SSIM + 0.05 * psnrNorm + 0.32 * xpsnrNorm;
+            }
+            // 否则沿用原来的四项指标公式
             return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
         }
 

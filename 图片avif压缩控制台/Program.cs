@@ -52,13 +52,14 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 质量控制:
   -s, --search                 启用 CRF 搜索 (默认启用)
       --no-search              禁用 CRF 搜索
-      --metric <模式>          质量评价模式: vmaf, ssim, psnr, msssim, mix (默认 vmaf)
-      --target-vmaf <0-100>    直接设置 VMAF 目标，自动切换模式
+      --metric <模式>           质量评价模式: vmaf, ssim, psnr, msssim, XPSNR, mix (默认 vmaf)
+                               设置目标分数自动切换模式
+      --target-vmaf <0-100>    直接设置 VMAF 目标
+      --target-xpsnr <dB>      直接设置 XPSNR 加权综合分目标（默认 W‑XPSNR，配合 --metric xpsnr_y/u/v 可选择通道）
       --target-ssim <0-1>      直接设置 SSIM 目标
       --target-psnr <dB>       直接设置 PSNR-Y 目标 (典型 30-50)
       --target-msssim <0-1>    直接设置 MS-SSIM 目标
-      --target-mix <0-1>       直接设置加权混合评分目标
-      --target-xpsnr <dB>     直接设置 XPSNR 加权综合分目标 (典型 40-60，自动使用原生分贝)
+      --target-mix <0-1>       直接设置多指标加权混合评分目标
 
       --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
@@ -213,8 +214,11 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-xpsnr":
-                            opts.DirectTargetMode = "xpsnr";
-                            opts.DirectTargetValue = double.Parse(GetValue());
+                            // 若用户未通过 --metric 明确指定 XPSNR 通道，则默认使用加权 W‑XPSNR
+                            if (!opts.MetricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
+                                opts.MetricMode = "xpsnr";
+                            // 目标值存入 QualityTarget，不覆盖已设定的 MetricMode
+                            opts.QualityTarget = double.Parse(GetValue());
                             break;
                         case "crf":
                             string crfVal = GetValue();
