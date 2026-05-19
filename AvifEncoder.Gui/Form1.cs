@@ -34,11 +34,11 @@ namespace AvifEncoder.Gui
             txtTemplate.Text = "covers-{index}.avif";
 
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(new[] { "vmaf", "ssim", "psnr", "msssim", "mix" });
+            cmbMetric.Items.AddRange(new[] { "vmaf", "xpsnr", "ssim", "psnr", "msssim", "mix"  });
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "SSIM", "PSNR-Y", "MS-SSIM", "Mix" });
+            cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM", "Mix" });
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0;
             numQualityValue.Maximum = 1;
@@ -154,6 +154,7 @@ namespace AvifEncoder.Gui
                         "psnr" => "PSNR-Y",
                         "msssim" => "MS-SSIM",
                         "mix" => "Mix",
+                        "xpsnr" => "XPSNR",
                         _ => "无"
                     };
                     cmbQualityMode.SelectedItem = qMode;
@@ -313,6 +314,12 @@ namespace AvifEncoder.Gui
                     numQualityValue.Value = 0;
                     numQualityValue.Enabled = false;
                     return;
+                case "XPSNR":                     // 新增
+                    numQualityValue.Minimum = 40;
+                    numQualityValue.Maximum = 60;
+                    numQualityValue.Value = 45;
+                    numQualityValue.DecimalPlaces = 1;
+                    break;
                 default: // SSIM / MS-SSIM / Mix
                     numQualityValue.Minimum = 0;
                     numQualityValue.Maximum = 1;
@@ -321,6 +328,26 @@ namespace AvifEncoder.Gui
                     break;
             }
             numQualityValue.Enabled = true;
+
+            // ========== 联动：搜索度量自动跟随目标类型 ==========
+            if (mode != "无")
+            {
+                string metricMode = mode.ToLower() switch
+                {
+                    "vmaf" => "vmaf",
+                    "ssim" => "ssim",
+                    "psnr-y" => "psnr",
+                    "ms-ssim" => "msssim",
+                    "mix" => "mix",
+                    "xpsnr" => "xpsnr",
+                    _ => ""                    // 返回空字符串，不再使用 null
+                };
+                if (!string.IsNullOrEmpty(metricMode))
+                {
+                    cmbMetric.SelectedItem = metricMode;   // 现在 metricMode 是非空 string
+                }
+            }
+            // ==================================================
         }
         private void rbCrfFix_CheckedChanged(object? sender, EventArgs e)
         {
@@ -422,6 +449,7 @@ namespace AvifEncoder.Gui
                     "psnr-y" => "psnr",
                     "ms-ssim" => "msssim",
                     "mix" => "mix",
+                    "xpsnr" => "xpsnr",      // 新增，加权 W‑XPSNR
                     _ => "vmaf"
                 };
                 config.MetricMode = metricMode;

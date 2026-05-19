@@ -281,18 +281,18 @@
             label5.AutoSize = true;
             label5.Location = new Point(118, 406);
             label5.Name = "label5";
-            label5.Size = new Size(521, 24);
+            label5.Size = new Size(557, 24);
             label5.TabIndex = 21;
-            label5.Text = "质量评价度量：vmaf、ssim、psnr、msssim、mix，默认 vmaf";
+            label5.Text = "质量评价度量：vmaf、xpsnr、ssim、psnr、msssim、mix混合评分";
             // 
             // label6
             // 
             label6.AutoSize = true;
             label6.Location = new Point(120, 482);
             label6.Name = "label6";
-            label6.Size = new Size(554, 24);
+            label6.Size = new Size(560, 24);
             label6.TabIndex = 22;
-            label6.Text = "质量目标类型：VMAF、SSIM、PSNR-Y、MS-SSIM、Mix混合评分";
+            label6.Text = "质量目标类型：VMAF、XPSNR、SSIM、PSNR-Y、MS-SSIM、Mix";
             // 
             // numQualityValue
             // 
@@ -320,9 +320,9 @@
             grpCrfMode.Controls.Add(rbCrfRange);
             grpCrfMode.Controls.Add(numCrfFix);
             grpCrfMode.Controls.Add(rbCrfFix);
-            grpCrfMode.Location = new Point(666, 114);
+            grpCrfMode.Location = new Point(718, 114);
             grpCrfMode.Name = "grpCrfMode";
-            grpCrfMode.Size = new Size(309, 238);
+            grpCrfMode.Size = new Size(315, 238);
             grpCrfMode.TabIndex = 25;
             grpCrfMode.TabStop = false;
             grpCrfMode.Text = "CRF 模式";
@@ -398,7 +398,7 @@
             // 
             cmbChroma.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbChroma.FormattingEnabled = true;
-            cmbChroma.Location = new Point(682, 388);
+            cmbChroma.Location = new Point(718, 388);
             cmbChroma.Name = "cmbChroma";
             cmbChroma.Size = new Size(182, 32);
             cmbChroma.TabIndex = 26;
@@ -406,7 +406,7 @@
             // label10
             // 
             label10.AutoSize = true;
-            label10.Location = new Point(682, 361);
+            label10.Location = new Point(718, 361);
             label10.Name = "label10";
             label10.Size = new Size(82, 24);
             label10.TabIndex = 27;
@@ -416,7 +416,7 @@
             // 
             cmbBitDepth.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbBitDepth.FormattingEnabled = true;
-            cmbBitDepth.Location = new Point(682, 459);
+            cmbBitDepth.Location = new Point(718, 459);
             cmbBitDepth.Name = "cmbBitDepth";
             cmbBitDepth.Size = new Size(182, 32);
             cmbBitDepth.TabIndex = 28;
@@ -424,7 +424,7 @@
             // label11
             // 
             label11.AutoSize = true;
-            label11.Location = new Point(682, 432);
+            label11.Location = new Point(718, 432);
             label11.Name = "label11";
             label11.Size = new Size(82, 24);
             label11.TabIndex = 29;
@@ -521,7 +521,7 @@
             // 
             cmbConflict.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbConflict.FormattingEnabled = true;
-            cmbConflict.Location = new Point(682, 536);
+            cmbConflict.Location = new Point(718, 536);
             cmbConflict.Name = "cmbConflict";
             cmbConflict.Size = new Size(182, 32);
             cmbConflict.TabIndex = 39;
@@ -529,7 +529,7 @@
             // label13
             // 
             label13.AutoSize = true;
-            label13.Location = new Point(682, 509);
+            label13.Location = new Point(718, 509);
             label13.Name = "label13";
             label13.Size = new Size(136, 24);
             label13.TabIndex = 40;
