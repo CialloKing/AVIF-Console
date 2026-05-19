@@ -58,6 +58,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-psnr <dB>       直接设置 PSNR-Y 目标 (典型 30-50)
       --target-msssim <0-1>    直接设置 MS-SSIM 目标
       --target-mix <0-1>       直接设置加权混合评分目标
+      --target-xpsnr <dB>     直接设置 XPSNR 加权综合分目标 (典型 40-60，自动使用原生分贝)
 
       --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
@@ -83,7 +84,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                开启后，搜索和质量评估也使用缩放后的图片。
                                若希望搜索用小图加速，但最终保留原图尺寸，需要加上 --output-full-res。
 
-      --output-full-res        最终输出保留原始分辨率（仅搜索/指标使用缩放后图）。
       --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
 
@@ -212,6 +212,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         case "target-psnr": opts.DirectTargetMode = "psnr"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-xpsnr":
+                            opts.DirectTargetMode = "xpsnr";
+                            opts.DirectTargetValue = double.Parse(GetValue());
+                            break;
                         case "crf":
                             string crfVal = GetValue();
                             if (crfVal.Contains(':'))
@@ -434,6 +438,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
             // ---------- 4. 质量目标处理 ----------
             // 直接目标优先（--target-vmaf 等）
+            // ---------- 4. 质量目标处理 ----------
+            // 直接目标优先（--target-vmaf 等）
             if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
             {
                 opts.MetricMode = opts.DirectTargetMode;
@@ -445,6 +451,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
                 config.MetricMode = effectiveMetric;
                 config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
+                // 如果目标模式已是 xpsnr，SetQualityTarget 会设置 XpsnrTargetValue，
+                // 此时无需再调用 AdjustTargetForMetricMode。
             }
             else
             {

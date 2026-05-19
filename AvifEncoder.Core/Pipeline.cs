@@ -95,6 +95,12 @@ namespace AvifEncoder
             "enable-rect-tx=1:enable-1to4-partitions=1:" +
             "enable-ab-partitions=1:enable-rect-partitions=1";
         public bool Lossless { get; set; } = false;
+
+        // ---------- XPSNR 原生目标 ----------
+        /// <summary>若不为 null，表示使用原生 XPSNR 分贝值作为目标（忽略 TargetSSIM）</summary>
+        public double? XpsnrTargetValue { get; set; }
+        /// <summary>XPSNR 目标通道：y / u / v / w（null 时视为 w）</summary>
+        public string? XpsnrTargetChannel { get; set; }
         public int BitDepth { get; set; } = 8;
         public bool AutoSource { get; set; } = true;
         public bool UserSetChroma { get; set; } = false;
@@ -165,7 +171,7 @@ namespace AvifEncoder
         /// </summary>
         public void AdjustTargetForMetricMode()
         {
-            if (Lossless) return;
+            if (Lossless || XpsnrTargetValue.HasValue) return;
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":
@@ -182,6 +188,16 @@ namespace AvifEncoder
         /// </summary>
         public void SetQualityTarget(double rawValue, string metricMode)
         {
+            if (metricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                XpsnrTargetValue = rawValue;
+                XpsnrTargetChannel = metricMode.Length > 5 ? metricMode.Substring(6).ToLower() : "w"; // "xpsnr_w" → "w"
+                TargetSSIM = 0;
+                return;
+            }
+
+            XpsnrTargetValue = null;
+            XpsnrTargetChannel = null;
             TargetSSIM = metricMode?.ToLower() switch
             {
                 "ssim" => Math.Clamp(rawValue, 0, 1),
@@ -1309,7 +1325,7 @@ namespace AvifEncoder
 
             // 根据 MetricMode 动态生成标签和原生数值
             string metricMode = (_config.MetricMode ?? "vmaf").ToUpper();
-            string targetDisplay = GetTargetDisplayString(_config.TargetSSIM, metricMode);
+            string targetDisplay = GetTargetDisplayString(_config.TargetSSIM, metricMode, _config);
 
             SafeWriteLine($"编码器: {_config.Encoder}");
             SafeWriteLine($"同时调用ffmpeg编码数: {_maxFfmpegConcurrency}");
@@ -1318,13 +1334,15 @@ namespace AvifEncoder
         }
 
         // 辅助方法：将内部 0~1 目标值转换为对应模式的原生显示字符串
-        private static string GetTargetDisplayString(double targetSSIM, string metricMode)
+        private static string GetTargetDisplayString(double targetSSIM, string metricMode, PresetConfig? config = null)
         {
+            if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) && config?.XpsnrTargetValue.HasValue == true)
+                return $"{config.XpsnrTargetValue.Value:F1} dB ({config.XpsnrTargetChannel?.ToUpper() ?? "W"})";
+
             switch (metricMode.ToLower())
             {
                 case "vmaf":
                     double vmafTarget = targetSSIM * 100;
-                    // 若小于 0.005 视为整数（消除浮点误差）
                     if (Math.Abs(vmafTarget - Math.Round(vmafTarget)) < 0.001)
                         return vmafTarget.ToString("F0");
                     else
@@ -1876,6 +1894,27 @@ namespace AvifEncoder
             if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
                 _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
+
+                // 若度量模式为 xpsnr 且缓存中缺失 XPSNR 数据，则补算并更新
+                if (config.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true &&
+                    (!cachedMetrics!.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue || !cachedMetrics.XPSNR_V.HasValue))
+                {
+                    try
+                    {
+                        var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                        cachedMetrics.XPSNR_Y = y;
+                        cachedMetrics.XPSNR_U = u;
+                        cachedMetrics.XPSNR_V = v;
+                        cachedMetrics.W_XPSNR = weighted;
+                        _cache.SetMetrics(cacheKey, cachedMetrics);
+                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInfo($"XPSNR 补算异常: {ex.Message}");
+                    }
+                }
+
                 return (cachedMetrics!.SSIM, cachedMetrics);
             }
 
@@ -2173,7 +2212,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
                 string metricModeLabel = (config.MetricMode ?? "vmaf").ToUpper();
-                string targetDisplay = GetTargetDisplayString(config.TargetSSIM, metricModeLabel);
+                string targetDisplay = GetTargetDisplayString(config.TargetSSIM, metricModeLabel, config);
                 SafeWriteLine($"  [SEARCH] [{name}] 开始 CRF 搜索 (目标 {metricModeLabel}={targetDisplay})，请耐心等待...");
 
                 try
@@ -3347,10 +3386,28 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         QualityMetrics? metrics = await ComputeAllMetricsAsync(input, tmp);
                         if (metrics != null)
                         {
+                            // 当度量模式为 xpsnr 时，额外计算 XPSNR 各通道分并写入 metrics
+                            if (cfg.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
+                            {
+                                try
+                                {
+                                    var (y, u, v, w) = await ComputeXPSNRAsync(input, tmp, pixFmt);
+                                    metrics.XPSNR_Y = y;
+                                    metrics.XPSNR_U = u;
+                                    metrics.XPSNR_V = v;
+                                    metrics.W_XPSNR = w;
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogInfo($"搜索 XPSNR 计算异常，将留空: {ex.Message}");
+                                }
+                            }
+
                             _cache.SetMetrics(key, metrics);
                             _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
                                              $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F4}dB, " +
-                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}");
+                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}" +
+                                             (metrics.XPSNR_Y.HasValue ? $", XPSNR Y={metrics.XPSNR_Y:F2}" : ""));
                         }
                         else
                         {
@@ -3412,6 +3469,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     double vmafNorm = m.VMAF / 100.0;
                     double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
                     return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
+                // ---------- XPSNR 原生值 ----------
+                case "xpsnr_y": return m.XPSNR_Y ?? -1;
+                case "xpsnr_u": return m.XPSNR_U ?? -1;
+                case "xpsnr_v": return m.XPSNR_V ?? -1;
+                case "xpsnr_w": return m.W_XPSNR ?? -1;
+                case "xpsnr":   // 未指定通道时默认加权 W‑XPSNR
+                    return m.W_XPSNR ?? -1;
                 default:
                     return m.SSIM;
             }
@@ -3604,11 +3668,23 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
             string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
-            string name = displayName ?? Path.GetFileName(input);
-            double target = cfg.TargetSSIM + SSIMMargin;
-            string metricMode = cfg.MetricMode ?? "vmaf";
             // ★ 使用 FormatScore 将 0-1 目标值转换为用户可读的原生格式
-            string targetDisplay = FormatScore(target, metricMode);
+
+            string name = displayName ?? Path.GetFileName(input);
+            string metricMode = cfg.MetricMode ?? "vmaf";
+            double target;
+            const double XpsnrMargin = 0.01; // XPSNR 使用 0.01 dB 容差
+
+            if (cfg.XpsnrTargetValue.HasValue)
+            {
+                // XPSNR 越大越好，目标值减去极小容差以保证搜索时 score >= target 即可达标
+                target = cfg.XpsnrTargetValue.Value - XpsnrMargin;
+            }
+            else
+            {
+                target = cfg.TargetSSIM + SSIMMargin;
+            }
+            string targetDisplay = FormatScore(cfg.XpsnrTargetValue.HasValue ? target + XpsnrMargin : target, metricMode);
             SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
@@ -3843,6 +3919,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         // 辅助格式化方法（可放在同一类中）
         private static string FormatScore(double score, string metricMode)
         {
+            if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
+                return $"XPSNR={score:F4} dB";
             return metricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
         }
 
@@ -4270,6 +4348,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 if (r.Success)
                 {
                     string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F4") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F4") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
+                    if (r.FinalWXPSNR.HasValue)
+                        qualityStr += $"  W‑XPSNR={r.FinalWXPSNR.Value:F2} dB";
                     return $"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
                            $"{FormatSizeLocal(r.OriginalSize)} -> {FormatSizeLocal(r.OutputSize)} | " +
                            $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F4}s | 剩余 {eta}";
