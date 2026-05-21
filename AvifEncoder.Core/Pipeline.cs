@@ -2200,44 +2200,71 @@ namespace AvifEncoder
                 }
 
                 // 补算缺失的高级指标（使用随机目录）
+                // 补算缺失的高级指标（使用随机目录）—— 各自独立，互不影响
                 bool advancedUpdated = false;
-                if (!cachedMetrics.SSIMULACRA2.HasValue ||
-                    !cachedMetrics.Butteraugli_3norm.HasValue ||
-                    !cachedMetrics.GMSD.HasValue)
                 {
-                    string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");   // ★ 随机目录
-                    try
-                    {
-                        _fs.CreateDirectory(advancedTempDir);
-                        string? refPng = workingInputPath;
-                        if (Path.GetExtension(workingInputPath).ToLower() != ".png")
-                        {
-                            refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
-                        }
-                        string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
+                    bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
+                    bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
+                    bool needGmsd = !cachedMetrics.GMSD.HasValue;
 
-                        if (!cachedMetrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
-                        {
-                            var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                            if (s.HasValue) { cachedMetrics.SSIMULACRA2 = s; advancedUpdated = true; }
-                        }
-                        if ((!cachedMetrics.Butteraugli_Raw.HasValue || !cachedMetrics.Butteraugli_3norm.HasValue)
-                            && refPng != null && distPng != null)
-                        {
-                            var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
-                            if (raw.HasValue) { cachedMetrics.Butteraugli_Raw = raw; advancedUpdated = true; }
-                            if (p3.HasValue) { cachedMetrics.Butteraugli_3norm = p3; advancedUpdated = true; }
-                        }
-                        if (!cachedMetrics.GMSD.HasValue)
-                        {
-                            var g = await ComputeGMSDAsync(workingInputPath, outputPath);
-                            if (g.HasValue) { cachedMetrics.GMSD = g; advancedUpdated = true; }
-                        }
-                    }
-                    catch (Exception ex) { _logger.LogInfo($"缓存高级指标补算异常: {ex.Message}"); }
-                    finally
+                    if (needSsimu2 || needButter || needGmsd)
                     {
-                        if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                        string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                        try
+                        {
+                            _fs.CreateDirectory(advancedTempDir);
+                            string? refPng = workingInputPath;
+                            if (Path.GetExtension(workingInputPath).ToLower() != ".png")
+                            {
+                                try { refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir); }
+                                catch { refPng = null; }
+                            }
+                            string? distPng = null;
+                            if (needSsimu2 || needButter)
+                            {
+                                try { distPng = await ConvertToPngAsync(outputPath, advancedTempDir); }
+                                catch { distPng = null; }
+                            }
+
+                            // SSIMULACRA2 — 独立 try
+                            if (needSsimu2 && refPng != null && distPng != null)
+                            {
+                                try
+                                {
+                                    var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                                    if (s.HasValue) { cachedMetrics.SSIMULACRA2 = s; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 补算异常: {ex.Message}"); }
+                            }
+
+                            // Butteraugli — 独立 try
+                            if (needButter && refPng != null && distPng != null)
+                            {
+                                try
+                                {
+                                    var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                                    if (raw.HasValue) { cachedMetrics.Butteraugli_Raw = raw; advancedUpdated = true; }
+                                    if (p3.HasValue) { cachedMetrics.Butteraugli_3norm = p3; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"Butteraugli 补算异常: {ex.Message}"); }
+                            }
+
+                            // GMSD — 独立 try（不依赖外部 exe，理论上必成功）
+                            if (needGmsd)
+                            {
+                                try
+                                {
+                                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                                    if (g.HasValue) { cachedMetrics.GMSD = g; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"GMSD 补算异常: {ex.Message}"); }
+                            }
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"缓存高级指标补算整体异常: {ex.Message}"); }
+                        finally
+                        {
+                            if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                        }
                     }
                 }
 
@@ -2278,41 +2305,70 @@ namespace AvifEncoder
                 catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
 
                 // 高级指标
+                // 高级指标 —— 各自独立计算，避免单点故障导致 GMSD 等缺失
                 bool advancedUpdated = false;
-                string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");   // ★ 随机目录
-                try
                 {
-                    _fs.CreateDirectory(advancedTempDir);
-                    string? refPng = workingInputPath;
-                    string ext = Path.GetExtension(workingInputPath).ToLower();
-                    if (ext != ".png")
-                    {
-                        refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
-                    }
-                    string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
+                    bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
+                    bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
+                    bool needGmsd = !metrics.GMSD.HasValue;
 
-                    if (!metrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
+                    if (needSsimu2 || needButter || needGmsd)
                     {
-                        var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                        if (s.HasValue) { metrics.SSIMULACRA2 = s; advancedUpdated = true; }
+                        string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                        try
+                        {
+                            _fs.CreateDirectory(advancedTempDir);
+                            string? refPng = workingInputPath;
+                            string ext = Path.GetExtension(workingInputPath).ToLower();
+                            if (ext != ".png")
+                            {
+                                try { refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir); }
+                                catch { refPng = null; }
+                            }
+                            string? distPng = null;
+                            if (needSsimu2 || needButter)
+                            {
+                                try { distPng = await ConvertToPngAsync(outputPath, advancedTempDir); }
+                                catch { distPng = null; }
+                            }
+
+                            if (needSsimu2 && refPng != null && distPng != null)
+                            {
+                                try
+                                {
+                                    var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                                    if (s.HasValue) { metrics.SSIMULACRA2 = s; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 计算异常: {ex.Message}"); }
+                            }
+
+                            if (needButter && refPng != null && distPng != null)
+                            {
+                                try
+                                {
+                                    var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                                    if (raw.HasValue) { metrics.Butteraugli_Raw = raw; advancedUpdated = true; }
+                                    if (p3.HasValue) { metrics.Butteraugli_3norm = p3; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"Butteraugli 计算异常: {ex.Message}"); }
+                            }
+
+                            if (needGmsd)
+                            {
+                                try
+                                {
+                                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                                    if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"GMSD 计算异常: {ex.Message}"); }
+                            }
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"高级指标整体计算异常: {ex.Message}"); }
+                        finally
+                        {
+                            if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                        }
                     }
-                    if ((!metrics.Butteraugli_Raw.HasValue || !metrics.Butteraugli_3norm.HasValue)
-                        && refPng != null && distPng != null)
-                    {
-                        var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
-                        if (raw.HasValue) { metrics.Butteraugli_Raw = raw; advancedUpdated = true; }
-                        if (p3.HasValue) { metrics.Butteraugli_3norm = p3; advancedUpdated = true; }
-                    }
-                    if (!metrics.GMSD.HasValue)
-                    {
-                        var g = await ComputeGMSDAsync(workingInputPath, outputPath);
-                        if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
-                    }
-                }
-                catch (Exception ex) { _logger.LogInfo($"高级指标计算异常: {ex.Message}"); }
-                finally
-                {
-                    if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
                 }
 
                 _cache.SetMetrics(cacheKey, metrics);
@@ -3785,41 +3841,65 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                             }
 
                             // ★ 搜索模式需要高级指标 → 补算（使用随机目录）
+                            // ★ 搜索模式需要高级指标 → 补算（各自独立）
                             string? needAdvanced = cfg.MetricMode;
-                            if (PresetConfig.IsAdvancedMetricMode(needAdvanced) &&
-                                (metrics.SSIMULACRA2 == null || metrics.Butteraugli_3norm == null || metrics.GMSD == null))
+                            if (PresetConfig.IsAdvancedMetricMode(needAdvanced))
                             {
-                                string advDir = Path.Combine(_outputDir, $"_search_advanced_{Guid.NewGuid():N}");   // ★ 随机目录
+                                string advDir = Path.Combine(_outputDir, $"_search_advanced_{Guid.NewGuid():N}");
                                 try
                                 {
                                     _fs.CreateDirectory(advDir);
-                                    string? refPng = input;
-                                    if (Path.GetExtension(input)?.ToLower() != ".png")
+                                    // 根据实际需要的指标，有选择地进行 png 转换
+                                    string? refPng = null;
+                                    string? distPng = null;
+                                    bool needSsimu2 = (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue);
+                                    bool needButter = (needAdvanced == "butter3" && !metrics.Butteraugli_3norm.HasValue);
+                                    bool needGmsd = (needAdvanced == "gmsd" && !metrics.GMSD.HasValue);
+
+                                    if (needSsimu2 || needButter)
                                     {
-                                        refPng = await ConvertToPngAsync(input, advDir);
-                                        if (refPng == null) refPng = input;
+                                        if (Path.GetExtension(input)?.ToLower() != ".png")
+                                        {
+                                            try { refPng = await ConvertToPngAsync(input, advDir); } catch { refPng = null; }
+                                        }
+                                        else refPng = input;
+                                        if (refPng == null) refPng = input; // 仍可尝试原始格式
+
+                                        try { distPng = await ConvertToPngAsync(tmp, advDir); } catch { distPng = null; }
                                     }
-                                    string? distPng = await ConvertToPngAsync(tmp, advDir);
-                                    if (distPng != null && refPng != null)
+
+                                    // SSIMULACRA2
+                                    if (needSsimu2 && refPng != null && distPng != null)
                                     {
-                                        if (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue)
+                                        try
                                         {
                                             var s = await ComputeSSIMULACRA2Async(refPng, distPng);
                                             if (s.HasValue) metrics.SSIMULACRA2 = s;
                                         }
-                                        if (needAdvanced == "butter3" && !metrics.Butteraugli_3norm.HasValue)
+                                        catch (Exception ex) { _logger.LogInfo($"搜索 SSIMULACRA2 补算异常: {ex.Message}"); }
+                                    }
+                                    // Butteraugli
+                                    if (needButter && refPng != null && distPng != null)
+                                    {
+                                        try
                                         {
                                             var (_, p3) = await ComputeButteraugliAsync(refPng, distPng, advDir);
                                             if (p3.HasValue) metrics.Butteraugli_3norm = p3;
                                         }
-                                        if (needAdvanced == "gmsd" && !metrics.GMSD.HasValue)
+                                        catch (Exception ex) { _logger.LogInfo($"搜索 Butteraugli 补算异常: {ex.Message}"); }
+                                    }
+                                    // GMSD （无需 png 转换）
+                                    if (needGmsd)
+                                    {
+                                        try
                                         {
                                             var g = await ComputeGMSDAsync(input, tmp);
                                             if (g.HasValue) metrics.GMSD = g;
                                         }
+                                        catch (Exception ex) { _logger.LogInfo($"搜索 GMSD 补算异常: {ex.Message}"); }
                                     }
                                 }
-                                catch (Exception ex) { _logger.LogInfo($"搜索高级指标补算失败: {ex.Message}"); }
+                                catch (Exception ex) { _logger.LogInfo($"搜索高级指标补算整体异常: {ex.Message}"); }
                                 finally { if (_fs.DirectoryExists(advDir)) try { _fs.DeleteDirectory(advDir, true); } catch { } }
                             }
 

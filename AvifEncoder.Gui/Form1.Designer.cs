@@ -540,7 +540,7 @@
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1567, 975);
+            ClientSize = new Size(1580, 932);
             Controls.Add(label13);
             Controls.Add(cmbConflict);
             Controls.Add(chkVerbose);
