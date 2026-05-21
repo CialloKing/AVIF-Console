@@ -34,11 +34,13 @@ namespace AvifEncoder.Gui
             txtTemplate.Text = "covers-{index}.avif";
 
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(new[] { "vmaf", "xpsnr", "ssim", "psnr", "msssim", "mix"  });
+            cmbMetric.Items.AddRange(new[] { "vmaf", "xpsnr", "ssim", "psnr", "msssim", "mix",
+                                 "ssimu2", "butter3", "gmsd" });   // ★ 新增高级指标
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM", "Mix" });
+            cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
+                                      "Mix", "SSIMULACRA2", "Butteraugli 3-norm", "GMSD" });  // ★ 新增
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0;
             numQualityValue.Maximum = 1;
@@ -314,11 +316,29 @@ namespace AvifEncoder.Gui
                     numQualityValue.Value = 0;
                     numQualityValue.Enabled = false;
                     return;
-                case "XPSNR":                     // 新增
+                case "XPSNR":
                     numQualityValue.Minimum = 40;
                     numQualityValue.Maximum = 60;
                     numQualityValue.Value = 45;
                     numQualityValue.DecimalPlaces = 1;
+                    break;
+                case "SSIMULACRA2":                 // ★ 新增
+                    numQualityValue.Minimum = -100;  // SSIMU2 可能为负值，范围宽泛
+                    numQualityValue.Maximum = 100;
+                    numQualityValue.Value = 90;
+                    numQualityValue.DecimalPlaces = 2;
+                    break;
+                case "Butteraugli 3-norm":         // ★ 新增
+                    numQualityValue.Minimum = 0;
+                    numQualityValue.Maximum = 50;    // 通常小于 10，留出余量
+                    numQualityValue.Value = 1;
+                    numQualityValue.DecimalPlaces = 4;
+                    break;
+                case "GMSD":                       // ★ 新增
+                    numQualityValue.Minimum = 0;
+                    numQualityValue.Maximum = 1;
+                    numQualityValue.Value = 0.2m;
+                    numQualityValue.DecimalPlaces = 4;
                     break;
                 default: // SSIM / MS-SSIM / Mix
                     numQualityValue.Minimum = 0;
@@ -330,6 +350,7 @@ namespace AvifEncoder.Gui
             numQualityValue.Enabled = true;
 
             // ========== 联动：搜索度量自动跟随目标类型 ==========
+            // ========== 联动：搜索度量自动跟随目标类型 ==========
             if (mode != "无")
             {
                 string metricMode = mode.ToLower() switch
@@ -340,11 +361,14 @@ namespace AvifEncoder.Gui
                     "ms-ssim" => "msssim",
                     "mix" => "mix",
                     "xpsnr" => "xpsnr",
-                    _ => ""                    // 返回空字符串，不再使用 null
+                    "ssimulacra2" => "ssimu2",         // ★ 新增
+                    "butteraugli 3-norm" => "butter3", // ★ 新增
+                    "gmsd" => "gmsd",                  // ★ 新增
+                    _ => ""
                 };
                 if (!string.IsNullOrEmpty(metricMode))
                 {
-                    cmbMetric.SelectedItem = metricMode;   // 现在 metricMode 是非空 string
+                    cmbMetric.SelectedItem = metricMode;
                 }
             }
             // ==================================================
@@ -449,7 +473,10 @@ namespace AvifEncoder.Gui
                     "psnr-y" => "psnr",
                     "ms-ssim" => "msssim",
                     "mix" => "mix",
-                    "xpsnr" => "xpsnr",      // 新增，加权 W‑XPSNR
+                    "xpsnr" => "xpsnr",
+                    "ssimulacra2" => "ssimu2",         // ★ 新增
+                    "butteraugli 3-norm" => "butter3", // ★ 新增
+                    "gmsd" => "gmsd",                  // ★ 新增
                     _ => "vmaf"
                 };
                 config.MetricMode = metricMode;
@@ -556,11 +583,11 @@ namespace AvifEncoder.Gui
         }
 
 
-        
 
 
 
-        
+
+
 
 
 
@@ -591,6 +618,11 @@ namespace AvifEncoder.Gui
         }
 
         private void label8_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label5_Click(object sender, EventArgs e)
         {
 
         }

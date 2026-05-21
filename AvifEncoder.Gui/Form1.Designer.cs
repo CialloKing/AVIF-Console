@@ -281,18 +281,19 @@
             label5.AutoSize = true;
             label5.Location = new Point(118, 406);
             label5.Name = "label5";
-            label5.Size = new Size(557, 24);
+            label5.Size = new Size(545, 24);
             label5.TabIndex = 21;
-            label5.Text = "质量评价度量：vmaf、xpsnr、ssim、psnr、msssim、mix混合评分";
+            label5.Text = "质量评价度量：vmaf、xpsnr、ssim、ms-ssim、mix混合评分等等";
+            label5.Click += label5_Click;
             // 
             // label6
             // 
             label6.AutoSize = true;
             label6.Location = new Point(120, 482);
             label6.Name = "label6";
-            label6.Size = new Size(560, 24);
+            label6.Size = new Size(546, 24);
             label6.TabIndex = 22;
-            label6.Text = "质量目标类型：VMAF、XPSNR、SSIM、PSNR-Y、MS-SSIM、Mix";
+            label6.Text = "质量目标类型：VMAF、XPSNR、SSIM、PSNR-Y、MS-SSIM等等";
             // 
             // numQualityValue
             // 
