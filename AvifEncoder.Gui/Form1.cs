@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using static AvifEncoder.PresetConfig;
 
 namespace AvifEncoder.Gui
@@ -96,6 +97,9 @@ namespace AvifEncoder.Gui
 
             // 给所有可能被用户手动修改的控件挂上“标记自定义”事件
             AttachCustomMarkEvents();
+
+            // ★ 新增：启动时异步检测编码器和外部工具，将结果输出到日志
+            this.Load += async (s, e) => await PerformStartupCheckAsync();
         }
 
 
@@ -626,5 +630,247 @@ namespace AvifEncoder.Gui
         {
 
         }
+
+
+
+
+
+        // ========== 启动时编码器与外部工具检测 ==========
+        private async Task PerformStartupCheckAsync()
+        {
+            AppendLog("===== 启动检测 =====");
+
+            // 1. 检测 ffmpeg
+            string? ffmpegPath = EncoderUtils.FindExecutable("ffmpeg");
+            if (ffmpegPath == null)
+            {
+                AppendLog("[FAIL] 错误: ffmpeg 未找到，请确保 ffmpeg 在 PATH 或程序目录中。");
+                return;
+            }
+            AppendLog("[OK] ffmpeg 已找到");
+
+            // 2. 获取支持的 AV1 编码器列表
+            var encoders = await GetAvailableEncodersListAsync();
+            AppendLog($"检测到 AV1 编码器: {string.Join(", ", encoders)}");
+
+            // 3. 测试每个编码器的实际可用性
+            AppendLog("正在测试编码器可用性...");
+            string testDir = Path.Combine(Path.GetTempPath(), "avif_gui_test");
+            string testInput = Path.Combine(testDir, "test_input.bmp");
+            Directory.CreateDirectory(testDir);
+            byte[] testBmp = CreateTestBmp();
+            File.WriteAllBytes(testInput, testBmp);
+
+            var results = new List<(string name, bool available, string note)>();
+            foreach (var enc in encoders)
+            {
+                var (name, avail, note) = await TestEncoderAsync(enc, testInput, testDir);
+                results.Add((name, avail, note));
+            }
+
+            // 输出编码器测试结果
+            AppendLog("编码器可用性测试结果:");
+            AppendLog("----------------------------------------");
+            var availList = results.Where(r => r.available).ToList();
+            var unavailList = results.Where(r => !r.available).ToList();
+            if (availList.Any())
+            {
+                AppendLog("[可用的编码器]");
+                var softAvail = availList.Where(r => r.name.StartsWith("lib")).ToList();
+                var hardAvail = availList.Where(r => !r.name.StartsWith("lib")).ToList();
+                if (softAvail.Any())
+                {
+                    AppendLog("  -- 软件编码器（推荐） --");
+                    foreach (var (name, _, _) in softAvail)
+                        AppendLog($"  [OK] {name,-12}");
+                }
+                if (hardAvail.Any())
+                {
+                    AppendLog("  -- 硬件编码器 --");
+                    foreach (var (name, _, _) in hardAvail)
+                        AppendLog($"  [OK] {name,-12}");
+                }
+            }
+            if (unavailList.Any())
+            {
+                AppendLog("\n[不可用的编码器]");
+                foreach (var (name, _, note) in unavailList)
+                    AppendLog($"  [FAIL] {name,-12} ({note})");
+            }
+            AppendLog("----------------------------------------");
+            AppendLog("提示: 同一编码器可能因图片格式/尺寸在运行时降级或回退，属正常保护机制。");
+
+            // 4. 检测高级指标外部工具
+            AppendLog("\n高级指标工具可用性检测");
+            AppendLog("----------------------------------------");
+            bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2.exe") != null;
+            bool hasButter = EncoderUtils.FindExecutable("butteraugli_main.exe") != null;
+            AppendLog($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
+            AppendLog($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
+            AppendLog("----------------------------------------");
+
+            AppendLog("===== 启动检测完成 =====");
+
+            // 清理临时文件
+            try { if (File.Exists(testInput)) File.Delete(testInput); } catch { }
+            if (Directory.Exists(testDir) && !Directory.EnumerateFileSystemEntries(testDir).Any())
+                Directory.Delete(testDir);
+        }
+
+        // 从 ffmpeg 获取支持的 AV1 编码器列表
+        private async Task<List<string>> GetAvailableEncodersListAsync()
+        {
+            var encoders = new List<string>();
+            try
+            {
+                using var p = new Process
+                {
+                    StartInfo = new ProcessStartInfo("ffmpeg", "-encoders")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                p.Start();
+                var outTask = p.StandardOutput.ReadToEndAsync();
+                var errTask = p.StandardError.ReadToEndAsync();
+                await Task.WhenAll(outTask, errTask, p.WaitForExitAsync());
+
+                using var reader = new StringReader(await outTask);
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string trimmed = line.TrimStart();
+                    if (trimmed.Length > 0 && trimmed[0] == 'V' && trimmed.Contains("av1"))
+                    {
+                        string[] parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2)
+                        {
+                            string name = parts[1];
+                            if (!encoders.Contains(name))
+                                encoders.Add(name);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return encoders;
+        }
+
+        // 测试单个编码器是否可用
+        private async Task<(string name, bool available, string note)> TestEncoderAsync(
+            string enc, string testInput, string testDir)
+        {
+            bool ok = false;
+            string note = "不可用";
+            try
+            {
+                string outFile = Path.Combine(testDir, $"test_{enc}.avif");
+                string qpParam = enc switch
+                {
+                    var e when e.StartsWith("av1_nvenc") => "-qp 30",
+                    var e when e.StartsWith("av1_qsv") => "-global_quality 30",
+                    var e when e.StartsWith("av1_amf") => "-qp 30",
+                    var e when e.StartsWith("av1_vulkan") => "-qp 30",
+                    var e when e.StartsWith("av1_vaapi") => "-global_quality 30",
+                    _ => "-crf 30"
+                };
+
+                string args = $"-y -loglevel error -i \"{testInput}\" -c:v {enc} -pix_fmt yuv420p {qpParam} -frames:v 1 \"{outFile}\"";
+
+                var psi = new ProcessStartInfo("ffmpeg", args)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true
+                };
+
+                using var p = Process.Start(psi);
+                if (p == null) return (enc, false, "无法启动 ffmpeg");
+
+                string stderr = await p.StandardError.ReadToEndAsync();
+                await p.WaitForExitAsync();
+
+                if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
+                {
+                    ok = true;
+                    note = "可用";
+                }
+                else
+                {
+                    note = ParseError(stderr);
+                }
+
+                if (File.Exists(outFile)) File.Delete(outFile);
+            }
+            catch (Exception ex)
+            {
+                note = $"异常: {ex.Message}";
+            }
+            return (enc, ok, note);
+        }
+
+        // 解析 ffmpeg 的常见错误信息
+        private static string ParseError(string stderr)
+        {
+            if (stderr.Contains("MFX session")) return "缺少 Intel 驱动";
+            if (stderr.Contains("MFT")) return "缺少 Media Foundation 编码器";
+            if (stderr.Contains("Impossible to convert")) return "格式转换失败";
+            if (stderr.Contains("Function not implemented")) return "功能未实现";
+            if (stderr.Contains("Invalid argument")) return "参数无效";
+            if (stderr.Contains("Unknown error")) return "未知错误";
+            return "不可用";
+        }
+
+        // 生成 256x256 纯红色 BMP（测试用）
+        private static byte[] CreateTestBmp()
+        {
+            int width = 256, height = 256;
+            int rowSize = ((width * 3 + 3) / 4) * 4;
+            int pixelDataSize = rowSize * height;
+            int fileSize = 54 + pixelDataSize;
+
+            using var ms = new MemoryStream();
+            using var bw = new BinaryWriter(ms);
+
+            bw.Write((ushort)0x4D42);
+            bw.Write(fileSize);
+            bw.Write(0);
+            bw.Write(54);
+
+            bw.Write(40);
+            bw.Write(width);
+            bw.Write(height);
+            bw.Write((ushort)1);
+            bw.Write((ushort)24);
+            bw.Write(0);
+            bw.Write(pixelDataSize);
+            bw.Write(2835);
+            bw.Write(2835);
+            bw.Write(0);
+            bw.Write(0);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    bw.Write((byte)0x00); // B
+                    bw.Write((byte)0x00); // G
+                    bw.Write((byte)0xFF); // R
+                }
+                for (int p = width * 3; p < rowSize; p++)
+                    bw.Write((byte)0);
+            }
+
+            bw.Flush();
+            return ms.ToArray();
+        }
+
+
+
+
+
     }
 }
