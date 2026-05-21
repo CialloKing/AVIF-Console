@@ -1600,9 +1600,29 @@ namespace AvifEncoder
         // 辅助方法：将内部 0~1 目标值转换为对应模式的原生显示字符串
         private static string GetTargetDisplayString(double targetSSIM, string metricMode, PresetConfig? config = null)
         {
-            if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) && config?.XpsnrTargetValue.HasValue == true)
-                return $"{config.XpsnrTargetValue.Value:F1} dB ({config.XpsnrTargetChannel?.ToUpper() ?? "W"})";
+            if (config != null)
+            {
+                if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) && config.XpsnrTargetValue.HasValue)
+                    return $"{config.XpsnrTargetValue.Value:F1} dB ({config.XpsnrTargetChannel?.ToUpper() ?? "W"})";
 
+                switch (metricMode.ToLower())
+                {
+                    case "ssimu2":
+                        if (config.Ssimu2TargetValue.HasValue)
+                            return config.Ssimu2TargetValue.Value.ToString("F4") + " (SSIMU2)";
+                        break;
+                    case "butter3":
+                        if (config.Butteraugli3TargetValue.HasValue)
+                            return config.Butteraugli3TargetValue.Value.ToString("F4") + " (Butter3)";
+                        break;
+                    case "gmsd":
+                        if (config.GmsdTargetValue.HasValue)
+                            return config.GmsdTargetValue.Value.ToString("F4") + " (GMSD)";
+                        break;
+                }
+            }
+
+            // 回退到基于 0‑1 目标的显示
             switch (metricMode.ToLower())
             {
                 case "vmaf":
@@ -3904,7 +3924,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
                 return (null, null, null, null);
 
-            // 去除长路径前缀，避免 FFmpeg 解析异常
             string CleanPath(string p)
             {
                 if (p.StartsWith(@"\\?\")) p = p.Substring(4);
@@ -3926,7 +3945,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             catch { }
             double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
 
-            // 只统一像素格式，不改变帧率，避免 xpsnr 接收不到帧对
             string args = $"-i \"{safeDist}\" -i \"{safeRef}\" -lavfi \"[0:v]format={pixFmt}[dist];[1:v]format={pixFmt}[ref];[dist][ref]xpsnr\" -f null -";
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
@@ -3940,19 +3958,29 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return (null, null, null, null);
             }
 
-            var match = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*([0-9.]+)\s+u:\s*([0-9.]+)\s+v:\s*([0-9.]+)");
-            if (!match.Success)
+            // ★ 改进：分别匹配 y, u, v，允许 "inf"
+            var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+            var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+            var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+
+            double? ParseXpsnrValue(Match m)
             {
-                _logger.LogInfo($"XPSNR 正则匹配失败。输出尾部:\n{combinedOutput.TrimEnd().Split('\n').TakeLast(3).Aggregate((a, b) => a + "\n" + b)}");
-                return (null, null, null, null);
+                if (!m.Success) return null;
+                string val = m.Groups[1].Value.ToLower();
+                if (val == "inf") return 100.0;   // 将 inf 映射为一个极高值（表示几乎无损）
+                if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
+                    return result;
+                return null;
             }
 
-            if (!double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double y) ||
-                !double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double u) ||
-                !double.TryParse(match.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+            double? y = ParseXpsnrValue(yMatch);
+            double? u = ParseXpsnrValue(uMatch);
+            double? v = ParseXpsnrValue(vMatch);
+
+            if (y == null && u == null && v == null)
                 return (null, null, null, null);
 
-            double wXpsnr = ComputeWXPSNR(y, u, v, maxVal);
+            double wXpsnr = ComputeWXPSNR(y ?? 100.0, u ?? 100.0, v ?? 100.0, maxVal);
             return (y, u, v, wXpsnr);
         }
 
@@ -4070,35 +4098,34 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分（可通过 --prior-search 启用）
         /// </summary>
         private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
+    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
         {
-            // ★ 使用 FormatScore 将 0-1 目标值转换为用户可读的原生格式
-
             string name = displayName ?? Path.GetFileName(input);
             string metricMode = cfg.MetricMode ?? "vmaf";
             double target;
             double margin;
             bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
 
-            // 选择 margin：XPSNR 用 0.01，其他高级指标用 0.001，普通 0‑1 用 SSIMMargin
+            // 选择 margin
             if (cfg.XpsnrTargetValue.HasValue) margin = 0.01;
-            else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;      // SSIMU2 用稍大的余量
+            else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;
             else if (cfg.Butteraugli3TargetValue.HasValue) margin = 0.01;
             else if (cfg.GmsdTargetValue.HasValue) margin = 0.001;
             else margin = SSIMMargin;
 
             // 提取最终的目标值（原生值）
             if (cfg.XpsnrTargetValue.HasValue)
-                target = cfg.XpsnrTargetValue.Value - margin;          // XPSNR 越大越好
+                target = cfg.XpsnrTargetValue.Value - margin;
             else if (cfg.Ssimu2TargetValue.HasValue)
-                target = cfg.Ssimu2TargetValue.Value;                  // SSIMU2 越大越好，不减余量
+                target = cfg.Ssimu2TargetValue.Value;
             else if (cfg.Butteraugli3TargetValue.HasValue)
-                target = cfg.Butteraugli3TargetValue.Value + margin;   // Butter3 越小越好，目标加余量
+                target = cfg.Butteraugli3TargetValue.Value + margin;
             else if (cfg.GmsdTargetValue.HasValue)
-                target = cfg.GmsdTargetValue.Value + margin;           // GMSD 越小越好，目标加余量
+                target = cfg.GmsdTargetValue.Value + margin;
             else
-                target = cfg.TargetSSIM + SSIMMargin;                  // 默认 0‑1 目标
-                                                                       // 恢复原始显示用的目标值（考虑 margin 和方向）
+                target = cfg.TargetSSIM + SSIMMargin;
+
+            // 用于控制台显示的目标值（未经反转）
             double displayTarget;
             if (cfg.XpsnrTargetValue.HasValue) displayTarget = cfg.XpsnrTargetValue.Value;
             else if (cfg.Ssimu2TargetValue.HasValue) displayTarget = cfg.Ssimu2TargetValue.Value;
@@ -4122,28 +4149,31 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     double s = await originalGetScore(crf);
                     return s >= 0 ? -s : s;      // 负值表示失败，不反转
                 };
-                target = -target;                // 同时反转目标
+                target = -target;
             }
+
+            // 辅助函数：将内部反转后的分数恢复为原始值用于控制台显示
+            Func<double, double> displayScore = s => lowerIsBetter && s != -1 ? -s : s;
+
             int totalEvalCount = 0;
             int userMin = cfg.MinCRF;
             int userMax = cfg.MaxCRF;
 
-            // 先验搜索未启用时，直接全范围二分
+            // ────────── 先验搜索未启用：直接全范围二分 ──────────
             if (!cfg.UsePriorSearch)
             {
                 SafeWriteLine($"  [{name}] [INFO] 先验搜索已关闭，使用标准二分区间 [{userMin}, {userMax}]");
                 var (directBestCrf, directEval) = await StandardBinarySearch(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    userMin, userMax, knownLoScore: null);
+                    userMin, userMax, knownLoScore: null, lowerIsBetter: lowerIsBetter);
                 totalEvalCount = directEval;
+
                 if (directBestCrf >= 0)
                 {
                     SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={directBestCrf}，总评估 {totalEvalCount} 次");
                     return (directBestCrf, false, false, totalEvalCount);
                 }
 
-                // 标准二分无解 → 回退安全扫描
-                // 标准二分无解 → 若 MinCRF=0 则直接失败，否则回退安全扫描
                 if (userMin == 0)
                 {
                     SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
@@ -4162,8 +4192,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return (cfg.BaseCRF, true, false, totalEvalCount);
             }
 
-            // ========== 以下为启用先验搜索时的逻辑 ==========
-            // 统一计算先验中位数（VMAF 模式使用统计值，否则取中点）
+            // ────────── 先验搜索启用 ──────────
             int priorMedian = (userMin + userMax) / 2;
             if (metricMode == "vmaf")
             {
@@ -4175,7 +4204,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             int searchLo, searchHi;
             double? knownLoScore = null;
 
-            // ===== Proxy 模式（保持原逻辑，不使用哨兵） =====
+            // ── Proxy 模式 ──
             if (cfg.UseProxySearch)
             {
                 SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian}");
@@ -4191,7 +4220,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 var (proxyCrf, proxyEval) = await StandardBinarySearch(
                     input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi, knownLoScore: null);
+                    searchLo, searchHi, knownLoScore: null, lowerIsBetter: lowerIsBetter);
                 totalEvalCount += proxyEval;
 
                 if (proxyCrf >= 0)
@@ -4200,8 +4229,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     return (proxyCrf, false, false, totalEvalCount);
                 }
 
-                // Proxy 失败 → 回退安全扫描
-                // Proxy 失败 → 若 MinCRF=0 则直接失败，否则回退安全扫描
                 if (userMin == 0)
                 {
                     SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
@@ -4220,21 +4247,19 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return (cfg.BaseCRF, true, false, totalEvalCount);
             }
 
-            // ========== 默认先验模式：中位数 + 哨兵 + 二分 ==========
-            // 1. 评估中位数
+            // ── 默认先验模式：中位数 + 哨兵 + 二分 ──
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
             totalEvalCount++;
-            string medianDisplay = metricMode == "vmaf" ? $"VMAF={medianScore * 100:F4}" : $"分数={medianScore:F4}";
+            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore) * 100:F4}" : $"分数={displayScore(medianScore):F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
-            // 2. 哨兵探测（仅 VMAF 模式启用）
             if (metricMode == "vmaf" && medianScore >= 0)
             {
                 int delta = GetOptimalSentinelDelta((int)Math.Round(target * 100.0));
                 if (delta > 0)
                 {
-                    if (medianScore >= target)   // 中位数达标
+                    if (medianScore >= target)
                     {
                         int probe = Math.Min(priorMedian + delta, userMax);
                         if (probe > priorMedian)
@@ -4242,7 +4267,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={probeScore * 100:F4}" : $"分数={probeScore:F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -4265,7 +4290,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                             knownLoScore = medianScore;
                         }
                     }
-                    else   // 中位数不达标
+                    else
                     {
                         int probe = Math.Max(priorMedian - delta, userMin);
                         if (probe < priorMedian)
@@ -4273,7 +4298,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={probeScore * 100:F4}" : $"分数={probeScore:F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -4299,7 +4324,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 }
                 else
                 {
-                    // delta = 0，退化为标准中位数 + 二分逻辑
                     searchLo = medianScore >= target ? priorMedian : userMin;
                     searchHi = medianScore >= target ? userMax : priorMedian - 1;
                     knownLoScore = medianScore >= target ? medianScore : (double?)null;
@@ -4307,20 +4331,18 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             }
             else
             {
-                // 非 VMAF 模式或无有效分数
                 searchLo = medianScore >= target ? priorMedian : userMin;
                 searchHi = medianScore >= target ? userMax : priorMedian - 1;
                 knownLoScore = medianScore >= target ? medianScore : (double?)null;
             }
 
-            // 3. 标准二分搜索
             SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] {(knownLoScore.HasValue ? "(下界已知可行)" : "(需验证下界)")}");
             if (knownLoScore.HasValue)
-                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={searchLo} ({FormatScore(knownLoScore.Value, metricMode)})");
+                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={searchLo} ({FormatScore(displayScore(knownLoScore.Value), metricMode)})");
 
             var (bestCrf, binEval) = await StandardBinarySearch(
                 input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                searchLo, searchHi, knownLoScore: knownLoScore);
+                searchLo, searchHi, knownLoScore: knownLoScore, lowerIsBetter: lowerIsBetter);
             totalEvalCount += binEval;
 
             if (bestCrf >= 0)
@@ -4329,8 +4351,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return (bestCrf, false, false, totalEvalCount);
             }
 
-            // 二分未找到可行解 → 回退安全扫描
-            // 二分未找到可行解 → 若 MinCRF=0 则直接失败，否则回退安全扫描
             if (userMin == 0)
             {
                 SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
@@ -4348,6 +4368,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
             return (cfg.BaseCRF, true, false, totalEvalCount);
         }
+
+        // 注意：FormatScore 方法保持不变（已在其他地方定义）
 
         // 辅助格式化方法（可放在同一类中）
         private static string FormatScore(double score, string metricMode)
@@ -4381,7 +4403,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         private async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, Func<int, Task<double>> getScore,
-    CancellationToken token, int lo, int hi, double? knownLoScore = null)
+    CancellationToken token, int lo, int hi, double? knownLoScore = null,
+    bool lowerIsBetter = false)
         {
             int evalCount = 0;
             int bestCrf = -1;
@@ -4390,11 +4413,11 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             if (knownLoScore.HasValue && knownLoScore.Value >= target)
             {
                 bestCrf = lo;
-                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={knownLoScore.Value * 100:F4}" : $"分数={knownLoScore.Value:F4}";
+                double displayKnown = lowerIsBetter && knownLoScore.Value != -1 ? -knownLoScore.Value : knownLoScore.Value;
+                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown * 100:F4}" : $"分数={displayKnown:F4}";
                 SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
             }
 
-            // 确定搜索起点：若已知 lo 可行，则从 lo+1 开始；否则从 lo 开始
             int l = bestCrf >= 0 ? bestCrf + 1 : lo;
             int r = hi;
 
@@ -4405,7 +4428,9 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 SafeWriteLine($"  [{name}] [BIN] 测试 CRF={mid} (区间 {l}-{r})...");
                 double score = await getScore(mid);
                 evalCount++;
-                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
+
+                double displayMid = lowerIsBetter && score != -1 ? -score : score;
+                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid * 100:F4}" : $"分数={displayMid:F4}";
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
                 if (score >= target)
