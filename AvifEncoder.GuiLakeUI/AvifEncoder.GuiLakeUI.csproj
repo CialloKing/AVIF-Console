@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	<ForceDesignerDpiUnaware>True</ForceDesignerDpiUnaware>
-    <OutputType>WinExe</OutputType>
+	  <ForceDesignerDpiUnaware>True</ForceDesignerDpiUnaware>
+
+	  <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
@@ -10,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\LakeUI\LakeUI\LakeUI.vbproj" />
     <ProjectReference Include="..\AvifEncoder.Core\AvifEncoder.Core.csproj" />
   </ItemGroup>
 
