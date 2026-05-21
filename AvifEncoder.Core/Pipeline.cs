@@ -1185,17 +1185,17 @@ namespace AvifEncoder
 
             if (EncoderUtils.IsSvtAv1(enc))
             {
-                // 极限压缩：preset=2 平衡缩率与时间，可替换为 1/0 追求更小体积
-                int preset = 0;
+                // SVT‑AV1 的 preset 0 最快、13 最慢；cpuUsed 语义为 0 最慢，所以反转
+                int maxSvtPreset = 13;
+                int svtPreset = Math.Clamp(maxSvtPreset - cpuUsed, 0, maxSvtPreset);
                 if (cfg.Lossless)
                 {
-                    // 无损模式无需 svtav1-params
-                    return $"-preset {preset} {tilePart}";
+                    return $"-preset {svtPreset} {tilePart}";
                 }
                 else
                 {
                     string svtParams = "tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8";
-                    return $"-preset {preset} -svtav1-params \"{svtParams}\" {tilePart}";
+                    return $"-preset {svtPreset} -svtav1-params \"{svtParams}\" {tilePart}";
                 }
             }
 

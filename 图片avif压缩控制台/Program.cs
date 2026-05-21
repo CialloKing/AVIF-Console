@@ -82,9 +82,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                仅保留 AV1 规范必须的瓦片分割（宽图自动分片）
                                以追求更高压缩率（编码速度会明显变慢）
 
-      --search-cpu-used <0-8>  搜索阶段编码器速度（覆盖预设，默认使用预设值）
-                               数值越高编码越快，但评估精度略微下降（建议 2-6）
-                               最终编码仍使用预设的最高质量速度
+      --search-cpu-used <0-13> 搜索阶段编码器速度（覆盖预设，默认使用预设值）
+                               数值越高编码越快，评估精度下降。
+                               libaom 范围 0~8（0最慢最高质），libsvtav1 范围 0~13（0最慢），
+                               librav1e 范围 0~10（0最慢）。最终编码仍使用预设最高质量速度。
 
       --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）
                                不启用的情况下默认使用标准二分搜索
@@ -316,9 +317,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             opts.EnableProxySearch = true;
                             break;
                         case "search-cpu-used":
-                            if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 8)
+                            // 允许 0~13，实际编码器映射由 BuildEncoderSpecificArgs 处理
+                            if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 13)
                                 opts.SearchCpuUsed = searchCpu;
-                            else throw new Exception("--search-cpu-used 需要 0-8 之间的整数");
+                            else throw new Exception("--search-cpu-used 需要 0-13 之间的整数（libaom:0-8, libsvtav1:0-13, librav1e:0-10）");
                             break;
                         // 超时选项
                         default:
