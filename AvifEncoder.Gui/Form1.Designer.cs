@@ -76,6 +76,8 @@
             chkVerbose = new CheckBox();
             cmbConflict = new ComboBox();
             label13 = new Label();
+            label14 = new Label();
+            numSearchCpuUsed = new NumericUpDown();
             ((System.ComponentModel.ISupportInitialize)numJobs).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
             grpCrfMode.SuspendLayout();
@@ -83,6 +85,7 @@
             ((System.ComponentModel.ISupportInitialize)numCrfMin).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCrfFix).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).BeginInit();
             SuspendLayout();
             // 
             // lblInput
@@ -417,7 +420,7 @@
             // 
             cmbBitDepth.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbBitDepth.FormattingEnabled = true;
-            cmbBitDepth.Location = new Point(718, 459);
+            cmbBitDepth.Location = new Point(718, 450);
             cmbBitDepth.Name = "cmbBitDepth";
             cmbBitDepth.Size = new Size(182, 32);
             cmbBitDepth.TabIndex = 28;
@@ -425,11 +428,12 @@
             // label11
             // 
             label11.AutoSize = true;
-            label11.Location = new Point(718, 432);
+            label11.Location = new Point(718, 423);
             label11.Name = "label11";
             label11.Size = new Size(82, 24);
             label11.TabIndex = 29;
             label11.Text = "输出位深";
+            label11.Click += label11_Click;
             // 
             // chkLossless
             // 
@@ -522,7 +526,7 @@
             // 
             cmbConflict.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbConflict.FormattingEnabled = true;
-            cmbConflict.Location = new Point(718, 536);
+            cmbConflict.Location = new Point(718, 512);
             cmbConflict.Name = "cmbConflict";
             cmbConflict.Size = new Size(182, 32);
             cmbConflict.TabIndex = 39;
@@ -530,17 +534,36 @@
             // label13
             // 
             label13.AutoSize = true;
-            label13.Location = new Point(718, 509);
+            label13.Location = new Point(718, 485);
             label13.Name = "label13";
             label13.Size = new Size(136, 24);
             label13.TabIndex = 40;
             label13.Text = "当文件已存在时";
+            label13.Click += label13_Click;
+            // 
+            // label14
+            // 
+            label14.AutoSize = true;
+            label14.Location = new Point(718, 547);
+            label14.Name = "label14";
+            label14.Size = new Size(118, 24);
+            label14.TabIndex = 41;
+            label14.Text = "设置搜索速度";
+            // 
+            // numSearchCpuUsed
+            // 
+            numSearchCpuUsed.Location = new Point(718, 574);
+            numSearchCpuUsed.Name = "numSearchCpuUsed";
+            numSearchCpuUsed.Size = new Size(180, 30);
+            numSearchCpuUsed.TabIndex = 42;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1580, 932);
+            Controls.Add(numSearchCpuUsed);
+            Controls.Add(label14);
             Controls.Add(label13);
             Controls.Add(cmbConflict);
             Controls.Add(chkVerbose);
@@ -592,6 +615,7 @@
             ((System.ComponentModel.ISupportInitialize)numCrfMin).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCrfFix).EndInit();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -646,5 +670,7 @@
         private CheckBox chkVerbose;
         private ComboBox cmbConflict;
         private Label label13;
+        private Label label14;
+        private NumericUpDown numSearchCpuUsed;
     }
 }

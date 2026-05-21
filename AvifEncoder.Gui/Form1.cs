@@ -32,6 +32,22 @@ namespace AvifEncoder.Gui
             cmbEncoder.SelectedItem = "libaom-av1";
 
             numJobs.Value = 0;
+
+            // 搜索阶段 CPU used (速度)
+            var lblSearchCpu = new Label() { Text = "搜索速度 (CPU used):", AutoSize = true };
+            numSearchCpuUsed = new NumericUpDown()
+            {
+                Minimum = 0,
+                Maximum = 8,
+                Value = 4,            // 默认与 fast 预设一致，后续会被 ApplyPresetToUI 覆盖
+                Width = 60,
+                DecimalPlaces = 0,
+                Location = new Point(650, 210)   // 根据实际布局调整坐标
+            };
+            lblSearchCpu.Location = new Point(650, 190);
+            this.Controls.Add(lblSearchCpu);
+            this.Controls.Add(numSearchCpuUsed);
+
             txtTemplate.Text = "covers-{index}.avif";
 
             cmbMetric.Items.Clear();
@@ -181,6 +197,9 @@ namespace AvifEncoder.Gui
                 chkPriorSearch.Checked = cfg.UsePriorSearch;
                 chkProxy.Checked = cfg.UseProxySearch;
 
+
+                // 搜索阶段 CPU used (速度)
+                numSearchCpuUsed.Value = cfg.SearchCpuUsed;
                 // 并行任务数
                 numJobs.Value = cfg.MaxJobs;
             }
@@ -223,6 +242,8 @@ namespace AvifEncoder.Gui
             chkSerialEncode.CheckedChanged += (s, e) => MarkCustomPreset();
             chkPriorSearch.CheckedChanged += (s, e) => MarkCustomPreset();
             chkProxy.CheckedChanged += (s, e) => MarkCustomPreset();
+            // 搜索速度
+            numSearchCpuUsed.ValueChanged += (s, e) => MarkCustomPreset();
             // 并行任务数
             numJobs.ValueChanged += (s, e) => MarkCustomPreset();
             // 其他可能影响编码质量的选项可按需添加
@@ -499,6 +520,7 @@ namespace AvifEncoder.Gui
             config.SerialEncode = chkSerialEncode.Checked;
             config.UsePriorSearch = chkPriorSearch.Checked;
             config.UseProxySearch = chkProxy.Checked;
+            config.SearchCpuUsed = (int)numSearchCpuUsed.Value;   // ★ 新增
 
             // 冲突策略
             config.FileConflictStrategy = cmbConflict.SelectedIndex switch
@@ -874,9 +896,14 @@ namespace AvifEncoder.Gui
             return ms.ToArray();
         }
 
+        private void label13_Click(object sender, EventArgs e)
+        {
 
+        }
 
+        private void label11_Click(object sender, EventArgs e)
+        {
 
-
+        }
     }
 }
