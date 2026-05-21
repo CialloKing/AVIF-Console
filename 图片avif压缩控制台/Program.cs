@@ -20,7 +20,8 @@ namespace AvifEncoder
     class Program
     {
         // 在 Program 类顶部
-        private const string AppVersion = "1.0";
+        // 应用版本号
+        private const string AppVersion = "1.1";
 
 
         [DllImport("kernel32.dll")]
