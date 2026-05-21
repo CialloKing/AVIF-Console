@@ -4038,30 +4038,45 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 return (null, null, null, null);
             }
 
-            // ★ 改进：分别匹配 y, u, v，允许 "inf"
-            var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-            var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-            var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-
-            double? ParseXpsnrValue(Match m)
+            // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
+            var combinedMatch = Regex.Match(combinedOutput,
+                @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
+                RegexOptions.IgnoreCase);
+            double? y, u, v;
+            if (combinedMatch.Success)
             {
-                if (!m.Success) return null;
-                string val = m.Groups[1].Value.ToLower();
-                if (val == "inf") return 100.0;   // 将 inf 映射为一个极高值（表示几乎无损）
+                y = ParseSingleValue(combinedMatch.Groups[1].Value);
+                u = ParseSingleValue(combinedMatch.Groups[2].Value);
+                v = ParseSingleValue(combinedMatch.Groups[3].Value);
+            }
+            else
+            {
+                // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
+                var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
+                u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
+                v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
+            }
+
+            // 值解析辅助方法（局部函数）
+            static double? ParseSingleValue(string val)
+            {
+                if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
+                    return 100.0;   // 将 inf 映射为极高值，表示几乎无损
                 if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
                     return result;
                 return null;
             }
 
-            double? y = ParseXpsnrValue(yMatch);
-            double? u = ParseXpsnrValue(uMatch);
-            double? v = ParseXpsnrValue(vMatch);
-
-            if (y == null && u == null && v == null)
-                return (null, null, null, null);
-
-            double wXpsnr = ComputeWXPSNR(y ?? 100.0, u ?? 100.0, v ?? 100.0, maxVal);
-            return (y, u, v, wXpsnr);
+            // 计算加权 W‑XPSNR
+            double? weighted = null;
+            if (y.HasValue && u.HasValue && v.HasValue)
+            {
+                weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
+            }
+            return (y, u, v, weighted);
         }
 
         /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
