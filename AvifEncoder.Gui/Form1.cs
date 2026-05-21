@@ -91,11 +91,13 @@ namespace AvifEncoder.Gui
             cmbConflict.SelectedIndex = 0;
 
             // 绑定原有事件
+            // 绑定原有事件
             chkLossless.CheckedChanged += chkLossless_CheckedChanged;
             cmbQualityMode.SelectedIndexChanged += cmbQualityMode_SelectedIndexChanged;
             rbCrfFix.CheckedChanged += rbCrfFix_CheckedChanged;
             rbCrfRange.CheckedChanged += rbCrfRange_CheckedChanged;
-            btnStart.Click += btnStart_Click;
+            // btnStart.Click 已在设计器中绑定，此处不再重复添加
+            // btnStart.Click += btnStart_Click;
 
             // ========== 2. 预设联动改造 ==========
             // 重新设置 cmbPreset（覆盖上面的临时设置）
