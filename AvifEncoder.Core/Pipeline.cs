@@ -687,10 +687,11 @@ namespace AvifEncoder
             string cleanDist = NormalizePathForExternalTool(distPath);
             string cleanDiff = NormalizePathForExternalTool(diffPng);
             string args = $"\"{cleanRef}\" \"{cleanDist}\" --distmap \"{cleanDiff}\"";
+            _logger.LogInfo($"🔍 Butteraugli 调用: {exe} {args}");   // ★ 新增
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
+            _logger.LogInfo($"🔍 Butteraugli 返回: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ★ 新增
 
-            // 修正这里：_fs 而非 fs
             if (_fs.FileExists(diffPng)) try { _fs.DeleteFile(diffPng); } catch { }
 
             if (exitCode != 0) return (null, null);
@@ -705,6 +706,7 @@ namespace AvifEncoder
             double? p3 = null;
             if (p3Match.Success && double.TryParse(p3Match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double p))
                 p3 = p;
+
             return (raw, p3);
         }
 
@@ -2150,16 +2152,19 @@ namespace AvifEncoder
             int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
             var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
             string rowMtArg = GetRowMtArg(config);
-            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols, cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
+                                              cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
 
-            // 缓存命中
+            // ---------- 缓存命中 ----------
             if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
                 _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
-                // 若有 XPSNR 调整需求，先处理（保持原逻辑）
-                if (config.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true &&
-                    (!cachedMetrics!.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue || !cachedMetrics.XPSNR_V.HasValue))
+                bool needUpdate = false;
+
+                // 补算缺失的 XPSNR
+                if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
+                    !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
                 {
                     try
                     {
@@ -2168,30 +2173,28 @@ namespace AvifEncoder
                         cachedMetrics.XPSNR_U = u;
                         cachedMetrics.XPSNR_V = v;
                         cachedMetrics.W_XPSNR = weighted;
-                        _cache.SetMetrics(cacheKey, cachedMetrics);
+                        needUpdate = true;
+                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
                     }
-                    catch { }
+                    catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
                 }
 
-                // ★=== 补充高级指标（若缓存中缺失）===★
-                // ★=== 补充高级指标（若缓存中缺失）===★
+                // 补算缺失的高级指标（使用随机目录）
                 bool advancedUpdated = false;
                 if (!cachedMetrics.SSIMULACRA2.HasValue ||
                     !cachedMetrics.Butteraugli_3norm.HasValue ||
                     !cachedMetrics.GMSD.HasValue)
                 {
-                    string advancedTempDir = Path.Combine(_outputDir, "_advanced_metrics_tmp");
+                    string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");   // ★ 随机目录
                     try
                     {
-                        _fs.CreateDirectory(advancedTempDir);               // ★ 确保目录存在
+                        _fs.CreateDirectory(advancedTempDir);
                         string? refPng = workingInputPath;
                         if (Path.GetExtension(workingInputPath).ToLower() != ".png")
                         {
                             refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
-                            // 不再回退为原始文件，失败则为 null
                         }
                         string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
-                        
 
                         if (!cachedMetrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
                         {
@@ -2218,17 +2221,21 @@ namespace AvifEncoder
                     }
                 }
 
-                if (advancedUpdated)
+                if (needUpdate || advancedUpdated)
                 {
                     _cache.SetMetrics(cacheKey, cachedMetrics);
-                    _logger.LogInfo($"缓存高级指标补充: SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, GMSD={cachedMetrics.GMSD?.ToString("F4")}");
+                    _logger.LogInfo(
+                        $"缓存指标补充: " +
+                        $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
+                        $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
+                        $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
+                        $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
                 }
-                // ★=== 补算结束 ===★
 
-                return (cachedMetrics!.SSIM, cachedMetrics);
+                return (cachedMetrics.SSIM, cachedMetrics);
             }
 
-            // 计算多指标
+            // ---------- 全新计算 ----------
             QualityMetrics? metrics = null;
             try
             {
@@ -2238,7 +2245,7 @@ namespace AvifEncoder
 
             if (metrics != null)
             {
-                // 尝试附加 XPSNR 信息（使用 yuv444p 保留完整色彩）
+                // XPSNR
                 try
                 {
                     var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
@@ -2248,69 +2255,50 @@ namespace AvifEncoder
                     metrics.W_XPSNR = weighted;
                     _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}");
-                }
+                catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
 
-                _cache.SetMetrics(cacheKey, metrics);
-                _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F6}, PSNR-Y={metrics.PSNR_Y:F4}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}, XPSNR Y={metrics.XPSNR_Y?.ToString("F4") ?? "N/A"}, U={metrics.XPSNR_U?.ToString("F4") ?? "N/A"}, V={metrics.XPSNR_V?.ToString("F4") ?? "N/A"}, W={metrics.W_XPSNR?.ToString("F4") ?? "N/A"}");
-                // ★===== 追加计算高级指标 =====★
-                // ★===== 追加计算高级指标 =====★
+                // 高级指标
                 bool advancedUpdated = false;
-                string advancedTempDir = Path.Combine(_outputDir, "_advanced_metrics_tmp");
+                string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");   // ★ 随机目录
                 try
                 {
-                    _fs.CreateDirectory(advancedTempDir);               // ★ 确保目录存在
-                    // 准备 PNG 参考
+                    _fs.CreateDirectory(advancedTempDir);
                     string? refPng = workingInputPath;
                     string ext = Path.GetExtension(workingInputPath).ToLower();
                     if (ext != ".png")
                     {
                         refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
-                        // 不回退，失败则为 null
                     }
-
-                    // 将 AVIF 解码为 PNG
                     string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
-                    
 
-                    // SSIMULACRA2
-                    if (refPng != null && distPng != null)
+                    if (!metrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
                     {
-                        var s2 = await ComputeSSIMULACRA2Async(refPng, distPng);
-                        if (s2.HasValue) { metrics.SSIMULACRA2 = s2; advancedUpdated = true; }
+                        var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                        if (s.HasValue) { metrics.SSIMULACRA2 = s; advancedUpdated = true; }
                     }
-
-                    // Butteraugli
-                    if (refPng != null && distPng != null)
+                    if ((!metrics.Butteraugli_Raw.HasValue || !metrics.Butteraugli_3norm.HasValue)
+                        && refPng != null && distPng != null)
                     {
                         var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
                         if (raw.HasValue) { metrics.Butteraugli_Raw = raw; advancedUpdated = true; }
                         if (p3.HasValue) { metrics.Butteraugli_3norm = p3; advancedUpdated = true; }
                     }
-
-                    // GMSD（直接使用原始文件路径，ffmpeg 可以解码）
-                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
-                    if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
+                    if (!metrics.GMSD.HasValue)
+                    {
+                        var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                        if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogInfo($"高级指标计算异常: {ex.Message}");
-                }
+                catch (Exception ex) { _logger.LogInfo($"高级指标计算异常: {ex.Message}"); }
                 finally
                 {
-                    // 清理临时目录
                     if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
                 }
 
-                // 如果有新的指标写入，更新缓存
+                _cache.SetMetrics(cacheKey, metrics);
                 if (advancedUpdated)
-                {
-                    _cache.SetMetrics(cacheKey, metrics);
                     _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
-                }
-                // ★===== 追加结束 =====★
+
                 return (metrics.SSIM, metrics);
             }
 
@@ -2320,8 +2308,6 @@ namespace AvifEncoder
 
             double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
             if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
-
-            
 
             return (ssim, null);
         }
@@ -3706,7 +3692,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         private async Task<QualityMetrics?> GetOrComputeMetrics(
     string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg, bool jpeg, string pixFmt)
         {
-            // 无损模式返回理想指标
             if (cfg.Lossless)
                 return new QualityMetrics { SSIM = 1.0, PSNR_Y = 100.0, MS_SSIM = 1.0, VMAF = 100.0 };
 
@@ -3716,7 +3701,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
             var (metricsW, metricsH) = await GetResolutionAsync(input);
             string rowMtArg = GetRowMtArg(cfg);
-            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg, effectiveAom, actualDepth, metricsW, metricsH, rowMtArg);
+            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg,
+                                         effectiveAom, actualDepth, metricsW, metricsH, rowMtArg);
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {
@@ -3727,7 +3713,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             var newTask = new TaskCompletionSource<QualityMetrics?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var task = _metricsTasks.GetOrAdd(key, newTask.Task);
             bool isOwner = task == newTask.Task;
-
             if (!isOwner)
             {
                 try { return await task.WaitAsync(TimeSpan.FromMinutes(30)); }
@@ -3762,7 +3747,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                         QualityMetrics? metrics = await ComputeAllMetricsAsync(input, tmp);
                         if (metrics != null)
                         {
-                            // 当度量模式为 xpsnr 时，额外计算 XPSNR 各通道分并写入 metrics
+                            // XPSNR 补算（保持原有逻辑）
                             if (cfg.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
                             {
                                 try
@@ -3779,27 +3764,24 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                                 }
                             }
 
-                            // ★ 如果当前搜索模式需要高级指标，补充计算并回写缓存
+                            // ★ 搜索模式需要高级指标 → 补算（使用随机目录）
                             string? needAdvanced = cfg.MetricMode;
                             if (PresetConfig.IsAdvancedMetricMode(needAdvanced) &&
                                 (metrics.SSIMULACRA2 == null || metrics.Butteraugli_3norm == null || metrics.GMSD == null))
                             {
-                                string advDir = Path.Combine(_outputDir, "_search_advanced_tmp");
+                                string advDir = Path.Combine(_outputDir, $"_search_advanced_{Guid.NewGuid():N}");   // ★ 随机目录
                                 try
                                 {
                                     _fs.CreateDirectory(advDir);
-                                    // 转换参考图片为 PNG（如果还不是）
                                     string? refPng = input;
                                     if (Path.GetExtension(input)?.ToLower() != ".png")
                                     {
                                         refPng = await ConvertToPngAsync(input, advDir);
                                         if (refPng == null) refPng = input;
                                     }
-                                    // 解码临时 AVIF 为 PNG
                                     string? distPng = await ConvertToPngAsync(tmp, advDir);
                                     if (distPng != null && refPng != null)
                                     {
-                                        // 只计算当前模式需要的指标，减少开销
                                         if (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue)
                                         {
                                             var s = await ComputeSSIMULACRA2Async(refPng, distPng);
@@ -3812,7 +3794,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                                         }
                                         if (needAdvanced == "gmsd" && !metrics.GMSD.HasValue)
                                         {
-                                            var g = await ComputeGMSDAsync(input, tmp);   // 注：GMSD 可直接用 input/tmp
+                                            var g = await ComputeGMSDAsync(input, tmp);
                                             if (g.HasValue) metrics.GMSD = g;
                                         }
                                     }
@@ -3820,6 +3802,7 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                                 catch (Exception ex) { _logger.LogInfo($"搜索高级指标补算失败: {ex.Message}"); }
                                 finally { if (_fs.DirectoryExists(advDir)) try { _fs.DeleteDirectory(advDir, true); } catch { } }
                             }
+
                             _cache.SetMetrics(key, metrics);
                             _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
                                              $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F4}dB, " +
