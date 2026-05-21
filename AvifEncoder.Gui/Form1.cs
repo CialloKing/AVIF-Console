@@ -708,7 +708,8 @@ namespace AvifEncoder.Gui
             bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
             AppendLog($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
             AppendLog($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
-            AppendLog("----------------------------------------");
+            AppendLog("未找到的工具无法计算相应的指标，请不要设置为目标质量");
+            AppendLog("\n----------------------------------------");
             if (!hasSsimu2 || !hasButter)
             {
                 AppendLog("提示: 将 ssimulacra2.exe / butteraugli_main.exe 放到程序所在目录或 PATH 中即可使对应指标可用。");

@@ -638,6 +638,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
                 Console.WriteLine($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
                 Console.WriteLine($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
+                Console.WriteLine("\n未找到的工具无法计算相应的指标，请不要设置为目标质量");
                 Console.WriteLine("----------------------------------------");
                 if (!hasSsimu2 || !hasButter)
                 {
