@@ -584,20 +584,31 @@ namespace AvifEncoder
 
 
 
+
+
+        // ===== 工具：将任意图片转为 PNG（SSIMULACRA2/Butteraugli 需要） =====
         private async Task<string?> ConvertToPngAsync(string inputPath, string tempDir)
         {
             string tempPng = Path.Combine(tempDir, $"_tool_{Guid.NewGuid():N}.png");
-            string args = $"-y -loglevel error -i \"{inputPath}\" -pix_fmt rgb24 \"{tempPng}\"";
+            string cleanInput = NormalizePathForExternalTool(inputPath);
+            string cleanOutput = NormalizePathForExternalTool(tempPng);
+            // ★ 使用已验证可工作的命令：-y -loglevel error -i "输入" -pix_fmt rgb24 -frames:v 1 "输出"
+            string args = $"-y -loglevel error -i \"{cleanInput}\" -pix_fmt rgb24 -frames:v 1 \"{cleanOutput}\"";
             var (ok, _) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(1));
             return ok && _fs.FileExists(tempPng) ? tempPng : null;
         }
 
+        // ===== SSIMULACRA2 =====
         private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
         {
             string exe = EncoderUtils.FindExecutable("ssimulacra2.exe") ?? "ssimulacra2.exe";
-            string args = $"\"{refPath}\" \"{distPath}\"";
+            string cleanRef = NormalizePathForExternalTool(refPath);
+            string cleanDist = NormalizePathForExternalTool(distPath);
+            string args = $"\"{cleanRef}\" \"{cleanDist}\"";
+            _logger.LogInfo($"🔍 SSIMULACRA2 调用: {exe} {args}");   // ← 新增
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
+            _logger.LogInfo($"🔍 SSIMULACRA2 返回: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ← 新增
             if (exitCode != 0) return null;
             string output = (stdout + stderr).Trim();
             if (double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
@@ -605,52 +616,144 @@ namespace AvifEncoder
             return null;
         }
 
-
+        // ===== Butteraugli =====
         private async Task<(double? raw, double? p3)> ComputeButteraugliAsync(string refPath, string distPath, string tempDir)
         {
             string exe = EncoderUtils.FindExecutable("butteraugli_main.exe") ?? "butteraugli_main.exe";
             string diffPng = Path.Combine(tempDir, $"_butteraugli_diff_{Guid.NewGuid():N}.png");
-            string args = $"\"{refPath}\" \"{distPath}\" --distmap \"{diffPng}\"";
+            string cleanRef = NormalizePathForExternalTool(refPath);
+            string cleanDist = NormalizePathForExternalTool(distPath);
+            string cleanDiff = NormalizePathForExternalTool(diffPng);
+            string args = $"\"{cleanRef}\" \"{cleanDist}\" --distmap \"{cleanDiff}\"";
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
 
-            // 清理临时差异图
+            // 修正这里：_fs 而非 fs
             if (_fs.FileExists(diffPng)) try { _fs.DeleteFile(diffPng); } catch { }
 
             if (exitCode != 0) return (null, null);
             string output = stdout + stderr;
 
-            // 提取第一个浮点数为原始 perceptual error
             var rawMatch = Regex.Match(output, @"^\s*(\d+\.?\d*)", RegexOptions.Multiline);
             double? raw = null;
             if (rawMatch.Success && double.TryParse(rawMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double r))
                 raw = r;
 
-            // 提取 3‑norm
             var p3Match = Regex.Match(output, @"3-norm:\s*(\d+\.?\d*)");
             double? p3 = null;
             if (p3Match.Success && double.TryParse(p3Match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double p))
                 p3 = p;
-
             return (raw, p3);
         }
 
-
+        // ===== GMSD（自定义实现：仿 C++ 版本，使用 ffmpeg 解码灰度图计算） =====
         private async Task<double?> ComputeGMSDAsync(string refPath, string distPath)
         {
-            // ffmpeg -i dist -i ref -filter_complex "[0:v][1:v]gmsd" -frames:v 1 -f null - 2>&1
-            string args = $"-loglevel info -hide_banner -i \"{distPath}\" -i \"{refPath}\" " +
-                          $"-filter_complex \"[0:v][1:v]gmsd\" -frames:v 1 -f null -";
-            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
-                _ffmpegPath, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
-            if (exitCode != 0) return null;
+            // 1. 解码两张图到 8 位灰度原始数据
+            var refGray = await DecodeGrayRawAsync(refPath);
+            if (refGray == null) return null;
+            var distGray = await DecodeGrayRawAsync(distPath);
+            if (distGray == null) return null;
 
-            // 在 stderr 中查找 "GMSD: 0.xxxx"（不同版本可能大小写）
-            var match = Regex.Match(stderr, @"GMSD:\s*([0-9.]+)", RegexOptions.IgnoreCase);
-            if (match.Success && double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double gmsd))
-                return gmsd;
-            return null;
+            // 2. 尺寸必须一致
+            if (refGray.Value.w != distGray.Value.w || refGray.Value.h != distGray.Value.h)
+                return null;
+
+            // 3. 计算 GMSD
+            double score = ComputeGMSD_C(refGray.Value.data, refGray.Value.w, refGray.Value.h,
+                                          distGray.Value.data);
+            return score >= 0 ? score : null;
         }
+
+        /// <summary> 用 ffmpeg 将任意图片解码为 8 位灰度原始字节数组，并返回宽、高。失败返回 null。 </summary>
+        private async Task<(int w, int h, byte[] data)?> DecodeGrayRawAsync(string imagePath)
+        {
+            string cleanPath = NormalizePathForExternalTool(imagePath);
+            string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" -vf format=gray -f rawvideo -pix_fmt gray pipe:1";
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(_ffmpegPath, args)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+
+                using var ms = new MemoryStream();
+                var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
+                var stderrTask = process.StandardError.ReadToEndAsync();
+
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+
+                if (process.ExitCode != 0) return null;
+
+                byte[] rawData = ms.ToArray();
+
+                // 获取图像分辨率
+                var (w, h) = await GetResolutionAsync(imagePath);
+                if (w <= 0 || h <= 0) return null;
+                int expectedSize = w * h;
+                if (rawData.Length != expectedSize) return null;
+
+                return (w, h, rawData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInfo($"DecodeGrayRawAsync 失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary> 计算 GMSD（梯度幅值相似度偏差）。C = 0.0026，输出为标准差。失败返回 -1。 </summary>
+        private static double ComputeGMSD_C(byte[] refData, int w, int h, byte[] distData)
+        {
+            if (refData.Length != distData.Length || w < 3 || h < 3)
+                return -1;
+
+            const double C = 0.0026;
+            double sum = 0.0;
+            double sumSq = 0.0;
+            int count = 0;
+
+            int GetPix(byte[] data, int x, int y) => data[y * w + x];
+
+            for (int y = 1; y < h - 1; y++)
+            {
+                for (int x = 1; x < w - 1; x++)
+                {
+                    double grx = GetPix(refData, x + 1, y) - GetPix(refData, x - 1, y);
+                    double gry = GetPix(refData, x, y + 1) - GetPix(refData, x, y - 1);
+                    double gdx = GetPix(distData, x + 1, y) - GetPix(distData, x - 1, y);
+                    double gdy = GetPix(distData, x, y + 1) - GetPix(distData, x, y - 1);
+
+                    double gmR = Math.Sqrt(grx * grx + gry * gry);
+                    double gmD = Math.Sqrt(gdx * gdx + gdy * gdy);
+
+                    double gms = (2.0 * gmR * gmD + C) / (gmR * gmR + gmD * gmD + C);
+                    sum += gms;
+                    sumSq += gms * gms;
+                    count++;
+                }
+            }
+
+            if (count == 0) return -1;
+            double mean = sum / count;
+            double variance = (sumSq / count) - (mean * mean);
+            return Math.Sqrt(Math.Max(0, variance));   // 标准差
+        }
+
+
+
+
+
 
 
         /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
@@ -803,7 +906,13 @@ namespace AvifEncoder
         }
 
 
-
+        /// <summary> 外部工具（ffmpeg 等）不接受 \\?\ 长路径，需要剥离 </summary>
+        private static string NormalizePathForExternalTool(string path)
+        {
+            if (OperatingSystem.IsWindows() && path.StartsWith(@"\\?\"))
+                return path.Substring(4);
+            return path;
+        }
 
         /// <summary>
         /// 根据图像宽度计算满足 AV1 tile 宽度 ≤ 4096 限制的最小 tile-columns 值（log2 列数）。
@@ -1986,7 +2095,7 @@ namespace AvifEncoder
             {
                 _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
-                // 若度量模式为 xpsnr 且缓存中缺失 XPSNR 数据，则补算并更新
+                // 若有 XPSNR 调整需求，先处理（保持原逻辑）
                 if (config.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true &&
                     (!cachedMetrics!.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue || !cachedMetrics.XPSNR_V.HasValue))
                 {
@@ -1998,13 +2107,61 @@ namespace AvifEncoder
                         cachedMetrics.XPSNR_V = v;
                         cachedMetrics.W_XPSNR = weighted;
                         _cache.SetMetrics(cacheKey, cachedMetrics);
-                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
                     }
-                    catch (Exception ex)
+                    catch { }
+                }
+
+                // ★=== 补充高级指标（若缓存中缺失）===★
+                // ★=== 补充高级指标（若缓存中缺失）===★
+                bool advancedUpdated = false;
+                if (!cachedMetrics.SSIMULACRA2.HasValue ||
+                    !cachedMetrics.Butteraugli_3norm.HasValue ||
+                    !cachedMetrics.GMSD.HasValue)
+                {
+                    string advancedTempDir = Path.Combine(_outputDir, "_advanced_metrics_tmp");
+                    try
                     {
-                        _logger.LogInfo($"XPSNR 补算异常: {ex.Message}");
+                        _fs.CreateDirectory(advancedTempDir);               // ★ 确保目录存在
+                        string? refPng = workingInputPath;
+                        if (Path.GetExtension(workingInputPath).ToLower() != ".png")
+                        {
+                            refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
+                            // 不再回退为原始文件，失败则为 null
+                        }
+                        string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
+                        
+
+                        if (!cachedMetrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
+                        {
+                            var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                            if (s.HasValue) { cachedMetrics.SSIMULACRA2 = s; advancedUpdated = true; }
+                        }
+                        if ((!cachedMetrics.Butteraugli_Raw.HasValue || !cachedMetrics.Butteraugli_3norm.HasValue)
+                            && refPng != null && distPng != null)
+                        {
+                            var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                            if (raw.HasValue) { cachedMetrics.Butteraugli_Raw = raw; advancedUpdated = true; }
+                            if (p3.HasValue) { cachedMetrics.Butteraugli_3norm = p3; advancedUpdated = true; }
+                        }
+                        if (!cachedMetrics.GMSD.HasValue)
+                        {
+                            var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                            if (g.HasValue) { cachedMetrics.GMSD = g; advancedUpdated = true; }
+                        }
+                    }
+                    catch (Exception ex) { _logger.LogInfo($"缓存高级指标补算异常: {ex.Message}"); }
+                    finally
+                    {
+                        if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
                     }
                 }
+
+                if (advancedUpdated)
+                {
+                    _cache.SetMetrics(cacheKey, cachedMetrics);
+                    _logger.LogInfo($"缓存高级指标补充: SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, GMSD={cachedMetrics.GMSD?.ToString("F4")}");
+                }
+                // ★=== 补算结束 ===★
 
                 return (cachedMetrics!.SSIM, cachedMetrics);
             }
@@ -2036,6 +2193,62 @@ namespace AvifEncoder
 
                 _cache.SetMetrics(cacheKey, metrics);
                 _logger.LogSearch($"最终多指标 CRF={encodeResult.Crf}: SSIM={metrics.SSIM:F6}, PSNR-Y={metrics.PSNR_Y:F4}dB, MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}, XPSNR Y={metrics.XPSNR_Y?.ToString("F4") ?? "N/A"}, U={metrics.XPSNR_U?.ToString("F4") ?? "N/A"}, V={metrics.XPSNR_V?.ToString("F4") ?? "N/A"}, W={metrics.W_XPSNR?.ToString("F4") ?? "N/A"}");
+                // ★===== 追加计算高级指标 =====★
+                // ★===== 追加计算高级指标 =====★
+                bool advancedUpdated = false;
+                string advancedTempDir = Path.Combine(_outputDir, "_advanced_metrics_tmp");
+                try
+                {
+                    _fs.CreateDirectory(advancedTempDir);               // ★ 确保目录存在
+                    // 准备 PNG 参考
+                    string? refPng = workingInputPath;
+                    string ext = Path.GetExtension(workingInputPath).ToLower();
+                    if (ext != ".png")
+                    {
+                        refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir);
+                        // 不回退，失败则为 null
+                    }
+
+                    // 将 AVIF 解码为 PNG
+                    string? distPng = await ConvertToPngAsync(outputPath, advancedTempDir);
+                    
+
+                    // SSIMULACRA2
+                    if (refPng != null && distPng != null)
+                    {
+                        var s2 = await ComputeSSIMULACRA2Async(refPng, distPng);
+                        if (s2.HasValue) { metrics.SSIMULACRA2 = s2; advancedUpdated = true; }
+                    }
+
+                    // Butteraugli
+                    if (refPng != null && distPng != null)
+                    {
+                        var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                        if (raw.HasValue) { metrics.Butteraugli_Raw = raw; advancedUpdated = true; }
+                        if (p3.HasValue) { metrics.Butteraugli_3norm = p3; advancedUpdated = true; }
+                    }
+
+                    // GMSD（直接使用原始文件路径，ffmpeg 可以解码）
+                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                    if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogInfo($"高级指标计算异常: {ex.Message}");
+                }
+                finally
+                {
+                    // 清理临时目录
+                    if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                }
+
+                // 如果有新的指标写入，更新缓存
+                if (advancedUpdated)
+                {
+                    _cache.SetMetrics(cacheKey, metrics);
+                    _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
+                }
+                // ★===== 追加结束 =====★
                 return (metrics.SSIM, metrics);
             }
 
@@ -2046,67 +2259,7 @@ namespace AvifEncoder
             double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
             if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
 
-            // ─── 补算高级指标（若尚未计算） ───
-            if (metrics != null && encodeResult.Success)
-            {
-                bool updated = false;
-                string tempDir = Path.Combine(_outputDir, "_advanced_metrics_tmp");
-                _fs.CreateDirectory(tempDir);
-
-                try
-                {
-                    // 准备 PNG 引用图（若源图不是 PNG）
-                    string? refPng = workingInputPath;
-                    string ext = Path.GetExtension(workingInputPath).ToLower();
-                    if (ext != ".png")
-                    {
-                        refPng = await ConvertToPngAsync(workingInputPath, tempDir);
-                        if (refPng == null) refPng = workingInputPath; // 回退
-                    }
-
-                    // 将 AVIF 解码为 PNG
-                    string? distPng = await ConvertToPngAsync(outputPath, tempDir);
-                    if (distPng == null) distPng = outputPath; // 回退
-
-                    // SSIMULACRA2
-                    if (!metrics.SSIMULACRA2.HasValue && refPng != null && distPng != null)
-                    {
-                        var v = await ComputeSSIMULACRA2Async(refPng, distPng);
-                        if (v.HasValue) { metrics.SSIMULACRA2 = v; updated = true; }
-                    }
-
-                    // Butteraugli
-                    if ((!metrics.Butteraugli_Raw.HasValue || !metrics.Butteraugli_3norm.HasValue) && refPng != null && distPng != null)
-                    {
-                        var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, tempDir);
-                        if (raw.HasValue) { metrics.Butteraugli_Raw = raw; updated = true; }
-                        if (p3.HasValue) { metrics.Butteraugli_3norm = p3; updated = true; }
-                    }
-
-                    // GMSD (使用原始文件即可，ffmpeg 可以解码)
-                    if (!metrics.GMSD.HasValue)
-                    {
-                        var g = await ComputeGMSDAsync(workingInputPath, outputPath);
-                        if (g.HasValue) { metrics.GMSD = g; updated = true; }
-                    }
-                }
-                finally
-                {
-                    // 清理临时 PNG（仅删除本方法生成的）
-                    // 为简单起见，直接删除整个临时目录
-                    if (_fs.DirectoryExists(tempDir)) try { _fs.DeleteDirectory(tempDir, true); } catch { }
-                }
-
-                // 将更新后的 metrics 写回缓存
-                if (updated)
-                {
-                    _cache.SetMetrics(cacheKey, metrics);
-                    _logger.LogInfo($"高级指标补充完成: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, " +
-                                    $"Butteraugli_raw={metrics.Butteraugli_Raw?.ToString("F4")}, " +
-                                    $"Butteraugli_3norm={metrics.Butteraugli_3norm?.ToString("F4")}, " +
-                                    $"GMSD={metrics.GMSD?.ToString("F4")}");
-                }
-            }
+            
 
             return (ssim, null);
         }
@@ -4355,7 +4508,6 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         r.FinalButteraugli_Raw?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
         r.FinalButteraugli_3norm?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
         r.FinalGMSD?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
 
         r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
         r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
@@ -4518,6 +4670,13 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                     string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F4") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F4") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
                     if (r.FinalWXPSNR.HasValue)
                         qualityStr += $"  W‑XPSNR={r.FinalWXPSNR.Value:F2} dB";
+                    // ★ 添加高级指标
+                    if (r.FinalSSIMULACRA2.HasValue)
+                        qualityStr += $"  SSIMU2={r.FinalSSIMULACRA2.Value:F4}";
+                    if (r.FinalButteraugli_3norm.HasValue)
+                        qualityStr += $"  Butter3={r.FinalButteraugli_3norm.Value:F4}";
+                    if (r.FinalGMSD.HasValue)
+                        qualityStr += $"  GMSD={r.FinalGMSD.Value:F4}";
                     return $"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
                            $"{FormatSizeLocal(r.OriginalSize)} -> {FormatSizeLocal(r.OutputSize)} | " +
                            $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F4}s | 剩余 {eta}";
