@@ -701,13 +701,18 @@ namespace AvifEncoder.Gui
             AppendLog("提示: 同一编码器可能因图片格式/尺寸在运行时降级或回退，属正常保护机制。");
 
             // 4. 检测高级指标外部工具
+            // 4. 检测高级指标外部工具（名称不带扩展名，由 FindExecutable 自动补全）
             AppendLog("\n高级指标工具可用性检测");
             AppendLog("----------------------------------------");
-            bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2.exe") != null;
-            bool hasButter = EncoderUtils.FindExecutable("butteraugli_main.exe") != null;
+            bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
+            bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
             AppendLog($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
             AppendLog($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
             AppendLog("----------------------------------------");
+            if (!hasSsimu2 || !hasButter)
+            {
+                AppendLog("提示: 将 ssimulacra2.exe / butteraugli_main.exe 放到程序所在目录或 PATH 中即可使对应指标可用。");
+            }
 
             AppendLog("===== 启动检测完成 =====");
 

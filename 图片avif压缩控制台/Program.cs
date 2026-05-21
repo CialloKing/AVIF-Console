@@ -631,13 +631,18 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 Console.WriteLine("提示: 同一编码器可能因图片格式/尺寸在运行时降级或回退，属正常保护机制。");
 
                 // ★ 新增：检测高级指标外部工具
+                // ★ 新增：检测高级指标外部工具（名称不包含 .exe，由 FindExecutable 自动添加）
                 Console.WriteLine("\n外部指标工具可用性检测");
                 Console.WriteLine("----------------------------------------");
-                bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2.exe") != null;
-                bool hasButter = EncoderUtils.FindExecutable("butteraugli_main.exe") != null;
+                bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
+                bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
                 Console.WriteLine($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
                 Console.WriteLine($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
                 Console.WriteLine("----------------------------------------");
+                if (!hasSsimu2 || !hasButter)
+                {
+                    Console.WriteLine("提示: 将 ssimulacra2.exe / butteraugli_main.exe 放到程序所在目录或 PATH 中即可使对应指标可用。");
+                }
 
                 Console.WriteLine("\n请输入命令参数 (例如 -s -p best)");
                 Console.Write("> ");

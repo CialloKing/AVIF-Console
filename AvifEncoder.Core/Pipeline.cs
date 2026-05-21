@@ -4953,22 +4953,42 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
         /// <summary>在 PATH 环境变量中查找可执行文件</summary>
         public static string? FindExecutable(string name)
         {
-            // 1. 优先在应用程序所在目录中查找（便携/免安装部署）
+            // 若 Windows 且传入名称已带 .exe，去除以避免重复追加
+            bool isWindows = OperatingSystem.IsWindows();
+            string cleanName = name;
+            if (isWindows && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                cleanName = name[..^4];  // 去掉 .exe
+
+            // 1. 优先在应用程序所在目录中查找
             string? appDir = AppContext.BaseDirectory;
             if (!string.IsNullOrEmpty(appDir))
             {
                 string localFile = Path.Combine(appDir,
-                    OperatingSystem.IsWindows() ? $"{name}.exe" : name);
+                    isWindows ? $"{cleanName}.exe" : cleanName);
                 if (File.Exists(localFile))
                     return localFile;
             }
 
-            // 2. 回退到 PATH 环境变量
+            // 2. 在当前工作目录查找
+            try
+            {
+                string cwd = Environment.CurrentDirectory;
+                if (!string.IsNullOrEmpty(cwd))
+                {
+                    string cwdFile = Path.Combine(cwd,
+                        isWindows ? $"{cleanName}.exe" : cleanName);
+                    if (File.Exists(cwdFile))
+                        return cwdFile;
+                }
+            }
+            catch { /* 忽略 */ }
+
+            // 3. 回退到 PATH
             var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
             foreach (var p in paths ?? Array.Empty<string>())
             {
                 string full = Path.Combine(p,
-                    OperatingSystem.IsWindows() ? $"{name}.exe" : name);
+                    isWindows ? $"{cleanName}.exe" : cleanName);
                 if (File.Exists(full))
                     return full;
             }
