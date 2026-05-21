@@ -82,6 +82,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                仅保留 AV1 规范必须的瓦片分割（宽图自动分片）
                                以追求更高压缩率（编码速度会明显变慢）
 
+      --search-cpu-used <0-8>  搜索阶段编码器速度（覆盖预设，默认使用预设值）
+                               数值越高编码越快，但评估精度略微下降（建议 2-6）
+                               最终编码仍使用预设的最高质量速度
+
       --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）
                                不启用的情况下默认使用标准二分搜索
 
@@ -165,6 +169,9 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             public bool UsePriorSearch { get; set; } = false;
             // ★ 新增：记录用户通过 --target-ssimu2 等方式直接指定的高级指标模式
             public string? AdvancedMetricMode;
+
+            // ★ 新增：搜索阶段编码速度（覆盖预设）
+            public int? SearchCpuUsed;
         }
 
         // ========== 参数解析 ==========
@@ -307,6 +314,11 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             break;
                         case "proxy":
                             opts.EnableProxySearch = true;
+                            break;
+                        case "search-cpu-used":
+                            if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 8)
+                                opts.SearchCpuUsed = searchCpu;
+                            else throw new Exception("--search-cpu-used 需要 0-8 之间的整数");
                             break;
                         // 超时选项
                         default:
@@ -549,6 +561,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
             //---------- 13. 先验搜索模式 ----------
             config.UsePriorSearch = opts.UsePriorSearch;
+
+            //---------- 13.5 搜索速度覆盖 ----------
+            if (opts.SearchCpuUsed.HasValue)
+                config.SearchCpuUsed = opts.SearchCpuUsed.Value;
 
             //---------- 14. 冲突策略 ----------
             if (opts.Overwrite)
