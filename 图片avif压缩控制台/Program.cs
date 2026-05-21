@@ -879,6 +879,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             }
         }
 
+
         // 抽取单个编码器测试逻辑
         private static async Task<(string name, bool available, string note)> TestSingleEncoderAsync(
             string enc, string testInput, string testDir)
