@@ -38,6 +38,12 @@ namespace AvifEncoder.Gui
             numSearchCpuUsed.Maximum = 8;
             numSearchCpuUsed.Value = 4;          // 默认值，后续 ApplyPresetToUI 会刷新
             numSearchCpuUsed.DecimalPlaces = 0;
+
+            // 最终编码速度控件（设计器中已放置的 numFinalCpuUsed）
+            numFinalCpuUsed.Minimum = 0;
+            numFinalCpuUsed.Maximum = 8;
+            numFinalCpuUsed.Value = 0;           // 预设通常为高质量慢速
+            numFinalCpuUsed.DecimalPlaces = 0;
             // 如果设计器中已有关联的 Label（例如“搜索速度”），无需再添加
 
             txtTemplate.Text = "covers-{index}.avif";
@@ -192,6 +198,8 @@ namespace AvifEncoder.Gui
 
                 // 搜索阶段 CPU used (速度)
                 numSearchCpuUsed.Value = cfg.SearchCpuUsed;
+                // 最终编码阶段 CPU used (速度)
+                numFinalCpuUsed.Value = cfg.FinalCpuUsed;
                 // 并行任务数
                 numJobs.Value = cfg.MaxJobs;
             }
@@ -236,6 +244,8 @@ namespace AvifEncoder.Gui
             chkProxy.CheckedChanged += (s, e) => MarkCustomPreset();
             // 搜索速度
             numSearchCpuUsed.ValueChanged += (s, e) => MarkCustomPreset();
+            // 最终编码速度
+            numFinalCpuUsed.ValueChanged += (s, e) => MarkCustomPreset();
             // 并行任务数
             numJobs.ValueChanged += (s, e) => MarkCustomPreset();
             // 其他可能影响编码质量的选项可按需添加
@@ -513,6 +523,7 @@ namespace AvifEncoder.Gui
             config.UsePriorSearch = chkPriorSearch.Checked;
             config.UseProxySearch = chkProxy.Checked;
             config.SearchCpuUsed = (int)numSearchCpuUsed.Value;   // ★ 新增
+            config.FinalCpuUsed = (int)numFinalCpuUsed.Value;
 
             // 冲突策略
             config.FileConflictStrategy = cmbConflict.SelectedIndex switch

@@ -78,6 +78,8 @@
             label13 = new Label();
             label14 = new Label();
             numSearchCpuUsed = new NumericUpDown();
+            numFinalCpuUsed = new NumericUpDown();
+            label15 = new Label();
             ((System.ComponentModel.ISupportInitialize)numJobs).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
             grpCrfMode.SuspendLayout();
@@ -86,6 +88,7 @@
             ((System.ComponentModel.ISupportInitialize)numCrfFix).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numFinalCpuUsed).BeginInit();
             SuspendLayout();
             // 
             // lblInput
@@ -558,11 +561,29 @@
             numSearchCpuUsed.TabIndex = 42;
             numSearchCpuUsed.ValueChanged += numSearchCpuUsed_ValueChanged;
             // 
+            // numFinalCpuUsed
+            // 
+            numFinalCpuUsed.Location = new Point(718, 647);
+            numFinalCpuUsed.Name = "numFinalCpuUsed";
+            numFinalCpuUsed.Size = new Size(180, 30);
+            numFinalCpuUsed.TabIndex = 43;
+            // 
+            // label15
+            // 
+            label15.AutoSize = true;
+            label15.Location = new Point(718, 620);
+            label15.Name = "label15";
+            label15.Size = new Size(154, 24);
+            label15.TabIndex = 44;
+            label15.Text = "设置最终编码速度";
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1580, 1010);
+            Controls.Add(label15);
+            Controls.Add(numFinalCpuUsed);
             Controls.Add(numSearchCpuUsed);
             Controls.Add(label14);
             Controls.Add(label13);
@@ -617,6 +638,7 @@
             ((System.ComponentModel.ISupportInitialize)numCrfFix).EndInit();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).EndInit();
             ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numFinalCpuUsed).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -673,5 +695,7 @@
         private Label label13;
         private Label label14;
         private NumericUpDown numSearchCpuUsed;
+        private NumericUpDown numFinalCpuUsed;
+        private Label label15;
     }
 }
