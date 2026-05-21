@@ -53,14 +53,18 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 质量控制:
   -s, --search                 启用 CRF 搜索 (默认启用)
       --no-search              禁用 CRF 搜索
-      --metric <模式>           质量评价模式: vmaf, ssim, psnr, msssim, XPSNR, mix (默认 vmaf)
+      --metric <模式>           质量评价模式: vmaf, ssim, psnr, msssim, mix, XPSNR, ssimu2, butter3, gmsd (默认 vmaf)
                                设置目标分数自动切换模式
       --target-vmaf <0-100>    直接设置 VMAF 目标
       --target-xpsnr <dB>      直接设置 XPSNR 加权综合分目标（默认 W‑XPSNR，配合 --metric xpsnr_y/u/v 可选择通道）
       --target-ssim <0-1>      直接设置 SSIM 目标
       --target-psnr <dB>       直接设置 PSNR-Y 目标 (典型 30-50)
       --target-msssim <0-1>    直接设置 MS-SSIM 目标
+      --target-ssimu2 <值>     直接设置 SSIMULACRA2 目标（越大越好，通常取 0~100）
+      --target-butter3 <值>    直接设置 Butteraugli 3‑norm 目标（越小越好，通常取 0~10）
+      --target-gmsd <值>       直接设置 GMSD 目标（越小越好，通常取 0~1）
       --target-mix <0-1>       直接设置多指标加权混合评分目标
+
 
       --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
@@ -159,6 +163,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             public bool EnableProxySearch { get; set; } = false;
 
             public bool UsePriorSearch { get; set; } = false;
+            // ★ 新增：记录用户通过 --target-ssimu2 等方式直接指定的高级指标模式
+            public string? AdvancedMetricMode;
         }
 
         // ========== 参数解析 ==========
@@ -208,12 +214,35 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         case "search": opts.EnableSearch = true; opts.ForceNoSearch = false; break;
                         case "no-search": opts.ForceNoSearch = true; opts.EnableSearch = false; break;
                         case "quality": opts.QualityTarget = double.Parse(GetValue()); break;
-                        case "metric": opts.MetricMode = GetValue().ToLower(); break;
+                        case "metric":
+                            {
+                                string raw = GetValue().ToLower();
+                                opts.MetricMode = raw;
+                                // 记录是否属于系统已知的高级指标模式
+                                if (raw is "ssimu2" or "butter3" or "gmsd")
+                                    opts.AdvancedMetricMode = raw;
+                            }
+                            break;
                         case "target-vmaf": opts.DirectTargetMode = "vmaf"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-ssim": opts.DirectTargetMode = "ssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-psnr": opts.DirectTargetMode = "psnr"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
                         case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-ssimu2":
+                            opts.DirectTargetMode = "ssimu2";
+                            opts.AdvancedMetricMode = "ssimu2";
+                            opts.DirectTargetValue = double.Parse(GetValue());
+                            break;
+                        case "target-butter3":
+                            opts.DirectTargetMode = "butter3";
+                            opts.AdvancedMetricMode = "butter3";
+                            opts.DirectTargetValue = double.Parse(GetValue());
+                            break;
+                        case "target-gmsd":
+                            opts.DirectTargetMode = "gmsd";
+                            opts.AdvancedMetricMode = "gmsd";
+                            opts.DirectTargetValue = double.Parse(GetValue());
+                            break;
                         case "target-xpsnr":
                             // 若用户未通过 --metric 明确指定 XPSNR 通道，则默认使用加权 W‑XPSNR
                             if (!opts.MetricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
@@ -453,11 +482,9 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
             if (opts.QualityTarget.HasValue)
             {
-                string effectiveMetric = opts.MetricMode ?? config.MetricMode ?? "vmaf";
+                string effectiveMetric = opts.AdvancedMetricMode ?? opts.MetricMode ?? config.MetricMode ?? "vmaf";
                 config.MetricMode = effectiveMetric;
                 config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
-                // 如果目标模式已是 xpsnr，SetQualityTarget 会设置 XpsnrTargetValue，
-                // 此时无需再调用 AdjustTargetForMetricMode。
             }
             else
             {

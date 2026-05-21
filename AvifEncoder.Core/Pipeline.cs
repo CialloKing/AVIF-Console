@@ -133,6 +133,31 @@ namespace AvifEncoder
         public string Encoder { get; set; } = "libaom-av1";
         public string MetricMode { get; set; } = "vmaf";
 
+        // ★ 新增：高级指标的原生目标值（仅用于对应搜索模式）
+        public double? Ssimu2TargetValue { get; set; }
+        public double? Butteraugli3TargetValue { get; set; }
+        public double? GmsdTargetValue { get; set; }
+
+        /// <summary> 当前搜索指标的优劣方向：true 表示越小越好，否则越大越好 </summary>
+        public bool? MetricLowerIsBetter { get; set; }
+
+        /// <summary> 判断给定指标模式是否属于高级指标（SSIMU2/Butter3/GMSD） </summary>
+        public static bool IsAdvancedMetricMode(string? metricMode)
+        {
+            return metricMode is "ssimu2" or "butter3" or "gmsd";
+        }
+
+        /// <summary> 返回指定指标模式是否越低越好（对 But3 / GMSD 为 true，SSIMU2 / VMAF / PSNR 等为 false） </summary>
+        public static bool IsMetricLowerBetter(string? metricMode)
+        {
+            return metricMode switch
+            {
+                "butter3" => true,
+                "gmsd" => true,
+                _ => false
+            };
+        }
+
         // 用户是否通过 -t 手动指定了 MaxJobs
         public bool UserSpecifiedMaxJobs { get; set; } = false;
 
@@ -153,6 +178,8 @@ namespace AvifEncoder
 
         /// <summary> 是否启用先验引导搜索（中位数初始化 + 动态哨兵探测） </summary>
         public bool UsePriorSearch { get; set; } = false;
+
+
 
         /// <summary>
         /// 返回当前编码器实际有效的 AOM 参数字符串。
@@ -186,18 +213,53 @@ namespace AvifEncoder
         /// <summary>
         /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
         /// </summary>
+        /// <summary>
+        /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
+        /// </summary>
+        /// <summary>
+        /// 根据当前的 MetricMode，将用户输入的原生质量值转换为内部 0‑1 目标。
+        /// 对于高级指标（ssimu2/butter3/gmsd），直接存储原生值，不进行 clamp，以便任意输入。
+        /// </summary>
         public void SetQualityTarget(double rawValue, string metricMode)
         {
+            // 清除所有独立目标字段
+            XpsnrTargetValue = null;
+            XpsnrTargetChannel = null;
+            Ssimu2TargetValue = null;
+            Butteraugli3TargetValue = null;
+            GmsdTargetValue = null;
+            MetricLowerIsBetter = null;
+
+            // XPSNR 特殊处理
             if (metricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
             {
                 XpsnrTargetValue = rawValue;
-                XpsnrTargetChannel = metricMode.Length > 5 ? metricMode.Substring(6).ToLower() : "w"; // "xpsnr_w" → "w"
+                XpsnrTargetChannel = metricMode.Length > 5 ? metricMode.Substring(6).ToLower() : "w";
                 TargetSSIM = 0;
                 return;
             }
 
-            XpsnrTargetValue = null;
-            XpsnrTargetChannel = null;
+            // 高级指标：直接使用用户输入的原生数值，不做范围限制
+            if (metricMode is "ssimu2" or "butter3" or "gmsd")
+            {
+                TargetSSIM = 0;
+                MetricLowerIsBetter = IsMetricLowerBetter(metricMode);
+                switch (metricMode)
+                {
+                    case "ssimu2":
+                        Ssimu2TargetValue = rawValue;      // 允许 -∞ ~ 100
+                        break;
+                    case "butter3":
+                        Butteraugli3TargetValue = rawValue; // 允许 ≥0 任意值
+                        break;
+                    case "gmsd":
+                        GmsdTargetValue = rawValue;        // 允许 ≥0 任意值
+                        break;
+                }
+                return;
+            }
+
+            // 其他模式：归一化到0‑1目标（维持原有逻辑）
             TargetSSIM = metricMode?.ToLower() switch
             {
                 "ssim" => Math.Clamp(rawValue, 0, 1),
@@ -3717,6 +3779,47 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                                 }
                             }
 
+                            // ★ 如果当前搜索模式需要高级指标，补充计算并回写缓存
+                            string? needAdvanced = cfg.MetricMode;
+                            if (PresetConfig.IsAdvancedMetricMode(needAdvanced) &&
+                                (metrics.SSIMULACRA2 == null || metrics.Butteraugli_3norm == null || metrics.GMSD == null))
+                            {
+                                string advDir = Path.Combine(_outputDir, "_search_advanced_tmp");
+                                try
+                                {
+                                    _fs.CreateDirectory(advDir);
+                                    // 转换参考图片为 PNG（如果还不是）
+                                    string? refPng = input;
+                                    if (Path.GetExtension(input)?.ToLower() != ".png")
+                                    {
+                                        refPng = await ConvertToPngAsync(input, advDir);
+                                        if (refPng == null) refPng = input;
+                                    }
+                                    // 解码临时 AVIF 为 PNG
+                                    string? distPng = await ConvertToPngAsync(tmp, advDir);
+                                    if (distPng != null && refPng != null)
+                                    {
+                                        // 只计算当前模式需要的指标，减少开销
+                                        if (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue)
+                                        {
+                                            var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                                            if (s.HasValue) metrics.SSIMULACRA2 = s;
+                                        }
+                                        if (needAdvanced == "butter3" && !metrics.Butteraugli_3norm.HasValue)
+                                        {
+                                            var (_, p3) = await ComputeButteraugliAsync(refPng, distPng, advDir);
+                                            if (p3.HasValue) metrics.Butteraugli_3norm = p3;
+                                        }
+                                        if (needAdvanced == "gmsd" && !metrics.GMSD.HasValue)
+                                        {
+                                            var g = await ComputeGMSDAsync(input, tmp);   // 注：GMSD 可直接用 input/tmp
+                                            if (g.HasValue) metrics.GMSD = g;
+                                        }
+                                    }
+                                }
+                                catch (Exception ex) { _logger.LogInfo($"搜索高级指标补算失败: {ex.Message}"); }
+                                finally { if (_fs.DirectoryExists(advDir)) try { _fs.DeleteDirectory(advDir, true); } catch { } }
+                            }
                             _cache.SetMetrics(key, metrics);
                             _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
                                              $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F4}dB, " +
@@ -3790,6 +3893,10 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 case "xpsnr_w": return m.W_XPSNR ?? -1;
                 case "xpsnr":   // 未指定通道时默认加权 W‑XPSNR
                     return m.W_XPSNR ?? -1;
+                // ★ 高级指标（返回原生值，搜索时可能反转）
+                case "ssimu2": return m.SSIMULACRA2 ?? -1;
+                case "butter3": return m.Butteraugli_3norm ?? -1;
+                case "gmsd": return m.GMSD ?? -1;
                 default:
                     return m.SSIM;
             }
@@ -3987,24 +4094,53 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             string name = displayName ?? Path.GetFileName(input);
             string metricMode = cfg.MetricMode ?? "vmaf";
             double target;
-            const double XpsnrMargin = 0.01; // XPSNR 使用 0.01 dB 容差
+            double margin;
+            bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
 
+            // 选择 margin：XPSNR 用 0.01，其他高级指标用 0.001，普通 0‑1 用 SSIMMargin
+            if (cfg.XpsnrTargetValue.HasValue) margin = 0.01;
+            else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;      // SSIMU2 用稍大的余量
+            else if (cfg.Butteraugli3TargetValue.HasValue) margin = 0.01;
+            else if (cfg.GmsdTargetValue.HasValue) margin = 0.001;
+            else margin = SSIMMargin;
+
+            // 提取最终的目标值（原生值）
             if (cfg.XpsnrTargetValue.HasValue)
-            {
-                // XPSNR 越大越好，目标值减去极小容差以保证搜索时 score >= target 即可达标
-                target = cfg.XpsnrTargetValue.Value - XpsnrMargin;
-            }
+                target = cfg.XpsnrTargetValue.Value - margin;          // XPSNR 越大越好
+            else if (cfg.Ssimu2TargetValue.HasValue)
+                target = cfg.Ssimu2TargetValue.Value;                  // SSIMU2 越大越好，不减余量
+            else if (cfg.Butteraugli3TargetValue.HasValue)
+                target = cfg.Butteraugli3TargetValue.Value + margin;   // Butter3 越小越好，目标加余量
+            else if (cfg.GmsdTargetValue.HasValue)
+                target = cfg.GmsdTargetValue.Value + margin;           // GMSD 越小越好，目标加余量
             else
-            {
-                target = cfg.TargetSSIM + SSIMMargin;
-            }
-            string targetDisplay = FormatScore(cfg.XpsnrTargetValue.HasValue ? target + XpsnrMargin : target, metricMode);
+                target = cfg.TargetSSIM + SSIMMargin;                  // 默认 0‑1 目标
+                                                                       // 恢复原始显示用的目标值（考虑 margin 和方向）
+            double displayTarget;
+            if (cfg.XpsnrTargetValue.HasValue) displayTarget = cfg.XpsnrTargetValue.Value;
+            else if (cfg.Ssimu2TargetValue.HasValue) displayTarget = cfg.Ssimu2TargetValue.Value;
+            else if (cfg.Butteraugli3TargetValue.HasValue) displayTarget = cfg.Butteraugli3TargetValue.Value;
+            else if (cfg.GmsdTargetValue.HasValue) displayTarget = cfg.GmsdTargetValue.Value;
+            else displayTarget = cfg.TargetSSIM + SSIMMargin;
+            string targetDisplay = FormatScore(displayTarget, metricMode);
             SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
             var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
 
             Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
+
+            // ★ 对于越小越好的指标，将分数取反，使 “>= target” 仍然有效
+            if (lowerIsBetter)
+            {
+                var originalGetScore = getScore;
+                getScore = async crf =>
+                {
+                    double s = await originalGetScore(crf);
+                    return s >= 0 ? -s : s;      // 负值表示失败，不反转
+                };
+                target = -target;                // 同时反转目标
+            }
             int totalEvalCount = 0;
             int userMin = cfg.MinCRF;
             int userMax = cfg.MaxCRF;
