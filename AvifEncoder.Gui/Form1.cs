@@ -32,21 +32,13 @@ namespace AvifEncoder.Gui
             cmbEncoder.SelectedItem = "libaom-av1";
 
             numJobs.Value = 0;
-
-            // 搜索阶段 CPU used (速度)
-            var lblSearchCpu = new Label() { Text = "搜索速度 (CPU used):", AutoSize = true };
-            numSearchCpuUsed = new NumericUpDown()
-            {
-                Minimum = 0,
-                Maximum = 8,
-                Value = 4,            // 默认与 fast 预设一致，后续会被 ApplyPresetToUI 覆盖
-                Width = 60,
-                DecimalPlaces = 0,
-                Location = new Point(650, 210)   // 根据实际布局调整坐标
-            };
-            lblSearchCpu.Location = new Point(650, 190);
-            this.Controls.Add(lblSearchCpu);
-            this.Controls.Add(numSearchCpuUsed);
+            cmbEncoder.SelectedIndex = 0;
+            // 设置设计器中已存在的 numSearchCpuUsed 控件属性
+            numSearchCpuUsed.Minimum = 0;
+            numSearchCpuUsed.Maximum = 8;
+            numSearchCpuUsed.Value = 4;          // 默认值，后续 ApplyPresetToUI 会刷新
+            numSearchCpuUsed.DecimalPlaces = 0;
+            // 如果设计器中已有关联的 Label（例如“搜索速度”），无需再添加
 
             txtTemplate.Text = "covers-{index}.avif";
 
@@ -902,6 +894,11 @@ namespace AvifEncoder.Gui
         }
 
         private void label11_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void numSearchCpuUsed_ValueChanged(object sender, EventArgs e)
         {
 
         }

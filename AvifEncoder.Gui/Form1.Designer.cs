@@ -544,7 +544,7 @@
             // label14
             // 
             label14.AutoSize = true;
-            label14.Location = new Point(718, 547);
+            label14.Location = new Point(718, 554);
             label14.Name = "label14";
             label14.Size = new Size(118, 24);
             label14.TabIndex = 41;
@@ -552,10 +552,11 @@
             // 
             // numSearchCpuUsed
             // 
-            numSearchCpuUsed.Location = new Point(718, 574);
+            numSearchCpuUsed.Location = new Point(718, 581);
             numSearchCpuUsed.Name = "numSearchCpuUsed";
             numSearchCpuUsed.Size = new Size(180, 30);
             numSearchCpuUsed.TabIndex = 42;
+            numSearchCpuUsed.ValueChanged += numSearchCpuUsed_ValueChanged;
             // 
             // Form1
             // 
