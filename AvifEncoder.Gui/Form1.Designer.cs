@@ -154,7 +154,7 @@
             // 
             // btnStart
             // 
-            btnStart.Location = new Point(12, 627);
+            btnStart.Location = new Point(12, 708);
             btnStart.Name = "btnStart";
             btnStart.Size = new Size(98, 36);
             btnStart.TabIndex = 7;
@@ -164,7 +164,7 @@
             // 
             // progressBar1
             // 
-            progressBar1.Location = new Point(118, 627);
+            progressBar1.Location = new Point(120, 708);
             progressBar1.Name = "progressBar1";
             progressBar1.Size = new Size(1296, 36);
             progressBar1.Style = ProgressBarStyle.Marquee;
@@ -173,7 +173,7 @@
             // 
             // rtbLog
             // 
-            rtbLog.Location = new Point(118, 669);
+            rtbLog.Location = new Point(118, 760);
             rtbLog.Name = "rtbLog";
             rtbLog.Size = new Size(1296, 238);
             rtbLog.TabIndex = 9;
@@ -562,7 +562,7 @@
             // 
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1580, 932);
+            ClientSize = new Size(1580, 1010);
             Controls.Add(numSearchCpuUsed);
             Controls.Add(label14);
             Controls.Add(label13);

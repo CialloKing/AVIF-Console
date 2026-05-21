@@ -83,9 +83,14 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                以追求更高压缩率（编码速度会明显变慢）
 
       --search-cpu-used <0-13> 搜索阶段编码器速度（覆盖预设，默认使用预设值）
-                               数值越高编码越快，评估精度下降。
-                               libaom 范围 0~8（0最慢最高质），libsvtav1 范围 0~13（0最慢），
-                               librav1e 范围 0~10（0最慢）。最终编码仍使用预设最高质量速度。
+                               数值越高编码越快，评估精度下降。不同编码器含义：
+                               libaom -cpu-used 0-8 (0最慢最高质)，
+                               libsvtav1 -preset 0-13 (0最慢)，
+                               librav1e --speed 0-10 (0最慢)
+                               最终编码仍使用预设或自定义速度
+      --final-cpu-used <0-13>  最终编码阶段编码器速度（覆盖预设，默认使用预设值）
+                               数值含义同 --search-cpu-used，但仅影响最终输出文件的编码。
+                               如果不指定，最终编码将使用预设的高质量速度（通常较慢）。
 
       --prior-search           启用概率分布先验引导搜索（中位数+哨兵，通常更快）
                                不启用的情况下默认使用标准二分搜索
@@ -173,6 +178,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
             // ★ 新增：搜索阶段编码速度（覆盖预设）
             public int? SearchCpuUsed;
+            // ★ 新增：最终编码阶段编码速度（覆盖预设）
+            public int? FinalCpuUsed;
         }
 
         // ========== 参数解析 ==========
@@ -317,10 +324,16 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             opts.EnableProxySearch = true;
                             break;
                         case "search-cpu-used":
-                            // 允许 0~13，实际编码器映射由 BuildEncoderSpecificArgs 处理
+                            // 接受 0~13，各编码器在 BuildEncoderSpecificArgs 中内部映射
                             if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 13)
                                 opts.SearchCpuUsed = searchCpu;
                             else throw new Exception("--search-cpu-used 需要 0-13 之间的整数（libaom:0-8, libsvtav1:0-13, librav1e:0-10）");
+                            break;
+                        case "final-cpu-used":
+                            // 最终编码速度，范围同搜索速度
+                            if (int.TryParse(GetValue(), out int finalCpu) && finalCpu >= 0 && finalCpu <= 13)
+                                opts.FinalCpuUsed = finalCpu;
+                            else throw new Exception("--final-cpu-used 需要 0-13 之间的整数（libaom:0-8, libsvtav1:0-13, librav1e:0-10）");
                             break;
                         // 超时选项
                         default:
@@ -567,6 +580,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             //---------- 13.5 搜索速度覆盖 ----------
             if (opts.SearchCpuUsed.HasValue)
                 config.SearchCpuUsed = opts.SearchCpuUsed.Value;
+
+            //---------- 13.6 最终编码速度覆盖 ----------
+            if (opts.FinalCpuUsed.HasValue)
+                config.FinalCpuUsed = opts.FinalCpuUsed.Value;
 
             //---------- 14. 冲突策略 ----------
             if (opts.Overwrite)

@@ -1185,7 +1185,8 @@ namespace AvifEncoder
 
             if (EncoderUtils.IsSvtAv1(enc))
             {
-                // SVT‑AV1 的 preset 0 最快、13 最慢；cpuUsed 语义为 0 最慢，所以反转
+                // SVT-AV1 的 preset 范围 0-13，0 最快、13 最慢
+                // cpuUsed 语义统一为“数值越大越快，0 最慢”，因此反转
                 int maxSvtPreset = 13;
                 int svtPreset = Math.Clamp(maxSvtPreset - cpuUsed, 0, maxSvtPreset);
                 if (cfg.Lossless)
