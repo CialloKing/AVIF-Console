@@ -914,17 +914,16 @@ namespace AvifEncoder
         /// </summary>
         private string GetOutputPath(string inputFilePath, int index)
         {
-            // 获取相对于输入根目录的相对路径
-            string relPath = Path.GetRelativePath(_inputDir, inputFilePath);
+            // ★ 同步去除可能的长路径前缀，保证 Path.GetRelativePath 正确工作
+            string safeInputDir = NormalizePathForExternalTool(_inputDir);
+            string safeInputPath = NormalizePathForExternalTool(inputFilePath);
+            string relPath = Path.GetRelativePath(safeInputDir, safeInputPath);
             string? relDir = Path.GetDirectoryName(relPath);
             string fileName = GetOutputFileName(inputFilePath, index);
-
             string targetDir = string.IsNullOrEmpty(relDir)
                 ? _outputDir
                 : Path.Combine(_outputDir, relDir);
-
             _fs.CreateDirectory(targetDir);
-
             string candidate = Path.Combine(targetDir, fileName);
             switch (_config.FileConflictStrategy)
             {
@@ -1659,12 +1658,13 @@ namespace AvifEncoder
 {
     ".jpg", ".jpeg", ".png", ".webp",
     ".bmp", ".tif", ".tiff", ".gif",
-    ".jp2", ".j2k", ".jpx"   // 可选：JPEG 2000
+    ".jp2", ".j2k", ".jpx"
 };
 
-            // 根据配置选择是否递归遍历子文件夹
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            var sortedFiles = _fs.EnumerateFiles(_inputDir, "*.*", searchOption)
+            // ★ 修复：去除可能的 \\?\ 长路径前缀，否则 Directory.EnumerateFiles 无法递归子目录
+            string scanDir = NormalizePathForExternalTool(_inputDir);
+            var sortedFiles = _fs.EnumerateFiles(scanDir, "*.*", searchOption)
                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                 .OrderBy(f => f, new NaturalComparer())
                 .Select((path, idx) => (path, index: idx + 1))

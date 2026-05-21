@@ -43,6 +43,11 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   AvifEncoder --input <目录> --output <目录> [选项]
   AvifEncoder -i <目录> -o <目录> [选项]
 
+支持的输入格式:
+    "".jpg"", "".jpeg"", "".png"", "".webp"",
+    "".bmp"", "".tif"", "".tiff"", "".gif"",
+    "".jp2"", "".j2k"", "".jpx""
+
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
   -o, --output <目录>          输出目录 (默认: Avifoutput)
