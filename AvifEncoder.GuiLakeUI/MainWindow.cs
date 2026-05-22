@@ -1,83 +1,60 @@
-using System;
-using System.Windows.Forms;
 using LakeUI;
+using LakeUI.Controls;
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+using static LakeUI.D2DHelper;
 
-namespace AvifEncoder.GuiLakeUI
+namespace AvifEncoder.Gui
 {
     public partial class MainWindow : Form
     {
-        private Panel pageContainer;
-
-        private UserControl basicPage;
-        private UserControl encodePage;
-        private UserControl qualityPage;
-        private UserControl logPage;
+        // 声明各功能页实例
+        private readonly FormBasic _basicPage = new FormBasic();
+        private readonly FormQuality _qualityPage = new FormQuality();
+        private readonly FormEncoder _encoderPage = new FormEncoder();
+        private readonly FormAdvanced _advancedPage = new FormAdvanced();
+        private readonly FormLog _logPage = new FormLog();
 
         public MainWindow()
         {
             InitializeComponent();
+        }
 
-            // LakeUI 窗口效果（必须在 Designer 里拖 ThisIsYourWindow）
+        private void MainWindow_Load(object sender, EventArgs e)
+        {
+            // 设置全局文本质量
+            D2DHelper.GlobalTextQuality = TextQualityMode.ClearType;
+
+            // 附加窗口美化组件（自定义标题栏、阴影等）
             thisIsYourWindow1.Attach(this);
 
-            BuildLayout();
-            BuildPages();
+            // 绑定子窗体到对应的导航页签
+            BindTabPage(5, _basicPage);
+            BindTabPage(6, _qualityPage);
+            BindTabPage(7, _encoderPage);
+            BindTabPage(8, _advancedPage);
+            BindTabPage(9, _logPage);
+
+            // 默认选中基础参数页
+            modernTabListControl1.SelectedIndex = 5;
         }
 
-        private void BuildLayout()
+        /// <summary>
+        /// 统一绑定页签并将子窗体的根面板背景设为透明
+        /// </summary>
+        private void BindTabPage(int index, Form subForm)
         {
-            // 左侧导航
-            var nav = new ListBox
+            var tab = modernTabListControl1.Items[index];
+            tab.BoundControl = subForm;
+
+            if (subForm.Controls.Count > 0
+                && subForm.Controls[0] is ModernPanel rootPanel)
             {
-                Dock = DockStyle.Left,
-                Width = 160
-            };
-
-            nav.Items.AddRange(new object[]
-            {
-                "基础",
-                "编码器",
-                "质量",
-                "日志"
-            });
-
-            nav.SelectedIndexChanged += (s, e) =>
-            {
-                switch (nav.SelectedIndex)
-                {
-                    case 0: SwitchPage(basicPage); break;
-                    case 1: SwitchPage(encodePage); break;
-                    case 2: SwitchPage(qualityPage); break;
-                    case 3: SwitchPage(logPage); break;
-                }
-            };
-
-            this.Controls.Add(nav);
-
-            // 右侧容器
-            pageContainer = new Panel
-            {
-                Dock = DockStyle.Fill
-            };
-
-            this.Controls.Add(pageContainer);
-        }
-
-        private void BuildPages()
-        {
-            basicPage = new BasicPage();
-            encodePage = new EncodePage();
-            qualityPage = new QualityPage();
-            logPage = new LogPage();
-
-            SwitchPage(basicPage);
-        }
-
-        private void SwitchPage(Control page)
-        {
-            pageContainer.Controls.Clear();
-            page.Dock = DockStyle.Fill;
-            pageContainer.Controls.Add(page);
+                rootPanel.BackColor = Color.Transparent;
+                rootPanel.BackColor1 = Color.Transparent;
+                rootPanel.BackgroundSource = this; // 继承主窗体背景
+            }
         }
     }
 }
