@@ -576,51 +576,93 @@ namespace AvifEncoder.GuiLakeUl
             AutoScaleDimensions = new SizeF(11F, 24F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1580, 1010);
-            Controls.Add(label15);
-            Controls.Add(numFinalCpuUsed);
-            Controls.Add(numSearchCpuUsed);
-            Controls.Add(label14);
-            Controls.Add(label13);
-            Controls.Add(cmbConflict);
-            Controls.Add(chkVerbose);
-            Controls.Add(chkDryRun);
-            Controls.Add(chkProxy);
-            Controls.Add(chkPriorSearch);
-            Controls.Add(chkSerialEncode);
-            Controls.Add(chkOutputFullRes);
-            Controls.Add(label12);
-            Controls.Add(numMaxRes);
-            Controls.Add(chkLossless);
-            Controls.Add(label11);
-            Controls.Add(cmbBitDepth);
-            Controls.Add(cmbChroma);
-            Controls.Add(label10);
-            Controls.Add(grpCrfMode);
-            Controls.Add(label7);
-            Controls.Add(numQualityValue);
-            Controls.Add(label6);
-            Controls.Add(label5);
-            Controls.Add(cmbQualityMode);
-            Controls.Add(chkRecursive);
-            Controls.Add(label4);
-            Controls.Add(label3);
-            Controls.Add(label2);
-            Controls.Add(label1);
-            Controls.Add(txtTemplate);
-            Controls.Add(cmbMetric);
-            Controls.Add(chkSearch);
-            Controls.Add(numJobs);
-            Controls.Add(cmbEncoder);
-            Controls.Add(rtbLog);
-            Controls.Add(progressBar1);
-            Controls.Add(btnStart);
-            Controls.Add(cmbPreset);
-            Controls.Add(btnBrowseOutput);
-            Controls.Add(txtOutput);
-            Controls.Add(lblOutput);
-            Controls.Add(btnBrowseInput);
-            Controls.Add(txtInput);
-            Controls.Add(lblInput);
+
+            // Create tab panels to split form into multiple pages
+            pnlBasic = new ModernPanel();
+            pnlEncode = new ModernPanel();
+            pnlQuality = new ModernPanel();
+            pnlLog = new ModernPanel();
+
+            // Configure panels
+            pnlBasic.Location = new Point(0, 0);
+            pnlBasic.Name = "pnlBasic";
+            pnlBasic.Size = new Size(1580, 900);
+            pnlBasic.BackColor = Color.Transparent;
+
+            pnlEncode.Location = new Point(0, 0);
+            pnlEncode.Name = "pnlEncode";
+            pnlEncode.Size = new Size(1580, 900);
+            pnlEncode.BackColor = Color.Transparent;
+            pnlEncode.Visible = false;
+
+            pnlQuality.Location = new Point(0, 0);
+            pnlQuality.Name = "pnlQuality";
+            pnlQuality.Size = new Size(1580, 900);
+            pnlQuality.BackColor = Color.Transparent;
+            pnlQuality.Visible = false;
+
+            pnlLog.Location = new Point(0, 0);
+            pnlLog.Name = "pnlLog";
+            pnlLog.Size = new Size(1580, 900);
+            pnlLog.BackColor = Color.Transparent;
+            pnlLog.Visible = false;
+
+            // Add controls to panels (grouped logically)
+            // Basic
+            pnlBasic.Controls.Add(lblInput);
+            pnlBasic.Controls.Add(txtInput);
+            pnlBasic.Controls.Add(btnBrowseInput);
+            pnlBasic.Controls.Add(lblOutput);
+            pnlBasic.Controls.Add(txtOutput);
+            pnlBasic.Controls.Add(btnBrowseOutput);
+            pnlBasic.Controls.Add(txtTemplate);
+            pnlBasic.Controls.Add(label1);
+            pnlBasic.Controls.Add(cmbPreset);
+            pnlBasic.Controls.Add(label2);
+            pnlBasic.Controls.Add(btnStart);
+            pnlBasic.Controls.Add(progressBar1);
+
+            // Encode
+            pnlEncode.Controls.Add(cmbEncoder);
+            pnlEncode.Controls.Add(numJobs);
+            pnlEncode.Controls.Add(chkSearch);
+            pnlEncode.Controls.Add(chkRecursive);
+            pnlEncode.Controls.Add(grpCrfMode);
+            pnlEncode.Controls.Add(cmbChroma);
+            pnlEncode.Controls.Add(cmbBitDepth);
+            pnlEncode.Controls.Add(chkLossless);
+            pnlEncode.Controls.Add(numMaxRes);
+            pnlEncode.Controls.Add(label12);
+            pnlEncode.Controls.Add(chkOutputFullRes);
+            pnlEncode.Controls.Add(chkSerialEncode);
+            pnlEncode.Controls.Add(chkPriorSearch);
+            pnlEncode.Controls.Add(chkProxy);
+            pnlEncode.Controls.Add(chkDryRun);
+            pnlEncode.Controls.Add(chkVerbose);
+            pnlEncode.Controls.Add(cmbConflict);
+            pnlEncode.Controls.Add(label13);
+            pnlEncode.Controls.Add(label14);
+            pnlEncode.Controls.Add(numSearchCpuUsed);
+            pnlEncode.Controls.Add(numFinalCpuUsed);
+            pnlEncode.Controls.Add(label15);
+
+            // Quality
+            pnlQuality.Controls.Add(cmbMetric);
+            pnlQuality.Controls.Add(cmbQualityMode);
+            pnlQuality.Controls.Add(numQualityValue);
+            pnlQuality.Controls.Add(label5);
+            pnlQuality.Controls.Add(label6);
+            pnlQuality.Controls.Add(label7);
+
+            // Log
+            pnlLog.Controls.Add(rtbLog);
+
+            // Add panels to form
+            Controls.Add(pnlBasic);
+            Controls.Add(pnlEncode);
+            Controls.Add(pnlQuality);
+            Controls.Add(pnlLog);
+
             Name = "Form1";
             Text = "输出目录";
             ((System.ComponentModel.ISupportInitialize)numJobs).EndInit();
@@ -691,5 +733,11 @@ namespace AvifEncoder.GuiLakeUl
         private NumericUpDown numSearchCpuUsed;
         private NumericUpDown numFinalCpuUsed;
         private Label label15;
+
+        // Tab panels
+        private ModernPanel pnlBasic;
+        private ModernPanel pnlEncode;
+        private ModernPanel pnlQuality;
+        private ModernPanel pnlLog;
     }
 }

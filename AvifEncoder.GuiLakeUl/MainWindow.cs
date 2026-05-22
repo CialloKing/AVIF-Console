@@ -46,18 +46,38 @@ namespace AvifEncoder.GuiLakeUl
             this.Controls.Add(contentPanel);
             this.Controls.Add(tabList);
 
-            // Host the existing Form1 inside the ModernPanel and bind to a tab
+            // Create Form1 instance and extract its logical panels to host as separate pages
             var form1 = new Form1();
             form1.TopLevel = false;
             form1.FormBorderStyle = FormBorderStyle.None;
             form1.Dock = DockStyle.Fill;
-            contentPanel.Controls.Add(form1);
-            form1.Show();
 
-            // Create a tab page and bind the Form1 as its content
-            var page = new ModernTabListControl.ModernTabPage("主界面");
-            page.BoundControl = form1;
-            tabList.Items.Add(page);
+            // The Form1 Designer created multiple ModernPanel pnlBasic/pnlEncode/pnlQuality/pnlLog and added them to the Form.
+            // We move those panels into our contentPanel so they become direct children and can be bound to tab pages.
+            string[] panelNames = new[] { "pnlBasic", "pnlEncode", "pnlQuality", "pnlLog" };
+            foreach (var name in panelNames)
+            {
+                var matches = form1.Controls.Find(name, true);
+                if (matches != null && matches.Length > 0)
+                {
+                    var pnl = matches[0];
+                    // Detach from Form1 and add to contentPanel
+                    form1.Controls.Remove(pnl);
+                    pnl.Dock = DockStyle.Fill;
+                    contentPanel.Controls.Add(pnl);
+
+                    // Create corresponding tab
+                    var tab = new ModernTabListControl.ModernTabPage(name == "pnlBasic" ? "基本" :
+                                                                      name == "pnlEncode" ? "编码" :
+                                                                      name == "pnlQuality" ? "质量" :
+                                                                      "日志");
+                    tab.BoundControl = pnl;
+                    tabList.Items.Add(tab);
+                }
+            }
+
+            // Dispose the empty Form1 since its panels have been moved
+            try { form1.Dispose(); } catch { }
 
             // Ensure items refreshed and select first
             tabList.RefreshItems();
