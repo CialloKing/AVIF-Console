@@ -1,3 +1,7 @@
+using System;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using AvifEncoder;
 using AvifEncoder.GuiLakeUl.选项窗口;
 using LakeUI;
 using static LakeUI.D2DHelper;
@@ -6,8 +10,9 @@ namespace AvifEncoder.GuiLakeUl
 {
     public partial class Form1 : Form
     {
-        // 注意声明为可空，因为会在 Load 事件中才初始化
         private FormEncode? _encodePage;
+        private FormLog? _logPage;
+        private FormHelp? _helpPage;
 
         public Form1()
         {
@@ -15,15 +20,12 @@ namespace AvifEncoder.GuiLakeUl
             InitializeComponent();
         }
 
-        // 增加一个字段
-        private FormLog? _logPage;
-
-        private void Form1_Load(object sender, EventArgs e)
+        private async void Form1_Load(object sender, EventArgs e)
         {
             thisIsYourWindow1.Attach(this);
 
-
-            // 1. 创建页面实例
+            // 创建页面实例
+            _helpPage = new FormHelp();
             _encodePage = new FormEncode();
             _encodePage.modernPanel1.BackColor = Color.Transparent;
             _encodePage.modernPanel1.BackColor1 = Color.Transparent;
@@ -31,29 +33,49 @@ namespace AvifEncoder.GuiLakeUl
 
             _logPage = new FormLog();
 
-            // 2. 确保选项卡集合至少有两个元素（若设计器已加两个，则无需补充）
-            while (modernTabListControl1.Items.Count < 2)
+            // 确保选项卡集合至少有三个元素
+            while (modernTabListControl1.Items.Count < 3)
             {
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
             }
 
-            // 3. 设置选项卡1（编码）
+            // 设置选项卡：使用说明 -> 编码 -> 日志
+            // 原顺序（0:使用说明, 1:编码, 2:日志）
             modernTabListControl1.Items[0].Text = "编码";
             modernTabListControl1.Items[0].BoundControl = _encodePage;
 
-            // 4. 设置选项卡2（日志）
             modernTabListControl1.Items[1].Text = "日志";
             modernTabListControl1.Items[1].BoundControl = _logPage;
 
-            // 5. 默认选中第一个
+            modernTabListControl1.Items[2].Text = "使用说明";
+            modernTabListControl1.Items[2].BoundControl = _helpPage;
+
+
+
+            // 同时修改默认选中页（假如仍希望启动时选中编码页，则索引为 0）
             modernTabListControl1.SelectedIndex = 0;
 
             _encodePage.LogPage = _logPage;
+
+            // 启动环境检测
+            await RunStartupCheckAsync();
         }
 
+        private async Task RunStartupCheckAsync()
+        {
+            try
+            {
+                _logPage?.AppendLog("===== 启动环境检测 =====");
+                var guiLogger = new GuiLogger(_logPage);
+                await AvifEnvironmentChecker.CheckEnvironmentAsync(guiLogger);
+                _logPage?.AppendLog("===== 启动检测完成 =====");
+            }
+            catch (Exception ex)
+            {
+                _logPage?.AppendLog($"环境检测异常: {ex.Message}");
+            }
+        }
 
-
-        // 暂时保留，后面可能会用到
         private void modernTabListControl1_SelectedIndexChanged(object sender, EventArgs e)
         {
         }

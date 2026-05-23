@@ -38,7 +38,7 @@
             modernTabListControl1.Dock = DockStyle.Fill;
             modernTabListControl1.Location = new Point(0, 0);
             modernTabListControl1.Name = "modernTabListControl1";
-            modernTabListControl1.Size = new Size(992, 552);
+            modernTabListControl1.Size = new Size(1109, 684);
             modernTabListControl1.TabIndex = 0;
             modernTabListControl1.SelectedIndexChanged += modernTabListControl1_SelectedIndexChanged;
             // 
@@ -52,8 +52,9 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(992, 552);
+            ClientSize = new Size(1109, 684);
             Controls.Add(modernTabListControl1);
+            DoubleBuffered = true;
             ForeColor = SystemColors.ControlText;
             Name = "Form1";
             Text = "Form1";

@@ -1,6 +1,6 @@
 ﻿namespace AvifEncoder.GuiLakeUl.选项窗口
 {
-    partial class FormLog
+    partial class FormHelp
     {
         /// <summary>
         /// Required designer variable.
@@ -29,53 +29,50 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
-            txtLog = new LakeUI.ModernTextBox();
+            txtHelp = new LakeUI.ModernTextBox();
             modernPanel1.SuspendLayout();
             SuspendLayout();
             // 
             // modernPanel1
             // 
             modernPanel1.BorderColor = Color.Black;
-            modernPanel1.Controls.Add(txtLog);
+            modernPanel1.Controls.Add(txtHelp);
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.OverlayColor = Color.FromArgb(36, 36, 36);
             modernPanel1.Size = new Size(800, 450);
             modernPanel1.TabIndex = 0;
-            modernPanel1.Scroll += modernPanel1_Scroll;
             // 
-            // txtLog
+            // txtHelp
             // 
-            txtLog.BorderColor = Color.Black;
-            txtLog.Dock = DockStyle.Fill;
-            txtLog.ForeColor = Color.White;
-            txtLog.Location = new Point(1, 1);
-            txtLog.Margin = new Padding(2);
-            txtLog.MaxUndoCount = 0;
-            txtLog.MultiLine = true;
-            txtLog.Name = "txtLog";
-            txtLog.PreserveScrollPosition = true;
-            txtLog.ReadOnly = true;
-            txtLog.Size = new Size(797, 447);
-            txtLog.TabIndex = 0;
-            txtLog.Text = "modernTextBox1";
+            txtHelp.BorderColor = Color.Black;
+            txtHelp.Dock = DockStyle.Fill;
+            txtHelp.Font = new Font("Cascadia Code", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            txtHelp.Location = new Point(1, 1);
+            txtHelp.Margin = new Padding(2);
+            txtHelp.MultiLine = true;
+            txtHelp.Name = "txtHelp";
+            txtHelp.ReadOnly = true;
+            txtHelp.Size = new Size(797, 447);
+            txtHelp.TabIndex = 0;
+            txtHelp.Text = "modernTextBox1";
             // 
-            // FormLog
+            // FormHelp
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
             Controls.Add(modernPanel1);
             DoubleBuffered = true;
-            Name = "FormLog";
-            Text = "FormLog";
+            Name = "FormHelp";
+            Text = "FormHelp";
             modernPanel1.ResumeLayout(false);
             ResumeLayout(false);
         }
 
         #endregion
-        public LakeUI.ModernPanel modernPanel1;
-        public LakeUI.ModernTextBox txtLog;
+
+        private LakeUI.ModernPanel modernPanel1;
+        private LakeUI.ModernTextBox txtHelp;
     }
 }

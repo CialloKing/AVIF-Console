@@ -1,28 +1,21 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;   // 如果使用 System.Text.Json
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using static AvifEncoder.PresetConfig;
 
-
 namespace AvifEncoder
 {
-
-
-
-
-
-
     class Program
     {
-        // 在 Program 类顶部
-        // 应用版本号
         private const string AppVersion = "1.1";
-
 
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);
@@ -137,8 +130,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   # 自定义搜索范围与超时
   AvifEncoder --crf 10:45 --target-ssim 0.98 --timeout-search 120
 ");
-        
-}
+        }
 
         // ========== 参数解析数据类 ==========
         private class ParsedOptions
@@ -146,55 +138,40 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             public string InputDir = "input";
             public string OutputDir = "Avifoutput";
             public CliPreset Preset = CliPreset.Extreme;
-            public bool EnableSearch = true;          // 默认启用搜索
-            public bool ForceNoSearch = false;        // --no-search
-            public double? QualityTarget;             // --quality
+            public bool EnableSearch = true;
+            public bool ForceNoSearch = false;
+            public double? QualityTarget;
             public string MetricMode = "vmaf";
-            public string? DirectTargetMode;          // --target-xxx 对应的度量名
+            public string? DirectTargetMode;
             public double? DirectTargetValue;
-            public int? ManualCrf;                    // --crf 单值
-            public int? CrfMin, CrfMax;               // --crf min:max
-            public string Chroma = "auto";            // --chroma 420/422/444/auto
-            public int? BitDepth;                     // --bit-depth 8/10
+            public int? ManualCrf;
+            public int? CrfMin, CrfMax;
+            public string Chroma = "auto";
+            public int? BitDepth;
             public bool Lossless = false;
             public string? OutputTemplate;
             public string Encoder = "libaom-av1";
-            public int? Jobs;                         // -j / --jobs
+            public int? Jobs;
             public bool Recursive = false;
             public int? MaxResolution;
             public bool OutputFullRes = false;
-            // 超时（分钟）
             public int? EncodeTimeout, SearchTimeout, SafeTimeout,
                         SafeEncodeTimeout, SearchEncodeTimeout, SsimTimeout;
             public bool Verbose = false;
             public bool Quiet = false;
             public bool ShowVersion = false;
             public bool DryRun = false;
-            public bool Overwrite = false;                     // -y / --overwrite
-            public bool NoClobber = false;                     // -n / --no-clobber
+            public bool Overwrite = false;
+            public bool NoClobber = false;
             public bool SerialEncode { get; set; } = false;
-
-            // 在 private class ParsedOptions 中添加
             public bool EnableProxySearch { get; set; } = false;
-
             public bool UsePriorSearch { get; set; } = false;
-            // ★ 新增：记录用户通过 --target-ssimu2 等方式直接指定的高级指标模式
             public string? AdvancedMetricMode;
-
-            // ★ 新增：搜索阶段编码速度（覆盖预设）
             public int? SearchCpuUsed;
-            // ★ 新增：最终编码阶段编码速度（覆盖预设）
             public int? FinalCpuUsed;
         }
 
         // ========== 参数解析 ==========
-        // ========== 6. ParseCommandLineArgs（仅展示关键新增，需要整合到单字符解析中） ==========
-        // 在原有的单字符选项解析部分增加：
-        //
-        //     else if (flags.Equals("R")) { opts.Recurse = true; }
-        // 或者支持 --recursive 长参数
-        //
-        // 以下为完整方法，包含原有逻辑及新增项
         private static ParsedOptions ParseCommandLineArgs(string[] args)
         {
             var opts = new ParsedOptions();
@@ -202,21 +179,14 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             while (i < args.Length)
             {
                 string arg = args[i];
-
-                // 选项结束符
                 if (arg == "--") { i++; break; }
-
-                // 长选项
                 if (arg.StartsWith("--"))
                 {
                     string key = arg.Substring(2);
                     string? value = null;
                     int eq = key.IndexOf('=');
                     if (eq >= 0) { value = key.Substring(eq + 1); key = key.Substring(0, eq); }
-
-                    // 需要值的辅助函数
                     string GetValue() => value ?? (++i < args.Length ? args[i] : throw new Exception($"选项 --{key} 缺少值"));
-
                     switch (key)
                     {
                         case "input": opts.InputDir = GetValue(); break;
@@ -238,7 +208,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             {
                                 string raw = GetValue().ToLower();
                                 opts.MetricMode = raw;
-                                // 记录是否属于系统已知的高级指标模式
                                 if (raw is "ssimu2" or "butter3" or "gmsd")
                                     opts.AdvancedMetricMode = raw;
                             }
@@ -264,10 +233,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             opts.DirectTargetValue = double.Parse(GetValue());
                             break;
                         case "target-xpsnr":
-                            // 若用户未通过 --metric 明确指定 XPSNR 通道，则默认使用加权 W‑XPSNR
                             if (!opts.MetricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
                                 opts.MetricMode = "xpsnr";
-                            // 目标值存入 QualityTarget，不覆盖已设定的 MetricMode
                             opts.QualityTarget = double.Parse(GetValue());
                             break;
                         case "crf":
@@ -318,29 +285,22 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         case "quiet": opts.Quiet = true; break;
                         case "version": opts.ShowVersion = true; break;
                         case "dry-run": opts.DryRun = true; break;
-                        case "overwrite": opts.Overwrite = true; break;    // ★ 新增
-                        case "no-clobber": opts.NoClobber = true; break;   // ★ 新增 -n 长选项
+                        case "overwrite": opts.Overwrite = true; break;
+                        case "no-clobber": opts.NoClobber = true; break;
                         case "help": PrintHelp(); return null!;
                         case "prior-search": opts.UsePriorSearch = true; break;
-                        case "serial-encode":
-                            opts.SerialEncode = true;
-                            break;
-                        case "proxy":
-                            opts.EnableProxySearch = true;
-                            break;
+                        case "serial-encode": opts.SerialEncode = true; break;
+                        case "proxy": opts.EnableProxySearch = true; break;
                         case "search-cpu-used":
-                            // 接受 0~13，各编码器在 BuildEncoderSpecificArgs 中内部映射
                             if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 13)
                                 opts.SearchCpuUsed = searchCpu;
-                            else throw new Exception("--search-cpu-used 需要 0-13 之间的整数（libaom:0-8, libsvtav1:0-13, librav1e:0-10）");
+                            else throw new Exception("--search-cpu-used 需要 0-13 之间的整数");
                             break;
                         case "final-cpu-used":
-                            // 最终编码速度，范围同搜索速度
                             if (int.TryParse(GetValue(), out int finalCpu) && finalCpu >= 0 && finalCpu <= 13)
                                 opts.FinalCpuUsed = finalCpu;
-                            else throw new Exception("--final-cpu-used 需要 0-13 之间的整数（libaom:0-8, libsvtav1:0-13, librav1e:0-10）");
+                            else throw new Exception("--final-cpu-used 需要 0-13 之间的整数");
                             break;
-                        // 超时选项
                         default:
                             if (key.StartsWith("timeout-"))
                             {
@@ -364,12 +324,9 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                     i++;
                     continue;
                 }
-
-                // 短选项
                 if (arg.StartsWith('-') && arg.Length > 1 && !char.IsDigit(arg[1]))
                 {
                     string flags = arg.Substring(1);
-                    // 带值的短选项（需要下一个参数）
                     if (flags == "i" || flags == "o" || flags == "p" || flags == "c" || flags == "b" ||
                         flags == "t" || flags == "e" || flags == "j")
                     {
@@ -409,8 +366,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                         i++;
                         continue;
                     }
-
-                    // 无值短选项组合
                     foreach (char c in flags)
                     {
                         switch (c)
@@ -422,8 +377,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             case 'q': opts.Quiet = true; break;
                             case 'V': opts.ShowVersion = true; break;
                             case 'D': opts.DryRun = true; break;
-                            case 'y': opts.Overwrite = true; break;       // ★ 新增
-                            case 'n': opts.NoClobber = true; break;        // ★ 新增
+                            case 'y': opts.Overwrite = true; break;
+                            case 'n': opts.NoClobber = true; break;
                             case 'h': PrintHelp(); return null!;
                             default: throw new Exception($"未知短选项 -{c}");
                         }
@@ -431,20 +386,15 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                     i++;
                     continue;
                 }
-
                 throw new Exception($"无法识别的参数: {arg}");
             }
             return opts;
         }
 
-        // ========== 根据解析结果构建配置 ==========
-        // ========== 7. BuildPresetConfig ==========
-        // ==================== 配置构建器 ====================
+        // ========== 配置构建 ==========
         private static PresetConfig BuildPresetConfig(ParsedOptions opts)
         {
             PresetConfig config;
-
-            // ---------- 1. 基础预设与无损模式 ----------
             if (opts.Lossless)
             {
                 config = new PresetConfig
@@ -455,34 +405,22 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                     SearchCpuUsed = 0,
                     UseCRFSearch = false,
                     Lossless = true,
-                    PixelFormat = null,                // 无损模式自动选择合适格式
+                    PixelFormat = null,
                     AomParams = "aq-mode=0:deltaq-mode=0:enable-chroma-deltaq=0",
                     MaxJobs = opts.Jobs ?? Math.Max(2, (int)Math.Sqrt(Environment.ProcessorCount)),
                     Encoder = opts.Encoder,
-                    BitDepth = 10                     // 无损默认高精度
+                    BitDepth = 10
                 };
-                // 无损模式下忽略大部分质量参数，直接返回
                 return config;
             }
-
-            // ---------- 2. 从预设创建基础配置 ----------
             config = AvifPipeline.CreateFromPreset(opts.Preset);
-
-            // 手动覆盖编码器
             config.Encoder = opts.Encoder;
-
-            // 搜索开关
-            if (opts.ForceNoSearch)
-                config.UseCRFSearch = false;
-            else if (opts.EnableSearch)
-                config.UseCRFSearch = true;   // 保持预设，除非显式要求
-
-            // ---------- 3. 色彩采样与位深 ----------
+            if (opts.ForceNoSearch) config.UseCRFSearch = false;
+            else if (opts.EnableSearch) config.UseCRFSearch = true;
             if (opts.Chroma != "auto")
             {
                 config.AutoSource = false;
                 config.UserSetChroma = true;
-                // 构建像素格式字符串（位深稍后统一处理）
                 config.PixelFormat = opts.Chroma switch
                 {
                     "420" => "yuv420p",
@@ -491,126 +429,59 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                     _ => "yuv420p"
                 };
             }
-
             if (opts.BitDepth.HasValue)
             {
                 config.BitDepth = opts.BitDepth.Value;
                 config.UserSetBitDepth = true;
-                config.AutoSource = false;   // 手动指定位深则关闭自适应
+                config.AutoSource = false;
             }
-
-            // 调用 ApplyBitDepth 确保 PixelFormat 后缀与 BitDepth 一致
             AvifPipeline.ApplyBitDepth(config);
-
-            // ---------- 4. 质量目标处理 ----------
-            // 直接目标优先（--target-vmaf 等）
-            // ---------- 4. 质量目标处理 ----------
-            // 直接目标优先（--target-vmaf 等）
             if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
             {
                 opts.MetricMode = opts.DirectTargetMode;
                 opts.QualityTarget = opts.DirectTargetValue;
             }
-
             if (opts.QualityTarget.HasValue)
             {
                 string effectiveMetric = opts.AdvancedMetricMode ?? opts.MetricMode ?? config.MetricMode ?? "vmaf";
                 config.MetricMode = effectiveMetric;
                 config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
             }
-            else
-            {
-                // 未手动指定质量时，使用预设目标并根据度量模式调整上限
-                config.AdjustTargetForMetricMode();
-            }
-
-            // 设置度量模式（可能被 DirectTarget 覆盖，也可能直接通过 --metric 设置）
-            if (!string.IsNullOrEmpty(opts.MetricMode))
-                config.MetricMode = opts.MetricMode;
-
-            // ---------- 5. CRF 固定值与搜索范围 ----------
+            else config.AdjustTargetForMetricMode();
+            if (!string.IsNullOrEmpty(opts.MetricMode)) config.MetricMode = opts.MetricMode;
             if (opts.ManualCrf.HasValue)
             {
                 config.BaseCRF = opts.ManualCrf.Value;
-                // 手动固定 CRF 且非显式搜索时，禁用搜索
-                if (!opts.EnableSearch)
-                    config.UseCRFSearch = false;
+                if (!opts.EnableSearch) config.UseCRFSearch = false;
             }
-
-            if (opts.CrfMin.HasValue)
-                config.MinCRF = opts.CrfMin.Value;
-            if (opts.CrfMax.HasValue)
-                config.MaxCRF = opts.CrfMax.Value;
-
-            // 范围合法性检查
-            if (config.MinCRF >= config.MaxCRF)
-                throw new Exception("最小 CRF 必须小于最大 CRF");
-
-            // ---------- 6. 并行任务数 ----------
-            if (opts.Jobs.HasValue)
-            {
-                config.MaxJobs = opts.Jobs.Value;
-                config.UserSpecifiedMaxJobs = true;
-            }
-
-            // ---------- 7. 输出模板 ----------
-            if (!string.IsNullOrEmpty(opts.OutputTemplate))
-                config.OutputNameFormat = opts.OutputTemplate;
-
-            // ---------- 8. 分辨率与缩放策略 ----------
-            if (opts.MaxResolution.HasValue)
-                config.MaxResolution = opts.MaxResolution.Value;
+            if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
+            if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
+            if (config.MinCRF >= config.MaxCRF) throw new Exception("最小 CRF 必须小于最大 CRF");
+            if (opts.Jobs.HasValue) { config.MaxJobs = opts.Jobs.Value; config.UserSpecifiedMaxJobs = true; }
+            if (!string.IsNullOrEmpty(opts.OutputTemplate)) config.OutputNameFormat = opts.OutputTemplate;
+            if (opts.MaxResolution.HasValue) config.MaxResolution = opts.MaxResolution.Value;
             config.ApplyScalingToOutput = !opts.OutputFullRes;
-
-            // ---------- 9. 递归子目录 ----------
             config.RecurseSubdirectories = opts.Recursive;
-
-            // ---------- 10. 超时配置 ----------
             if (opts.EncodeTimeout.HasValue) config.EncodeTimeoutMinutes = opts.EncodeTimeout.Value;
             if (opts.SearchTimeout.HasValue) config.SearchTimeoutMinutes = opts.SearchTimeout.Value;
             if (opts.SafeTimeout.HasValue) config.SafeTimeoutMinutes = opts.SafeTimeout.Value;
             if (opts.SafeEncodeTimeout.HasValue) config.SafeEncodeTimeoutMinutes = opts.SafeEncodeTimeout.Value;
             if (opts.SearchEncodeTimeout.HasValue) config.SearchEncodeTimeoutMinutes = opts.SearchEncodeTimeout.Value;
             if (opts.SsimTimeout.HasValue) config.SsimTimeoutMinutes = opts.SsimTimeout.Value;
-
-            //---------- 11. 代理搜索模式 ----------
             config.UseProxySearch = opts.EnableProxySearch;
-
-            //---------- 12. 极限压缩模式（单线程，禁用所有并行） ----------
             config.SerialEncode = opts.SerialEncode;
-
-            //---------- 13. 先验搜索模式 ----------
             config.UsePriorSearch = opts.UsePriorSearch;
-
-            //---------- 13.5 搜索速度覆盖 ----------
-            if (opts.SearchCpuUsed.HasValue)
-                config.SearchCpuUsed = opts.SearchCpuUsed.Value;
-
-            //---------- 13.6 最终编码速度覆盖 ----------
-            if (opts.FinalCpuUsed.HasValue)
-                config.FinalCpuUsed = opts.FinalCpuUsed.Value;
-
-            //---------- 14. 冲突策略 ----------
-            if (opts.Overwrite)
-                config.FileConflictStrategy = PresetConfig.ConflictStrategy.Overwrite;
-            else if (opts.NoClobber)
-                config.FileConflictStrategy = PresetConfig.ConflictStrategy.Skip;
-            // 默认保持 Rename
-
+            if (opts.SearchCpuUsed.HasValue) config.SearchCpuUsed = opts.SearchCpuUsed.Value;
+            if (opts.FinalCpuUsed.HasValue) config.FinalCpuUsed = opts.FinalCpuUsed.Value;
+            if (opts.Overwrite) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Overwrite;
+            else if (opts.NoClobber) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Skip;
             return config;
         }
 
-        // ========== 程序入口 ==========
-        // ========== 修复后的 Main 方法 ==========
-        // ========== 修复后的 Main 方法（支持交互模式引号路径） ==========
-        // ========== 修复后的 Main 方法（引号解析 + 自动禁用/恢复快速编辑）==========
+        // ========== 主函数 ==========
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
-
-            // 快速编辑模式不再通过 -e 控制，改为自动管理（见下方）
-
-            // 预先检查 ffmpeg 是否可用
             if (EncoderUtils.FindExecutable("ffmpeg") == null)
             {
                 Console.WriteLine("[FAIL] 错误: ffmpeg 未找到，请确认 ffmpeg 已安装并添加到 PATH 环境变量中。");
@@ -618,97 +489,27 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 Console.ReadKey();
                 return;
             }
-
-            // 无参数交互模式
             if (args.Length == 0)
             {
                 PrintHelp();
-                string logOutputDir = "Avifoutput";
-                string logInputDir = "input";
-                Logger.Init(logOutputDir);
-
-                Console.WriteLine("\n正在检测可用的 AV1 编码器...");
-                var allEncoders = await GetAvailableEncodersListAsync();
-                Console.WriteLine($"当前 ffmpeg 支持的 AV1 编码器: {string.Join(", ", allEncoders)}");
-
-                Console.WriteLine("\n正在测试编码器实际可用性...");
-                var encoderStatuses = await TestEncodersAsync(allEncoders, logOutputDir, logInputDir);
-
-                Console.WriteLine("\n编码器可用性测试结果");
-                Console.WriteLine("----------------------------------------");
-
-                var availableList = encoderStatuses.Where(e => e.available).ToList();
-                var unavailableList = encoderStatuses.Where(e => !e.available).ToList();
-
-                if (availableList.Count > 0)
-                {
-                    Console.WriteLine("[可用的编码器]");
-                    var softAvail = availableList.Where(e => e.name.StartsWith("lib")).ToList();
-                    var hardAvail = availableList.Where(e => !e.name.StartsWith("lib")).ToList();
-
-                    if (softAvail.Count > 0)
-                    {
-                        Console.WriteLine("  -- 软件编码器（推荐） --");
-                        foreach (var (name, _, _) in softAvail)
-                            Console.WriteLine($"  [OK] {name,-12}  (--encoder {name})");
-                    }
-                    if (hardAvail.Count > 0)
-                    {
-                        Console.WriteLine("  -- 硬件编码器 --");
-                        foreach (var (name, _, _) in hardAvail)
-                            Console.WriteLine($"  [OK] {name,-12}  (--encoder {name})");
-                    }
-                }
-
-                if (unavailableList.Count > 0)
-                {
-                    Console.WriteLine("\n[不可用的编码器]");
-                    foreach (var (name, _, note) in unavailableList)
-                        Console.WriteLine($"  [FAIL] {name,-12} ({note})");
-                }
-
-                Console.WriteLine("----------------------------------------");
-                Console.WriteLine("提示: 同一编码器可能因图片格式/尺寸在运行时降级或回退，属正常保护机制。");
-
-                // ★ 新增：检测高级指标外部工具
-                // ★ 新增：检测高级指标外部工具（名称不包含 .exe，由 FindExecutable 自动添加）
-                Console.WriteLine("\n外部指标工具可用性检测");
-                Console.WriteLine("----------------------------------------");
-                bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
-                bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
-                Console.WriteLine($"  SSIMULACRA2: {(hasSsimu2 ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
-                Console.WriteLine($"  Butteraugli: {(hasButter ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
-                Console.WriteLine("\n未找到的工具无法计算相应的指标，请不要设置为目标质量");
-                Console.WriteLine("----------------------------------------");
-                if (!hasSsimu2 || !hasButter)
-                {
-                    Console.WriteLine("提示: 将 ssimulacra2.exe / butteraugli_main.exe 放到程序所在目录或 PATH 中即可使对应指标可用。");
-                }
-
+                Console.WriteLine("\n正在自动检测环境（ffmpeg、编码器、外部工具）...");
+                var cliLogger = new ConsoleLogger();
+                await AvifEnvironmentChecker.CheckEnvironmentAsync(cliLogger);
                 Console.WriteLine("\n请输入命令参数 (例如 -s -p best)");
                 Console.Write("> ");
                 string? line = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(line))
-                    args = ParseCommandLineInteractive(line);   // ★ 引号感知分割
-                else
-                { Console.WriteLine("未输入参数，退出。"); Console.ReadKey(); return; }
+                    args = ParseCommandLineInteractive(line);
+                else { Console.WriteLine("未输入参数，退出。"); Console.ReadKey(); return; }
             }
-
-            // 解析参数
             ParsedOptions? opts = ParseCommandLineArgs(args);
             if (opts == null) return;
-
-            // 显示版本
             if (opts.ShowVersion)
             {
                 Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
                 return;
             }
-
-            // 构建配置
             PresetConfig config = BuildPresetConfig(opts);
-
-            // 模拟运行
             if (opts.DryRun)
             {
                 Console.WriteLine("== Dry Run ==");
@@ -718,17 +519,14 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 Console.WriteLine($"CRF: {config.BaseCRF}, Chroma: {opts.Chroma}, BitDepth: {config.BitDepth}");
                 return;
             }
-
-            // ========== 控制台快速编辑管理：运行前禁用，结束后恢复 ==========
             uint originalMode = 0;
             IntPtr consoleHandle = IntPtr.Zero;
             bool quickEditDisabled = false;
-
             if (OperatingSystem.IsWindows())
             {
                 try
                 {
-                    consoleHandle = GetStdHandle(-10);   // STD_INPUT_HANDLE
+                    consoleHandle = GetStdHandle(-10);
                     if (GetConsoleMode(consoleHandle, out originalMode))
                     {
                         const uint ENABLE_QUICK_EDIT = 0x0040;
@@ -739,15 +537,12 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                 }
                 catch { }
             }
-
-            // 实际运行流水线
             AvifPipeline? pipeline = null;
             try
             {
                 var fileLogger = new FileLogger(opts.OutputDir);
                 Logger.SetInstance(fileLogger);
                 var cache = new CacheManager();
-
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
                     logger: fileLogger,
                     processRunner: null,
@@ -762,19 +557,15 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             finally
             {
                 pipeline?.Dispose();
-
-                // 恢复控制台模式
                 if (quickEditDisabled && consoleHandle != IntPtr.Zero)
                 {
                     try { SetConsoleMode(consoleHandle, originalMode); } catch { }
                 }
-
                 Console.WriteLine("按任意键退出...");
                 Console.ReadKey();
             }
         }
 
-        // ========== 引号感知的命令行交互分割方法 ==========
         private static string[] ParseCommandLineInteractive(string line)
         {
             var args = new List<string>();
@@ -783,220 +574,24 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             for (int i = 0; i < line.Length; i++)
             {
                 char c = line[i];
-                if (c == '"')
-                {
-                    inQuotes = !inQuotes;
-                }
+                if (c == '"') inQuotes = !inQuotes;
                 else if (char.IsWhiteSpace(c) && !inQuotes)
                 {
-                    if (current.Length > 0)
-                    {
-                        args.Add(current.ToString());
-                        current.Clear();
-                    }
+                    if (current.Length > 0) { args.Add(current.ToString()); current.Clear(); }
                 }
-                else
-                {
-                    current.Append(c);
-                }
+                else current.Append(c);
             }
-            if (current.Length > 0)
-                args.Add(current.ToString());
+            if (current.Length > 0) args.Add(current.ToString());
             return args.ToArray();
         }
+    }
 
-        // ========== 获取 ffmpeg 支持的 AV1 编码器列表 ==========
-        private static async Task<List<string>> GetAvailableEncodersListAsync()
-        {
-            var encoders = new List<string>();
-            try
-            {
-                using var p = new Process
-                {
-                    StartInfo = new ProcessStartInfo("ffmpeg", "-encoders")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    }
-                };
-                p.Start();
-                var outTask = p.StandardOutput.ReadToEndAsync();
-                var errTask = p.StandardError.ReadToEndAsync();
-                await Task.WhenAll(outTask, errTask, p.WaitForExitAsync());
-
-                using var reader = new StringReader(await outTask);
-                string? line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    string trimmed = line.TrimStart();
-                    if (trimmed.Length > 0 && trimmed[0] == 'V' && trimmed.Contains("av1"))
-                    {
-                        string[] parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 2)
-                        {
-                            string name = parts[1];
-                            if (!encoders.Contains(name))
-                                encoders.Add(name);
-                        }
-                    }
-                }
-            }
-            catch { }
-            return encoders;
-        }
-
-        // ========== 编码器实际可用性测试 ==========
-        private static async Task<List<(string name, bool available, string note)>> TestEncodersAsync(
-    List<string> encoders, string outputDir, string inputDir = "input")
-        {
-            // 创建测试 BMP
-            byte[] testBmp = CreateTestBmp();
-            string testDir = Path.Combine(outputDir, "_encoder_test");
-            Directory.CreateDirectory(testDir);
-            string testInput = Path.Combine(testDir, "test_input.bmp");
-            File.WriteAllBytes(testInput, testBmp);
-            Logger.Log("======== 编码器可用性测试开始 ========");
-            try
-            {
-                // ★ 并发测试所有编码器
-                var tasks = encoders.Select(enc => TestSingleEncoderAsync(enc, testInput, testDir));
-                var results = await Task.WhenAll(tasks);
-                foreach (var res in results)
-                {
-                    Logger.Log($"编码器测试 {res.name}: {(res.available ? "[OK]" : "[FAIL]")} {res.note}");
-                }
-                Logger.Log("======== 编码器可用性测试结束 ========");
-                return results.ToList();
-            }
-            finally
-            {
-                if (File.Exists(testInput)) File.Delete(testInput);
-                // 仅当目录为空时删除
-                if (Directory.Exists(testDir) && !Directory.EnumerateFileSystemEntries(testDir).Any())
-                    Directory.Delete(testDir);
-            }
-        }
-
-
-        // 抽取单个编码器测试逻辑
-        private static async Task<(string name, bool available, string note)> TestSingleEncoderAsync(
-            string enc, string testInput, string testDir)
-        {
-            bool ok = false;
-            string note = "不可用";
-            try
-            {
-                string outFile = Path.Combine(testDir, $"test_{enc}.avif");
-                string qpParam = enc switch
-                {
-                    var e when e.StartsWith("av1_nvenc") => "-qp 30",
-                    var e when e.StartsWith("av1_qsv") => "-global_quality 30",
-                    var e when e.StartsWith("av1_amf") => "-qp 30",
-                    var e when e.StartsWith("av1_vulkan") => "-qp 30",
-                    var e when e.StartsWith("av1_vaapi") => "-global_quality 30",
-                    _ => "-crf 30"
-                };
-
-                string args = $"-y -loglevel error -i \"{testInput}\" -c:v {enc} -pix_fmt yuv420p {qpParam} -frames:v 1 \"{outFile}\"";
-
-                var psi = new ProcessStartInfo("ffmpeg", args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true
-                };
-
-                using var p = Process.Start(psi);
-                if (p == null) return (enc, false, "无法启动 ffmpeg");
-
-                string stderr = await p.StandardError.ReadToEndAsync();
-                await p.WaitForExitAsync();
-
-                if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
-                {
-                    ok = true;
-                    note = "可用";
-                }
-                else
-                {
-                    note = ParseError(stderr);
-                }
-
-                if (File.Exists(outFile)) File.Delete(outFile);
-            }
-            catch (Exception ex)
-            {
-                note = $"异常: {ex.Message}";
-            }
-            return (enc, ok, note);
-        }
-
-        private static string ParseError(string stderr)
-        {
-            if (stderr.Contains("MFX session")) return "缺少 Intel 驱动";
-            if (stderr.Contains("MFT")) return "缺少 Media Foundation 编码器";
-            if (stderr.Contains("Impossible to convert")) return "格式转换失败";
-            if (stderr.Contains("Function not implemented")) return "功能未实现";
-            if (stderr.Contains("Invalid argument")) return "参数无效";
-            if (stderr.Contains("Unknown error")) return "未知错误";
-            return "不可用";
-        }
-
-
-
-
-        /// <summary> 生成一个 64x64 纯红色 BMP 文件字节数组（完全内存构建，不依赖 ffmpeg） </summary>
-        private static byte[] CreateTestBmp()
-        {
-            // 使用 256x256 纯红色 BMP，满足所有硬件编码器的最低分辨率要求
-            int width = 256, height = 256;
-            int rowSize = ((width * 3 + 3) / 4) * 4;
-            int pixelDataSize = rowSize * height;
-            int fileSize = 54 + pixelDataSize;
-
-            using var ms = new MemoryStream();
-            using var bw = new BinaryWriter(ms);
-
-            // 位图文件头
-            bw.Write((ushort)0x4D42);
-            bw.Write(fileSize);
-            bw.Write(0);
-            bw.Write(54);
-
-            // 位图信息头
-            bw.Write(40);
-            bw.Write(width);
-            bw.Write(height);
-            bw.Write((ushort)1);
-            bw.Write((ushort)24);
-            bw.Write(0);
-            bw.Write(pixelDataSize);
-            bw.Write(2835);
-            bw.Write(2835);
-            bw.Write(0);
-            bw.Write(0);
-
-            // 像素数据 (BGR)
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    bw.Write((byte)0x00); // 蓝
-                    bw.Write((byte)0x00); // 绿
-                    bw.Write((byte)0xFF); // 红
-                }
-                for (int p = width * 3; p < rowSize; p++)
-                    bw.Write((byte)0);
-            }
-
-            bw.Flush();
-            return ms.ToArray();
-        }
-
-
-          
-
+    // ========== 简单控制台 Logger ==========
+    internal class ConsoleLogger : ILogger
+    {
+        public void LogInfo(string msg) => Console.WriteLine(msg);
+        public void LogError(string msg) => Console.WriteLine($"[ERROR] {msg}");
+        public void LogMetric(string name, string msg) => Console.WriteLine($"[{name}] {msg}");
+        public void LogSearch(string msg) => Console.WriteLine($"[SEARCH] {msg}");
     }
 }
