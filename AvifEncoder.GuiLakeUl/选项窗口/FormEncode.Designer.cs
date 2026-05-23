@@ -91,7 +91,9 @@
             // 
             // modernPanel1
             // 
-            modernPanel1.BorderColor = Color.Black;
+            modernPanel1.BackColor = Color.Transparent;
+            modernPanel1.BackColor1 = Color.Black;
+            modernPanel1.BorderColor = Color.Transparent;
             modernPanel1.Controls.Add(chkProxy);
             modernPanel1.Controls.Add(chkPriorSearch);
             modernPanel1.Controls.Add(chkSerialEncode);
@@ -136,14 +138,15 @@
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.OverlayColor = Color.FromArgb(36, 36, 36);
             modernPanel1.ScrollBarMode = LakeUI.ModernPanel.ScrollMode.None;
-            modernPanel1.Size = new Size(972, 669);
+            modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
             // 
             // chkProxy
             // 
+            chkProxy.AnimationFPS = 0;
             chkProxy.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkProxy.ForeColor = Color.WhiteSmoke;
             chkProxy.Location = new Point(625, 249);
             chkProxy.Name = "chkProxy";
             chkProxy.Size = new Size(150, 24);
@@ -152,7 +155,9 @@
             // 
             // chkPriorSearch
             // 
+            chkPriorSearch.AnimationFPS = 0;
             chkPriorSearch.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkPriorSearch.ForeColor = Color.WhiteSmoke;
             chkPriorSearch.Location = new Point(625, 218);
             chkPriorSearch.Name = "chkPriorSearch";
             chkPriorSearch.Size = new Size(150, 24);
@@ -161,7 +166,9 @@
             // 
             // chkSerialEncode
             // 
+            chkSerialEncode.AnimationFPS = 0;
             chkSerialEncode.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkSerialEncode.ForeColor = Color.WhiteSmoke;
             chkSerialEncode.Location = new Point(625, 279);
             chkSerialEncode.Name = "chkSerialEncode";
             chkSerialEncode.Size = new Size(150, 25);
@@ -171,7 +178,7 @@
             // label11
             // 
             label11.AutoSize = true;
-            label11.ForeColor = Color.Gray;
+            label11.ForeColor = Color.WhiteSmoke;
             label11.Location = new Point(37, 309);
             label11.Name = "label11";
             label11.Size = new Size(92, 17);
@@ -180,8 +187,11 @@
             // 
             // cmbConflict
             // 
+            cmbConflict.BackColor1 = Color.Transparent;
             cmbConflict.CaretColor = Color.FromArgb(220, 220, 220);
+            cmbConflict.DropDownAnimationFPS = 0;
             cmbConflict.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbConflict.ForeColor = Color.Gainsboro;
             cmbConflict.Location = new Point(37, 328);
             cmbConflict.Margin = new Padding(2, 2, 2, 2);
             cmbConflict.Name = "cmbConflict";
@@ -191,7 +201,9 @@
             // 
             // chkOutputFullRes
             // 
+            chkOutputFullRes.AnimationFPS = 0;
             chkOutputFullRes.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkOutputFullRes.ForeColor = Color.WhiteSmoke;
             chkOutputFullRes.Location = new Point(625, 341);
             chkOutputFullRes.Name = "chkOutputFullRes";
             chkOutputFullRes.Size = new Size(150, 21);
@@ -201,7 +213,7 @@
             // label10
             // 
             label10.AutoSize = true;
-            label10.ForeColor = Color.Gray;
+            label10.ForeColor = Color.WhiteSmoke;
             label10.Location = new Point(432, 299);
             label10.Name = "label10";
             label10.Size = new Size(168, 17);
@@ -217,7 +229,9 @@
             // 
             // chkRecursive
             // 
+            chkRecursive.AnimationFPS = 0;
             chkRecursive.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkRecursive.ForeColor = Color.WhiteSmoke;
             chkRecursive.Location = new Point(625, 310);
             chkRecursive.Name = "chkRecursive";
             chkRecursive.Size = new Size(150, 25);
@@ -226,7 +240,9 @@
             // 
             // chkLossless
             // 
+            chkLossless.AnimationFPS = 0;
             chkLossless.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkLossless.ForeColor = Color.WhiteSmoke;
             chkLossless.Location = new Point(625, 368);
             chkLossless.Name = "chkLossless";
             chkLossless.Size = new Size(150, 21);
@@ -236,7 +252,7 @@
             // label9
             // 
             label9.AutoSize = true;
-            label9.ForeColor = Color.Gray;
+            label9.ForeColor = Color.WhiteSmoke;
             label9.Location = new Point(37, 445);
             label9.Name = "label9";
             label9.Size = new Size(32, 17);
@@ -245,8 +261,11 @@
             // 
             // cmbBitDepth
             // 
+            cmbBitDepth.BackColor1 = Color.Transparent;
             cmbBitDepth.CaretColor = Color.FromArgb(220, 220, 220);
+            cmbBitDepth.DropDownAnimationFPS = 0;
             cmbBitDepth.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbBitDepth.ForeColor = Color.Gainsboro;
             cmbBitDepth.Location = new Point(37, 464);
             cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
             cmbBitDepth.Name = "cmbBitDepth";
@@ -257,7 +276,7 @@
             // label8
             // 
             label8.AutoSize = true;
-            label8.ForeColor = Color.Gray;
+            label8.ForeColor = Color.WhiteSmoke;
             label8.Location = new Point(37, 380);
             label8.Name = "label8";
             label8.Size = new Size(56, 17);
@@ -266,8 +285,11 @@
             // 
             // cmbChroma
             // 
+            cmbChroma.BackColor1 = Color.Transparent;
             cmbChroma.CaretColor = Color.FromArgb(220, 220, 220);
+            cmbChroma.DropDownAnimationFPS = 0;
             cmbChroma.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbChroma.ForeColor = Color.Gainsboro;
             cmbChroma.Location = new Point(37, 399);
             cmbChroma.Margin = new Padding(2, 2, 2, 2);
             cmbChroma.Name = "cmbChroma";
@@ -277,7 +299,10 @@
             // 
             // numQualityValue
             // 
+            numQualityValue.DecimalPlaces = 8;
             numQualityValue.Location = new Point(432, 464);
+            numQualityValue.Maximum = new decimal(new int[] { 276447232, 23283, 0, 0 });
+            numQualityValue.Minimum = new decimal(new int[] { 276447232, 23283, 0, int.MinValue });
             numQualityValue.Name = "numQualityValue";
             numQualityValue.Size = new Size(120, 23);
             numQualityValue.TabIndex = 37;
@@ -285,7 +310,7 @@
             // label7
             // 
             label7.AutoSize = true;
-            label7.ForeColor = Color.Gray;
+            label7.ForeColor = Color.WhiteSmoke;
             label7.Location = new Point(230, 445);
             label7.Name = "label7";
             label7.Size = new Size(56, 17);
@@ -294,8 +319,12 @@
             // 
             // cmbQualityMode
             // 
+            cmbQualityMode.BackColor1 = Color.Transparent;
             cmbQualityMode.CaretColor = Color.FromArgb(220, 220, 220);
+            cmbQualityMode.DropDownAnimationFPS = 0;
+            cmbQualityMode.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbQualityMode.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbQualityMode.ForeColor = Color.Gainsboro;
             cmbQualityMode.Location = new Point(230, 464);
             cmbQualityMode.Margin = new Padding(2, 2, 2, 2);
             cmbQualityMode.Name = "cmbQualityMode";
@@ -306,7 +335,7 @@
             // label6
             // 
             label6.AutoSize = true;
-            label6.ForeColor = Color.Gray;
+            label6.ForeColor = Color.WhiteSmoke;
             label6.Location = new Point(230, 380);
             label6.Name = "label6";
             label6.Size = new Size(56, 17);
@@ -315,9 +344,12 @@
             // 
             // cmbMetric
             // 
+            cmbMetric.BackColor1 = Color.Transparent;
             cmbMetric.CaretColor = Color.FromArgb(220, 220, 220);
             cmbMetric.DropDownAnimationFPS = 0;
+            cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbMetric.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbMetric.ForeColor = Color.Gainsboro;
             cmbMetric.Location = new Point(230, 399);
             cmbMetric.Margin = new Padding(2, 2, 2, 2);
             cmbMetric.Name = "cmbMetric";
@@ -334,7 +366,7 @@
             grpCrfMode.Controls.Add(numCrfFix);
             grpCrfMode.Controls.Add(label4);
             grpCrfMode.Controls.Add(rbCrfRange);
-            grpCrfMode.ForeColor = Color.Gray;
+            grpCrfMode.ForeColor = Color.WhiteSmoke;
             grpCrfMode.Location = new Point(230, 187);
             grpCrfMode.Name = "grpCrfMode";
             grpCrfMode.Size = new Size(162, 175);
@@ -347,6 +379,7 @@
             rbCrfFix.AnimationFPS = 0;
             rbCrfFix.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfFix.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
+            rbCrfFix.ForeColor = Color.WhiteSmoke;
             rbCrfFix.Location = new Point(6, 31);
             rbCrfFix.Name = "rbCrfFix";
             rbCrfFix.Size = new Size(81, 23);
@@ -360,11 +393,12 @@
             numCrfMax.Name = "numCrfMax";
             numCrfMax.Size = new Size(60, 23);
             numCrfMax.TabIndex = 29;
+            numCrfMax.Value = new decimal(new int[] { 63, 0, 0, 0 });
             // 
             // label5
             // 
             label5.AutoSize = true;
-            label5.ForeColor = Color.Gray;
+            label5.ForeColor = Color.WhiteSmoke;
             label5.Location = new Point(90, 122);
             label5.Name = "label5";
             label5.Size = new Size(56, 17);
@@ -390,7 +424,7 @@
             // label4
             // 
             label4.AutoSize = true;
-            label4.ForeColor = Color.Gray;
+            label4.ForeColor = Color.WhiteSmoke;
             label4.Location = new Point(6, 122);
             label4.Name = "label4";
             label4.Size = new Size(56, 17);
@@ -401,6 +435,7 @@
             // 
             rbCrfRange.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfRange.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
+            rbCrfRange.ForeColor = Color.WhiteSmoke;
             rbCrfRange.Location = new Point(6, 96);
             rbCrfRange.Name = "rbCrfRange";
             rbCrfRange.Size = new Size(150, 23);
@@ -409,7 +444,9 @@
             // 
             // modernButton1
             // 
+            modernButton1.BackColor1 = Color.Transparent;
             modernButton1.BorderRadius = 10;
+            modernButton1.ForeColor = Color.WhiteSmoke;
             modernButton1.Location = new Point(37, 125);
             modernButton1.Margin = new Padding(2);
             modernButton1.Name = "modernButton1";
@@ -419,17 +456,19 @@
             // 
             // txtTemplate
             // 
+            txtTemplate.BackColor1 = Color.Transparent;
+            txtTemplate.ForeColor = Color.WhiteSmoke;
             txtTemplate.Location = new Point(156, 125);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
-            txtTemplate.Size = new Size(805, 32);
+            txtTemplate.Size = new Size(942, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
             // 
             // label3
             // 
             label3.AutoSize = true;
-            label3.ForeColor = Color.Gray;
+            label3.ForeColor = Color.Gainsboro;
             label3.Location = new Point(432, 245);
             label3.Name = "label3";
             label3.Size = new Size(80, 17);
@@ -446,7 +485,7 @@
             // label2
             // 
             label2.AutoSize = true;
-            label2.ForeColor = Color.Gray;
+            label2.ForeColor = Color.WhiteSmoke;
             label2.Location = new Point(432, 187);
             label2.Name = "label2";
             label2.Size = new Size(56, 17);
@@ -463,7 +502,7 @@
             // label1
             // 
             label1.AutoSize = true;
-            label1.ForeColor = Color.Gray;
+            label1.ForeColor = Color.WhiteSmoke;
             label1.Location = new Point(432, 380);
             label1.Name = "label1";
             label1.Size = new Size(110, 17);
@@ -481,10 +520,14 @@
             // 
             btnStop.AnimationDuration = 0;
             btnStop.AnimationFPS = 0;
+            btnStop.BackColor1 = Color.Transparent;
             btnStop.BorderRadius = 10;
+            btnStop.ForeColor = Color.WhiteSmoke;
+            btnStop.HoverBackColor1 = Color.DarkGray;
             btnStop.Location = new Point(230, 548);
             btnStop.Margin = new Padding(2);
             btnStop.Name = "btnStop";
+            btnStop.PressedBackColor1 = Color.White;
             btnStop.Size = new Size(120, 35);
             btnStop.TabIndex = 15;
             btnStop.Text = "停止任务";
@@ -492,7 +535,9 @@
             // 
             // chkSearch
             // 
+            chkSearch.AnimationFPS = 0;
             chkSearch.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkSearch.ForeColor = Color.WhiteSmoke;
             chkSearch.Location = new Point(625, 187);
             chkSearch.Name = "chkSearch";
             chkSearch.Size = new Size(150, 24);
@@ -502,7 +547,7 @@
             // lblQuality
             // 
             lblQuality.AutoSize = true;
-            lblQuality.ForeColor = Color.Gray;
+            lblQuality.ForeColor = Color.WhiteSmoke;
             lblQuality.Location = new Point(432, 445);
             lblQuality.Name = "lblQuality";
             lblQuality.Size = new Size(80, 17);
@@ -511,9 +556,12 @@
             // 
             // cmbEncoder
             // 
+            cmbEncoder.BackColor1 = Color.Transparent;
             cmbEncoder.CaretColor = Color.FromArgb(220, 220, 220);
             cmbEncoder.DropDownAnimationFPS = 0;
+            cmbEncoder.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbEncoder.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbEncoder.ForeColor = Color.WhiteSmoke;
             cmbEncoder.Location = new Point(37, 268);
             cmbEncoder.Margin = new Padding(2, 2, 2, 2);
             cmbEncoder.Name = "cmbEncoder";
@@ -524,7 +572,7 @@
             // lblEncoder
             // 
             lblEncoder.AutoSize = true;
-            lblEncoder.ForeColor = Color.Gray;
+            lblEncoder.ForeColor = Color.WhiteSmoke;
             lblEncoder.Location = new Point(37, 249);
             lblEncoder.Name = "lblEncoder";
             lblEncoder.Size = new Size(44, 17);
@@ -533,9 +581,11 @@
             // 
             // cmbPreset
             // 
+            cmbPreset.BackColor1 = Color.Transparent;
             cmbPreset.CaretColor = Color.FromArgb(220, 220, 220);
             cmbPreset.DropDownAnimationFPS = 0;
             cmbPreset.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
+            cmbPreset.ForeColor = Color.Gainsboro;
             cmbPreset.Location = new Point(37, 204);
             cmbPreset.Margin = new Padding(2, 2, 2, 2);
             cmbPreset.Name = "cmbPreset";
@@ -546,7 +596,7 @@
             // lblPreset
             // 
             lblPreset.AutoSize = true;
-            lblPreset.ForeColor = Color.Gray;
+            lblPreset.ForeColor = Color.WhiteSmoke;
             lblPreset.Location = new Point(37, 185);
             lblPreset.Name = "lblPreset";
             lblPreset.Size = new Size(56, 17);
@@ -561,14 +611,16 @@
             progressBar1.Location = new Point(37, 607);
             progressBar1.Margin = new Padding(2, 2, 2, 2);
             progressBar1.Name = "progressBar1";
-            progressBar1.Size = new Size(924, 20);
+            progressBar1.Size = new Size(1061, 20);
             progressBar1.TabIndex = 7;
             progressBar1.TextPadding = new Padding(0);
             progressBar1.TrackColor = Color.White;
             // 
             // btnBrowseOutput
             // 
+            btnBrowseOutput.BackColor1 = Color.Transparent;
             btnBrowseOutput.BorderRadius = 10;
+            btnBrowseOutput.ForeColor = Color.WhiteSmoke;
             btnBrowseOutput.HoverBackColor1 = Color.Gainsboro;
             btnBrowseOutput.Location = new Point(37, 78);
             btnBrowseOutput.Margin = new Padding(2);
@@ -581,10 +633,13 @@
             // 
             // txtOutput
             // 
+            txtOutput.AllowDrop = true;
+            txtOutput.BackColor1 = Color.Transparent;
+            txtOutput.ForeColor = Color.WhiteSmoke;
             txtOutput.Location = new Point(156, 78);
             txtOutput.Margin = new Padding(2);
             txtOutput.Name = "txtOutput";
-            txtOutput.Size = new Size(805, 32);
+            txtOutput.Size = new Size(942, 32);
             txtOutput.TabIndex = 5;
             txtOutput.WaterText = "输出路径";
             // 
@@ -592,7 +647,9 @@
             // 
             btnBrowseInput.AnimationDuration = 0;
             btnBrowseInput.AnimationFPS = 0;
+            btnBrowseInput.BackColor1 = Color.Transparent;
             btnBrowseInput.BorderRadius = 10;
+            btnBrowseInput.ForeColor = Color.WhiteSmoke;
             btnBrowseInput.HoverBackColor1 = Color.Gainsboro;
             btnBrowseInput.Location = new Point(37, 30);
             btnBrowseInput.Margin = new Padding(2);
@@ -607,10 +664,14 @@
             // 
             btnStart.AnimationDuration = 0;
             btnStart.AnimationFPS = 0;
+            btnStart.BackColor1 = Color.Transparent;
             btnStart.BorderRadius = 10;
+            btnStart.ForeColor = Color.WhiteSmoke;
+            btnStart.HoverBackColor1 = Color.DarkGray;
             btnStart.Location = new Point(37, 548);
             btnStart.Margin = new Padding(2);
             btnStart.Name = "btnStart";
+            btnStart.PressedBackColor1 = Color.White;
             btnStart.Size = new Size(120, 35);
             btnStart.TabIndex = 2;
             btnStart.Text = "开始任务";
@@ -618,10 +679,13 @@
             // 
             // txtInput
             // 
+            txtInput.AllowDrop = true;
+            txtInput.BackColor1 = Color.Transparent;
+            txtInput.ForeColor = Color.WhiteSmoke;
             txtInput.Location = new Point(156, 30);
             txtInput.Margin = new Padding(2);
             txtInput.Name = "txtInput";
-            txtInput.Size = new Size(805, 32);
+            txtInput.Size = new Size(942, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径";
             // 
@@ -629,7 +693,7 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(972, 669);
+            ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             DoubleBuffered = true;
             Name = "FormEncode";

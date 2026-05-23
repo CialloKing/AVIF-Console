@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace AvifEncoder
 {
-    /// <summary>编码器测试状态</summary>
     public class EncoderStatus
     {
         public string Name { get; set; } = "";
@@ -15,7 +14,6 @@ namespace AvifEncoder
         public string Note { get; set; } = "不可用";
     }
 
-    /// <summary>环境检测结果</summary>
     public class EnvironmentCheckResult
     {
         public bool FfmpegAvailable { get; set; }
@@ -24,15 +22,8 @@ namespace AvifEncoder
         public bool ButteraugliAvailable { get; set; }
     }
 
-    /// <summary>跨版本共享的启动环境检测器</summary>
     public static class AvifEnvironmentChecker
     {
-        /// <summary>
-        /// 执行自动检测：ffmpeg、AV1 编码器、高级指标外部工具。
-        /// </summary>
-        /// <param name="logger">可选日志接口，用于输出过程信息到 GUI 或控制台</param>
-        /// <param name="tempDir">临时文件存放目录，默认为系统临时目录</param>
-        /// <returns>结构化检测结果</returns>
         public static async Task<EnvironmentCheckResult> CheckEnvironmentAsync(
             ILogger? logger = null,
             string? tempDir = null)
@@ -46,7 +37,7 @@ namespace AvifEncoder
 
             try
             {
-                // 1. ffmpeg
+                // 1. ffmpeg 检查
                 string? ffmpeg = EncoderUtils.FindExecutable("ffmpeg");
                 result.FfmpegAvailable = ffmpeg != null;
                 Log(ffmpeg != null ? "[OK] ffmpeg 已找到" : "[FAIL] ffmpeg 未找到，请确保在 PATH 或程序目录中");
@@ -54,11 +45,13 @@ namespace AvifEncoder
                 if (!result.FfmpegAvailable)
                     return result;
 
-                // 2. 获取并测试编码器
+                // 2. 获取编码器列表
+                Log("\n正在检测可用的 AV1 编码器...");
                 var encoders = await GetAvailableEncodersAsync();
-                Log($"检测到 AV1 编码器: {string.Join(", ", encoders.Select(e => e))}");
+                Log($"当前 ffmpeg 支持的 AV1 编码器: {string.Join(", ", encoders)}");
 
-                // 生成测试图片
+                // 3. 测试编码器
+                Log("\n正在测试编码器实际可用性...");
                 byte[] bmpBytes = CreateTestBmp();
                 File.WriteAllBytes(testBmpPath, bmpBytes);
 
@@ -66,16 +59,57 @@ namespace AvifEncoder
                 var encoderResults = await Task.WhenAll(tasks);
                 result.Encoders = encoderResults.ToList();
 
-                // 打印编码器结果
-                Log("编码器可用性测试结果:");
-                foreach (var er in result.Encoders)
-                    Log($"  {(er.Available ? "[OK]" : "[FAIL]")} {er.Name,-12} {er.Note}");
+                // 4. 输出编码器测试结果（旧版格式）
+                Log("\n编码器可用性测试结果");
+                Log("----------------------------------------");
 
-                // 3. 外部高级工具
+                var availableList = result.Encoders.Where(e => e.Available).ToList();
+                var unavailableList = result.Encoders.Where(e => !e.Available).ToList();
+
+                if (availableList.Any())
+                {
+                    Log("[可用的编码器]");
+                    var softAvail = availableList.Where(e => e.Name.StartsWith("lib")).ToList();
+                    var hardAvail = availableList.Where(e => !e.Name.StartsWith("lib")).ToList();
+
+                    if (softAvail.Any())
+                    {
+                        Log("  -- 软件编码器（推荐） --");
+                        foreach (var enc in softAvail)
+                            Log($"  [OK] {enc.Name,-12}  (--encoder {enc.Name})");
+                    }
+                    if (hardAvail.Any())
+                    {
+                        Log("  -- 硬件编码器 --");
+                        foreach (var enc in hardAvail)
+                            Log($"  [OK] {enc.Name,-12}  (--encoder {enc.Name})");
+                    }
+                }
+
+                if (unavailableList.Any())
+                {
+                    Log("\n[不可用的编码器]");
+                    foreach (var enc in unavailableList)
+                        Log($"  [FAIL] {enc.Name,-12} ({enc.Note})");
+                }
+
+                Log("----------------------------------------");
+                Log("提示: 同一编码器可能因图片格式/尺寸在运行时降级或回退，属正常保护机制。");
+
+                // 5. 外部工具检测
+                Log("\n外部指标工具可用性检测");
+                Log("----------------------------------------");
                 result.Ssimulacra2Available = EncoderUtils.FindExecutable("ssimulacra2") != null;
                 result.ButteraugliAvailable = EncoderUtils.FindExecutable("butteraugli_main") != null;
-                Log($"外部工具: SSIMULACRA2={(result.Ssimulacra2Available ? "可用" : "不可用")}, " +
-                    $"Butteraugli={(result.ButteraugliAvailable ? "可用" : "不可用")}");
+                Log($"  SSIMULACRA2: {(result.Ssimulacra2Available ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
+                Log($"  Butteraugli: {(result.ButteraugliAvailable ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
+                Log("\n未找到的工具无法计算相应的指标，请不要设置为目标质量");
+                Log("----------------------------------------");
+
+                if (!result.Ssimulacra2Available || !result.ButteraugliAvailable)
+                {
+                    Log("提示: 将 ssimulacra2.exe / butteraugli_main.exe 放到程序所在目录或 PATH 中即可使对应指标可用。");
+                }
             }
             catch (Exception ex)
             {
@@ -83,16 +117,14 @@ namespace AvifEncoder
             }
             finally
             {
-                // 清理
                 if (File.Exists(testBmpPath)) try { File.Delete(testBmpPath); } catch { }
-                // 只删空目录
                 if (Directory.Exists(workDir) && !Directory.EnumerateFileSystemEntries(workDir).Any())
                     try { Directory.Delete(workDir); } catch { }
             }
             return result;
         }
 
-        /// <summary>从 ffmpeg -encoders 获取 AV1 编码器列表</summary>
+        // ========== 以下私有方法保持不变 ==========
         private static async Task<List<string>> GetAvailableEncodersAsync()
         {
             var list = new List<string>();
@@ -131,11 +163,10 @@ namespace AvifEncoder
                     }
                 }
             }
-            catch { /* 忽略 */ }
+            catch { }
             return list;
         }
 
-        /// <summary>测试单个编码器是否能成功输出 > 100 字节的 AVIF</summary>
         private static async Task<EncoderStatus> TestEncoderAsync(string enc, string testInput, string testDir)
         {
             bool ok = false;
@@ -194,7 +225,6 @@ namespace AvifEncoder
             return "不可用";
         }
 
-        /// <summary>生成 256x256 纯红色 BMP 测试图片</summary>
         public static byte[] CreateTestBmp()
         {
             int width = 256, height = 256;
@@ -226,9 +256,9 @@ namespace AvifEncoder
             {
                 for (int x = 0; x < width; x++)
                 {
-                    bw.Write((byte)0x00); // B
-                    bw.Write((byte)0x00); // G
-                    bw.Write((byte)0xFF); // R
+                    bw.Write((byte)0x00);
+                    bw.Write((byte)0x00);
+                    bw.Write((byte)0xFF);
                 }
                 for (int p = width * 3; p < rowSize; p++)
                     bw.Write((byte)0);

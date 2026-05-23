@@ -24,40 +24,33 @@ namespace AvifEncoder.GuiLakeUl
         {
             thisIsYourWindow1.Attach(this);
 
-            // 创建页面实例
+            // 创建页面实例（只创建一次）
             _helpPage = new FormHelp();
             _encodePage = new FormEncode();
-            _encodePage.modernPanel1.BackColor = Color.Transparent;
-            _encodePage.modernPanel1.BackColor1 = Color.Transparent;
-            _encodePage.modernPanel1.BackgroundSource = this;
-
             _logPage = new FormLog();
 
-            // 确保选项卡集合至少有三个元素
+            // 为所有子页面设置透明背景
+            MakePanelTransparent(_encodePage.modernPanel1);
+            MakePanelTransparent(_logPage.modernPanel1);
+            MakePanelTransparent(_helpPage.modernPanel1);
+
+            // 确保选项卡数量...
             while (modernTabListControl1.Items.Count < 3)
             {
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
             }
 
-            // 设置选项卡：使用说明 -> 编码 -> 日志
-            // 原顺序（0:使用说明, 1:编码, 2:日志）
+            // 绑定页面...
             modernTabListControl1.Items[0].Text = "编码";
             modernTabListControl1.Items[0].BoundControl = _encodePage;
-
             modernTabListControl1.Items[1].Text = "日志";
             modernTabListControl1.Items[1].BoundControl = _logPage;
-
             modernTabListControl1.Items[2].Text = "使用说明";
             modernTabListControl1.Items[2].BoundControl = _helpPage;
 
-
-
-            // 同时修改默认选中页（假如仍希望启动时选中编码页，则索引为 0）
             modernTabListControl1.SelectedIndex = 0;
-
             _encodePage.LogPage = _logPage;
 
-            // 启动环境检测
             await RunStartupCheckAsync();
         }
 
@@ -78,6 +71,13 @@ namespace AvifEncoder.GuiLakeUl
 
         private void modernTabListControl1_SelectedIndexChanged(object sender, EventArgs e)
         {
+        }
+
+        private void MakePanelTransparent(ModernPanel panel)
+        {
+            panel.BackColor = Color.Transparent;
+            panel.BackColor1 = Color.Transparent;
+            panel.BackgroundSource = this;
         }
     }
 }

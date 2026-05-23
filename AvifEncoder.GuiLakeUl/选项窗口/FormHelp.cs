@@ -142,5 +142,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 =================================== 
 ";
         }
+
+        private void FormHelp_Load(object sender, EventArgs e)
+        {
+
+        }
     }
 }
