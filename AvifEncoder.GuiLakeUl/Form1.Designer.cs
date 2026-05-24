@@ -43,7 +43,7 @@
             modernTabListControl1.Location = new Point(0, 0);
             modernTabListControl1.Name = "modernTabListControl1";
             modernTabListControl1.ScrollBarTrackColor = Color.Transparent;
-            modernTabListControl1.Size = new Size(1264, 681);
+            modernTabListControl1.Size = new Size(1198, 681);
             modernTabListControl1.TabIndex = 0;
             modernTabListControl1.TabStripBackColor = Color.Transparent;
             modernTabListControl1.SelectedIndexChanged += modernTabListControl1_SelectedIndexChanged;
@@ -61,9 +61,10 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1264, 681);
+            ClientSize = new Size(1198, 681);
             Controls.Add(modernTabListControl1);
             DoubleBuffered = true;
+            Font = new Font("Microsoft YaHei UI", 9F);
             ForeColor = Color.Cyan;
             Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "Form1";

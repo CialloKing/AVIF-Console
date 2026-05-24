@@ -101,6 +101,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
 
+      --sweep                 遍历模式：对每张图片在 MinCRF～MaxCRF 范围内逐个编码并保存所有结果。
+                              文件名自动附加 _CRF数字，CSV 包含完整统计数据
+                              使用此选项可用于生成 RD 曲线数据，或分析不同 CRF 设置下的质量/文件大小关系
+
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
       --timeout-safe <分钟>    安全模式全扫描超时 (默认 180)
@@ -169,6 +173,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             public string? AdvancedMetricMode;
             public int? SearchCpuUsed;
             public int? FinalCpuUsed;
+            public bool SweepMode { get; set; } = false;
         }
 
         // ========== 参数解析 ==========
@@ -300,6 +305,9 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             if (int.TryParse(GetValue(), out int finalCpu) && finalCpu >= 0 && finalCpu <= 13)
                                 opts.FinalCpuUsed = finalCpu;
                             else throw new Exception("--final-cpu-used 需要 0-13 之间的整数");
+                            break;
+                        case "sweep":
+                            opts.SweepMode = true;
                             break;
                         default:
                             if (key.StartsWith("timeout-"))
@@ -475,8 +483,19 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
             if (opts.FinalCpuUsed.HasValue) config.FinalCpuUsed = opts.FinalCpuUsed.Value;
             if (opts.Overwrite) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Overwrite;
             else if (opts.NoClobber) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Skip;
+            // 遍历模式：强制关闭搜索，使用 MinCRF/MaxCRF
+            if (opts.SweepMode)
+            {
+                config.SweepMode = true;
+                config.UseCRFSearch = false;
+            }
             return config;
         }
+
+
+
+
+
 
         // ========== 主函数 ==========
         static async Task Main(string[] args)
