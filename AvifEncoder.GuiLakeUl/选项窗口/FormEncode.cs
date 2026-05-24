@@ -108,6 +108,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             chkSerialEncode.Checked = false;
             chkPriorSearch.Checked = false;
             chkProxy.Checked = false;
+            // 遍历模式开关
+            chkSweep.Checked = false;
         }
 
         private void AttachAllEvents()
@@ -154,6 +156,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             chkSerialEncode.CheckedChanged += MarkCustom;
             chkPriorSearch.CheckedChanged += MarkCustom;
             chkProxy.CheckedChanged += MarkCustom;
+            chkSweep.CheckedChanged += MarkCustom;
         }
 
         private void MarkCustom(object? sender, EventArgs e)
@@ -273,6 +276,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 numSearchCpuUsed.Value = cfg.SearchCpuUsed;
                 numFinalCpuUsed.Value = cfg.FinalCpuUsed;
                 numJobs.Value = cfg.MaxJobs;
+                chkSweep.Checked = false;
             }
             finally { _isApplyingPreset = false; }
         }
@@ -417,6 +421,17 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                     config.MinCRF = (int)numCrfMin.Value;
                     config.MaxCRF = (int)numCrfMax.Value;
                     config.UseCRFSearch = true;
+                }
+                // ---------- 遍历模式 ----------
+                if (chkSweep.Checked)
+                {
+                    if (rbCrfFix.Checked)
+                    {
+                        // 固定 CRF 时，范围设为该值，仅生成一个文件（但仍附加 _CRF{值}）
+                        config.MinCRF = config.MaxCRF = (int)numCrfFix.Value;
+                    }
+                    config.SweepMode = true;
+                    config.UseCRFSearch = false;   // 遍历模式强制关闭搜索
                 }
 
                 string chroma = cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString()?.ToLower() ?? "auto";

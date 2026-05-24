@@ -77,6 +77,7 @@
             btnBrowseInput = new LakeUI.ModernButton();
             btnStart = new LakeUI.ModernButton();
             txtInput = new LakeUI.ModernTextBox();
+            chkSweep = new LakeUI.ModernCheckBox();
             modernPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
@@ -94,6 +95,7 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(chkSweep);
             modernPanel1.Controls.Add(chkProxy);
             modernPanel1.Controls.Add(chkPriorSearch);
             modernPanel1.Controls.Add(chkSerialEncode);
@@ -689,6 +691,17 @@
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径";
             // 
+            // chkSweep
+            // 
+            chkSweep.AnimationFPS = 0;
+            chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkSweep.ForeColor = Color.WhiteSmoke;
+            chkSweep.Location = new Point(625, 395);
+            chkSweep.Name = "chkSweep";
+            chkSweep.Size = new Size(150, 21);
+            chkSweep.TabIndex = 52;
+            chkSweep.Text = "遍历模式";
+            // 
             // FormEncode
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
@@ -764,5 +777,6 @@
         private LakeUI.ModernCheckBox chkSerialEncode;
         private LakeUI.ModernCheckBox chkPriorSearch;
         private LakeUI.ModernCheckBox chkProxy;
+        private LakeUI.ModernCheckBox chkSweep;
     }
 }
