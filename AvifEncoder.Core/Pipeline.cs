@@ -1237,14 +1237,12 @@ namespace AvifEncoder
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
-            // 在工作目录下建临时子目录，避免路径中的盘符/冒号干扰
             string workDir = Environment.CurrentDirectory;
             string metricsDir = Path.Combine(workDir, "avif_metrics_tmp");
             Directory.CreateDirectory(metricsDir);
 
             string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
             string jsonPath = Path.Combine(metricsDir, jsonName);
-            // 只传文件名，彻底解决冒号/盘符问题
             string logPathSafe = jsonName;
 
             try
@@ -1257,7 +1255,6 @@ namespace AvifEncoder
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    // ★ 使用 vmaf_float_v0.6.1 浮点模型
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
                              $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
@@ -1270,7 +1267,6 @@ namespace AvifEncoder
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
                               $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
 
-                // 启动 ffmpeg，工作目录设为 metricsDir
                 using var process = new Process
                 {
                     StartInfo = new ProcessStartInfo(_ffmpegPath, args)
@@ -1279,7 +1275,7 @@ namespace AvifEncoder
                         CreateNoWindow = true,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
-                        WorkingDirectory = metricsDir   // 关键：避免路径中的冒号
+                        WorkingDirectory = metricsDir
                     }
                 };
 
@@ -1305,6 +1301,7 @@ namespace AvifEncoder
                     }
                 }
 
+                string stdout = await stdoutTask;
                 string stderr = await stderrTask;
                 int exitCode = process.ExitCode;
 
@@ -1327,24 +1324,21 @@ namespace AvifEncoder
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
-                // 从 stderr 提取 VMAF 分数（部分版本写入 stderr）
-                var vmafMatch = Regex.Match(stderr, @"VMAF score:\s*([0-9.]+)");
-                if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
-                        NumberStyles.Float, CultureInfo.InvariantCulture, out double vmafScore))
+                // 合并 stdout 与 stderr，统一提取 VMAF，避免因输出位置不同而漏掉
+                string combinedOutput = stdout + "\n" + stderr;
+                double? vmafFromConsole = TryExtractVmaf(combinedOutput);
+
+                if (vmafFromConsole.HasValue)
                 {
-                    metrics.VMAF = vmafScore;
+                    // 控制台提取成功，覆盖 JSON 值（部分版本 JSON 中 VMAF 缺失或为假值）
+                    metrics.VMAF = vmafFromConsole.Value;
                 }
                 else
                 {
-                    vmafMatch = Regex.Match(stderr, @"vmaf\s*=\s*([0-9.]+)");
-                    if (vmafMatch.Success && double.TryParse(vmafMatch.Groups[1].Value,
-                            NumberStyles.Float, CultureInfo.InvariantCulture, out vmafScore))
+                    // 控制台也未提取到 → 检查 JSON 是否已给出有效 VMAF
+                    if (double.IsNaN(metrics.VMAF))
                     {
-                        metrics.VMAF = vmafScore;
-                    }
-                    else
-                    {
-                        _logger.LogInfo($"未从 stderr 提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
+                        _logger.LogInfo($"未提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
                     }
                 }
 
@@ -1365,7 +1359,27 @@ namespace AvifEncoder
             }
         }
 
+        private static double? TryExtractVmaf(string combinedOutput)
+        {
+            // 适配不同 FFmpeg 版本的输出格式
+            var patterns = new[]
+            {
+        @"VMAF score:\s*([0-9.]+)",
+        @"vmaf\s*=\s*([0-9.]+)",
+        @"aggregate_vmaf\s*:\s*([0-9.]+)"
+    };
 
+            foreach (var pattern in patterns)
+            {
+                var match = Regex.Match(combinedOutput, pattern, RegexOptions.IgnoreCase);
+                if (match.Success &&
+                    double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
+                {
+                    return score;
+                }
+            }
+            return null;
+        }
         private QualityMetrics? ParseVmafJson(string json)
         {
             try
@@ -1375,7 +1389,10 @@ namespace AvifEncoder
 
                 double ssim = pooled.TryGetProperty("float_ssim", out var e) ? e.GetProperty("mean").GetDouble() : 0;
                 double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                double vmaf = pooled.TryGetProperty("vmaf", out e) ? e.GetProperty("mean").GetDouble() : -1;
+                // VMAF 字段缺失时设为 NaN，避免 -1 或 0 被误判为有效分数
+                double vmaf = pooled.TryGetProperty("vmaf", out e)
+                                ? e.GetProperty("mean").GetDouble()
+                                : double.NaN;
                 double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
 
                 return new QualityMetrics
