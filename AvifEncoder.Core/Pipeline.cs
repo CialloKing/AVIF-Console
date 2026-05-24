@@ -2202,13 +2202,13 @@ namespace AvifEncoder
 
                      // 直接编码（不搜索）
                      var swEncode = Stopwatch.StartNew();
-                     (bool ok, TimeSpan t, int retries, string error, bool fromCache, _, string? cmd) =
-                         await EncodeToFileExAsync(workingInput, outputPath, crf,
-                             encInfo.TileCols, config.FinalCpuUsed, config,
-                             IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
-                             config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
-                             allowParamDegrade: true);
-                     swEncode.Stop();
+                     (bool ok, TimeSpan t, int retries, string error, bool fromCache, string? actualAom, string? cmd) =
+                    await EncodeToFileExAsync(workingInput, outputPath, crf,
+                       encInfo.TileCols, config.FinalCpuUsed, config,
+                       IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
+                       config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
+                       allowParamDegrade: true);
+                swEncode.Stop();
 
                      if (!ok)
                      {
@@ -2242,7 +2242,8 @@ namespace AvifEncoder
                              Retries = retries,
                              FromCache = fromCache,
                              FinalCommand = cmd,
-                             UseSafeMode = false
+                             UseSafeMode = false,
+                             ActualAom = actualAom ?? config.GetEffectiveAomParams()
                          },
                          encInfo,
                          new CRFSearchResult

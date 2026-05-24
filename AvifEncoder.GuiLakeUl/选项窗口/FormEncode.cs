@@ -30,6 +30,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
         private bool _isEncoding;
         private CancellationTokenSource? _cts;
+        private bool _sweepPreviousCrfRangeMode;
 
         public FormEncode()
         {
@@ -128,6 +129,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 numCrfMin.Enabled = numCrfMax.Enabled = rbCrfRange.Checked;
                 numCrfFix.Enabled = !rbCrfRange.Checked;
             };
+            chkSweep.CheckedChanged += ChkSweep_CheckedChanged;
         }
 
         private void AttachCustomMarkEvents()
@@ -342,6 +344,59 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 }
             }
             finally { _isApplyingPreset = false; }
+            // 无损模式勾选时自动关闭遍历模式
+            if (chkLossless.Checked && chkSweep.Checked)
+                chkSweep.Checked = false;
+            MarkCustom(sender, e);
+        }
+
+        private void ChkSweep_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_isApplyingPreset) return;
+
+            if (chkSweep.Checked)
+            {
+                // 不允许无损+遍历并存
+                if (chkLossless.Checked)
+                {
+                    MessageBox.Show("无损模式下无法使用遍历模式。", "提示",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    chkSweep.Checked = false;
+                    return;
+                }
+
+                // 记录当前模式并强制切换为范围模式
+                _sweepPreviousCrfRangeMode = rbCrfRange.Checked;
+                rbCrfRange.Checked = true;
+                // 如果之前是固定CRF，将范围值设为固定值
+                if (!_sweepPreviousCrfRangeMode)
+                {
+                    numCrfMin.Value = numCrfFix.Value;
+                    numCrfMax.Value = numCrfFix.Value;
+                }
+
+                // 禁用搜索及相关控件
+                chkSearch.Enabled = false;
+                chkSearch.Checked = false;
+                rbCrfFix.Enabled = false;
+                rbCrfRange.Enabled = false;
+                chkSweep.Text = "遍历模式 (搜索已禁用)";
+            }
+            else
+            {
+                // 恢复控件
+                chkSearch.Enabled = !chkLossless.Checked;
+                rbCrfFix.Enabled = !chkLossless.Checked;
+                rbCrfRange.Enabled = !chkLossless.Checked;
+                chkSweep.Text = "遍历模式 (--sweep)";
+
+                // 恢复之前的CRF模式选择
+                if (_sweepPreviousCrfRangeMode)
+                    rbCrfRange.Checked = true;
+                else
+                    rbCrfFix.Checked = true;
+            }
+
             MarkCustom(sender, e);
         }
 
