@@ -2082,6 +2082,10 @@ namespace AvifEncoder
         {
             if (config.SweepMode)
             {
+                int crfCount = config.MaxCRF - config.MinCRF + 1;
+                if (crfCount <= 0) crfCount = 1;
+                int totalTasks = files.Count * crfCount;
+                _progress.SetTotalFiles(totalTasks);   // 遍历模式下总进度 = 图片数 × CRF 范围
                 return await ProcessFilesSweepAsync(files, config);
             }
             var results = new ConcurrentDictionary<int, EncodeResult>();
