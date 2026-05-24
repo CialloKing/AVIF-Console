@@ -3733,12 +3733,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         }
 
 
-        private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
-    string? actualAomParams, string? commandLine)>
-ExecuteEncodingWithRetries(string input, string output, int crf, string currentPixFmt,
-                           (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-                           PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
-                           string cacheKey, string cacheFile)
+            private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
+        string? actualAomParams, string? commandLine)>
+        ExecuteEncodingWithRetries(string input, string output, int crf, string currentPixFmt,
+                               (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                               PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
+                               string cacheKey, string cacheFile)
         {
             _logger.LogSearch($"  ⏳ [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
@@ -3754,8 +3754,8 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
                 for (int attempt = 0; attempt <= _maxRetries; attempt++)
                 {
-                    string ffArgs = BuildFfmpegArgs(input, output, crf, currentPixFmt, param, cfg, isTrueLossless);
-                    var sw = Stopwatch.StartNew();
+                string ffArgs = await BuildFfmpegArgsAsync(input, output, crf, currentPixFmt, param, cfg, isTrueLossless);
+                var sw = Stopwatch.StartNew();
                     (bool success, string stderrLastLine) = await RunFfmpegExAsync(_ffmpegPath, ffArgs,
                         TimeSpan.FromMinutes(timeoutMinutes));
                     sw.Stop();
@@ -3809,41 +3809,124 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
+            /// <summary>
+            /// 通过 ffprobe (JSON 模式) 探测输入文件的色彩元数据。
+            /// 如果任何核心字段缺失、为 unknown/reserved，则返回 null，避免半继承。
+            /// </summary>
+            private async Task<(string primaries, string trc, string space, string? range)?>
+            GetSourceColorInfoAsync(string inputPath)
+            {
+                try
+                {
+                    string args = $"-v error -select_streams v:0 " +
+                                  $"-show_entries stream=color_primaries,color_transfer,color_space,color_range " +
+                                  $"-of json \"{inputPath}\"";
+
+                    var (exitCode, stdout, _) = await _processRunner.RunAsync(
+                        _ffprobePath, args, TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                    if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+                        return null;
+
+                    using var doc = JsonDocument.Parse(stdout);
+                    var stream = doc.RootElement.GetProperty("streams")[0];
+
+                    string? Get(string name)
+                    {
+                        if (stream.TryGetProperty(name, out var prop))
+                        {
+                            string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
+                            if (!string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved")
+                                return val;
+                        }
+                        return null;
+                    }
+
+                    var prim = Get("color_primaries");
+                    var trc = Get("color_transfer");
+                    var spc = Get("color_space");
+                    var rng = Get("color_range");
+
+                    if (prim == null || trc == null || spc == null)
+                        return null;
+
+                    return (prim, trc, spc, rng);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
 
 
 
+            /// <summary> 构建 ffmpeg 参数字符串 </summary>
+            /// <summary> 构建 ffmpeg 参数字符串 </summary>
+            private async Task<string> BuildFfmpegArgsAsync(string input, string output, int crf, string pixFmt,
+               (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+               PresetConfig cfg, bool isTrueLossless)
+            {
+                string logLevel = "-loglevel info -hide_banner";
+                string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
+                string crfPart = isTrueLossless ? "-lossless 1" : $"-crf {crf}";
+                string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
+                string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+                string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
-        /// <summary> 构建 ffmpeg 参数字符串 </summary>
-        /// <summary> 构建 ffmpeg 参数字符串 </summary>
-        private string BuildFfmpegArgs(string input, string output, int crf, string pixFmt,
-                   (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-                   PresetConfig cfg, bool isTrueLossless)
-        {
-            string logLevel = "-loglevel info -hide_banner";
-            string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
-            string crfPart = isTrueLossless ? "-lossless 1" : $"-crf {crf}";
-            string range = "-color_range pc";
-            string colorMeta = "-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709";
-            string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
-            string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+                // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------
+                string primaries = "bt709";
+                string trc = "iec61966-2-1";
+                // 仅当像素格式为 gbr*（planar RGB）时使用 identity matrix，
+                // 其他 YUV 格式（yuv420p, yuv444p 等）使用 bt709。
+                string space = pixFmt.StartsWith("gbr", StringComparison.OrdinalIgnoreCase)
+                                       ? "gbr"
+                                       : "bt709";
+                string rangeVal = "pc";
 
-            // ---------- 单线程全局控制 ----------
-            string threadsArg = cfg.SerialEncode ? "-threads 1" : "";   // 新属性名
-                                                                        // ---------------------------------
+                // ---------- 探测源文件色彩元数据 ----------
+                var srcColor = await GetSourceColorInfoAsync(input);
+                if (srcColor != null)
+                {
+                    var p = srcColor.Value.primaries;
+                    var t = srcColor.Value.trc;
 
-            return $"{logLevel} -i \"{input}\" " +
-                   $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {range} {colorMeta} " +
-                   $"{crfPart} {encoderSpecific} " +
-                   $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
-        }
+                    bool isHdrPq = p == "bt2020" && t == "smpte2084";   // 仅允许 PQ HDR
 
-        private static string CsvEscape(string field)
-        {
-            if (string.IsNullOrEmpty(field)) return "";
-            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-                return $"\"{field.Replace("\"", "\"\"")}\"";
-            return field;
-        }
+                    if (isHdrPq)
+                    {
+                        primaries = "bt2020";
+                        trc = "smpte2084";
+                        space = "bt2020nc";          // HDR10 标准矩阵
+                    }
+                    // 其他组合保留默认 space（已按像素格式选择 bt709 或 gbr）
+
+                    // range 始终允许继承
+                    if (!string.IsNullOrWhiteSpace(srcColor.Value.range))
+                        rangeVal = srcColor.Value.range;
+                }
+
+                // range 映射
+                string rangeArg = rangeVal.ToLowerInvariant() switch
+                {
+                    "tv" or "mpeg" => "-color_range tv",
+                    _ => "-color_range pc"
+                };
+
+                string colorMeta = $"-color_primaries {primaries} -color_trc {trc} -colorspace {space}";
+
+                return $"{logLevel} -i \"{input}\" " +
+                       $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
+                       $"{crfPart} {encoderSpecific} " +
+                       $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
+            }
+
+            private static string CsvEscape(string field)
+            {
+                if (string.IsNullOrEmpty(field)) return "";
+                if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
+                    return $"\"{field.Replace("\"", "\"\"")}\"";
+                return field;
+            }
 
         private async Task<(bool success, string stderrLastLine)> RunFfmpegExAsync(string file, string args, TimeSpan timeout)
         {
