@@ -4034,12 +4034,12 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
                 $"-lavfi \"" +
                 $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
                 $"scale=in_range=pc:out_range=pc," +
-                $"pad=iw:ceil(ih/2)*2:0:0:color=black," +
-                $"format={actualPixFmt}[dist];" +
+                $"format={actualPixFmt}," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
                 $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
                 $"scale=in_range=pc:out_range=pc," +
-                $"pad=iw:ceil(ih/2)*2:0:0:color=black," +
-                $"format={actualPixFmt}[ref];" +
+                $"format={actualPixFmt}," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
                 $"[dist][ref]xpsnr\" -f null -";
 
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
