@@ -4026,7 +4026,19 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             catch { }
             double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
 
-            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" -lavfi \"[0:v]format={pixFmt}[dist];[1:v]format={pixFmt}[ref];[dist][ref]xpsnr\" -f null -";
+            // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
+            string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
+
+            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
+                $"-lavfi \"" +
+                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS,pad=iw:ceil(ih/2)*2:0:0," +
+                $"scale=in_range=pc:out_range=pc," +
+                $"format={actualPixFmt}[dist];" +
+                $"[1:v]settb=AVTB,setpts=PTS-STARTPTS,pad=iw:ceil(ih/2)*2:0:0," +
+                $"scale=in_range=pc:out_range=pc," +
+                $"format={actualPixFmt}[ref];" +
+                $"[dist][ref]xpsnr\" -f null -";
+
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
                 _globalCts?.Token ?? default);
