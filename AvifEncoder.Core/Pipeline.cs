@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using AvifEncoder;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -288,6 +289,9 @@ namespace AvifEncoder
             Task<string> ReadAllTextAsync(string path);
             IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption);
             bool DirectoryExists(string path);
+            // ★ 新增：字节数组读写（用于 PNG 清洗）
+            Task<byte[]> ReadAllBytesAsync(string path);
+            Task WriteAllBytesAsync(string path, byte[] bytes);
         }
 
         public class RealFileSystem : IFileSystem
@@ -306,7 +310,22 @@ namespace AvifEncoder
             public IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption)
                 => Directory.EnumerateFiles(path, searchPattern, searchOption);
             public bool DirectoryExists(string path) => Directory.Exists(path);
+            // ★ 新增字节数组读写实现
+            public async Task<byte[]> ReadAllBytesAsync(string path) =>
+#if NET7_0_OR_GREATER
+                await File.ReadAllBytesAsync(path);
+#else
+    await Task.Run(() => File.ReadAllBytes(path));
+#endif
+
+            public async Task WriteAllBytesAsync(string path, byte[] bytes) =>
+#if NET7_0_OR_GREATER
+                await File.WriteAllBytesAsync(path, bytes);
+#else
+    await Task.Run(() => File.WriteAllBytes(path, bytes));
+#endif
         }
+    }
     }
 
 
@@ -660,8 +679,65 @@ namespace AvifEncoder
             return ok && _fs.FileExists(tempPng) ? tempPng : null;
         }
 
-        // ===== SSIMULACRA2 =====
-        private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
+
+    // ===== PNG 尾部清洗 =====
+    /// <summary>
+    /// 若 PNG 文件 IEND 后有额外字节，则创建清洗后的临时文件并返回其路径；
+    /// 否则返回原路径（不修改原文件）。
+    /// </summary>
+    private async Task<string> SanitizePngIfNeededAsync(string originalPath, string tempDir)
+    {
+        // 仅处理 .png 文件
+        if (!originalPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            return originalPath;
+
+        byte[] bytes = await _fs.ReadAllBytesAsync(originalPath);
+        int iendEnd = FindIendEndOffset(bytes);
+        if (iendEnd < 0 || iendEnd == bytes.Length)
+        {
+            // 没找到 IEND 或干净文件，直接返回
+            return originalPath;
+        }
+
+        // 有尾部垃圾，创建清洗版本
+        string cleanFileName = $"_clean_{Guid.NewGuid():N}.png";
+        string cleanPath = Path.Combine(tempDir, cleanFileName);
+        byte[] cleanBytes = new byte[iendEnd];
+        Array.Copy(bytes, cleanBytes, iendEnd);
+        await _fs.WriteAllBytesAsync(cleanPath, cleanBytes);
+        _logger.LogInfo($"PNG 尾部清洗: {Path.GetFileName(originalPath)} 移除 {bytes.Length - iendEnd} 字节 -> {cleanFileName}");
+        return cleanPath;
+    }
+
+    /// <summary>
+    /// 查找 PNG 文件中标准 IEND 块结束的偏移量（即第一个不属于 PNG 的字节位置）。
+    /// 失败返回 -1，干净文件返回文件总长度。
+    /// </summary>
+    private static int FindIendEndOffset(byte[] bytes)
+    {
+        // 标准 IEND chunk: 长度 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
+        int limit = bytes.Length - 12; // 至少需要 8 字节的块 + 最后可能的 CRC
+
+        for (int i = 0; i <= limit; i++)
+        {
+            if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
+            {
+                // 找到 "IEND"，检查前 4 字节是否为 0（块长度必须为 0）
+                if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
+                {
+                    // IEND 块结束 = 类型起始 + 8（类型 + CRC）
+                    return i + 8;
+                }
+            }
+        }
+
+        // 未找到任何有效 IEND 块
+        return -1;
+    }
+
+
+    // ===== SSIMULACRA2 =====
+    private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
         {
             string exe = EncoderUtils.FindExecutable("ssimulacra2.exe") ?? "ssimulacra2.exe";
             string cleanRef = NormalizePathForExternalTool(refPath);
@@ -2174,67 +2250,76 @@ namespace AvifEncoder
         }
 
 
-        private async Task<(double ssim, QualityMetrics? metrics)> EvaluateFinalQualityAsync(
-    string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
-    EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+    /// <summary>
+    /// 评估最终编码质量：先从缓存取，若无则计算 VMAF/XPSNR/高级指标，
+    /// 并自动清洗被尾部污染的 PNG 源文件以保证 SSIMULACRA2/Butteraugli 正常。
+    /// </summary>
+    private async Task<(double ssim, QualityMetrics? metrics)> EvaluateFinalQualityAsync(
+        string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
+        EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+    {
+        if (!encodeResult.Success)
+            return (0, null);
+
+        string normalizedInput = GetNormalizedPathForCache(workingInputPath);
+        string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+        int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+        string aomParams = config.GetEffectiveAomParams();
+        bool jpeg = IsJpeg(workingInputPath);
+        int tileCols = encInfo.TileCols;
+        int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+        var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
+        string rowMtArg = GetRowMtArg(config);
+        string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
+                                          cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+
+        // ---------- 缓存命中 ----------
+        if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
         {
-            if (!encodeResult.Success)
-                return (0, null);
+            _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
-            string normalizedInput = GetNormalizedPathForCache(workingInputPath);
-            string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-            int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-            string aomParams = config.GetEffectiveAomParams();
-            bool jpeg = IsJpeg(workingInputPath);
-            int tileCols = encInfo.TileCols;
-            int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-            var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
-            string rowMtArg = GetRowMtArg(config);
-            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
-                                              cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+            bool needUpdate = false;
 
-            // ---------- 缓存命中 ----------
-            if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
+            // 补算缺失的 XPSNR
+            if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
+                !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
             {
-                _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
-
-                bool needUpdate = false;
-
-                // 补算缺失的 XPSNR
-                if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
-                    !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
+                try
                 {
+                    var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                    cachedMetrics.XPSNR_Y = y;
+                    cachedMetrics.XPSNR_U = u;
+                    cachedMetrics.XPSNR_V = v;
+                    cachedMetrics.W_XPSNR = weighted;
+                    needUpdate = true;
+                    _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
+                }
+                catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
+            }
+
+            // 补算缺失的高级指标（SSIMULACRA2 / Butteraugli / GMSD）
+            bool advancedUpdated = false;
+            {
+                bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
+                bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
+                bool needGmsd = !cachedMetrics.GMSD.HasValue;
+
+                if (needSsimu2 || needButter || needGmsd)
+                {
+                    string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
                     try
                     {
-                        var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                        cachedMetrics.XPSNR_Y = y;
-                        cachedMetrics.XPSNR_U = u;
-                        cachedMetrics.XPSNR_V = v;
-                        cachedMetrics.W_XPSNR = weighted;
-                        needUpdate = true;
-                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                    }
-                    catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
-                }
+                        _fs.CreateDirectory(advancedTempDir);
 
-                // 补算缺失的高级指标（使用随机目录）
-                // 补算缺失的高级指标（使用随机目录）—— 各自独立，互不影响
-                bool advancedUpdated = false;
-                {
-                    bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
-                    bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
-                    bool needGmsd = !cachedMetrics.GMSD.HasValue;
-
-                    if (needSsimu2 || needButter || needGmsd)
-                    {
-                        string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                        // ★ 自动清洗 PNG 尾部污染
+                        string? cleanInput = await SanitizePngIfNeededAsync(workingInputPath, advancedTempDir);
+                        bool ownClean = cleanInput != workingInputPath;
                         try
                         {
-                            _fs.CreateDirectory(advancedTempDir);
-                            string? refPng = workingInputPath;
-                            if (Path.GetExtension(workingInputPath).ToLower() != ".png")
+                            string? refPng = cleanInput;
+                            if (Path.GetExtension(cleanInput).ToLower() != ".png")
                             {
-                                try { refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir); }
+                                try { refPng = await ConvertToPngAsync(cleanInput, advancedTempDir); }
                                 catch { refPng = null; }
                             }
                             string? distPng = null;
@@ -2244,7 +2329,7 @@ namespace AvifEncoder
                                 catch { distPng = null; }
                             }
 
-                            // SSIMULACRA2 — 独立 try
+                            // SSIMULACRA2
                             if (needSsimu2 && refPng != null && distPng != null)
                             {
                                 try
@@ -2255,7 +2340,7 @@ namespace AvifEncoder
                                 catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 补算异常: {ex.Message}"); }
                             }
 
-                            // Butteraugli — 独立 try
+                            // Butteraugli
                             if (needButter && refPng != null && distPng != null)
                             {
                                 try
@@ -2267,80 +2352,92 @@ namespace AvifEncoder
                                 catch (Exception ex) { _logger.LogInfo($"Butteraugli 补算异常: {ex.Message}"); }
                             }
 
-                            // GMSD — 独立 try（不依赖外部 exe，理论上必成功）
+                            // GMSD
                             if (needGmsd)
                             {
                                 try
                                 {
-                                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                                    var g = await ComputeGMSDAsync(cleanInput, outputPath);
                                     if (g.HasValue) { cachedMetrics.GMSD = g; advancedUpdated = true; }
                                 }
                                 catch (Exception ex) { _logger.LogInfo($"GMSD 补算异常: {ex.Message}"); }
                             }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"缓存高级指标补算整体异常: {ex.Message}"); }
                         finally
                         {
-                            if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                            // 清理清洗产生的临时文件
+                            if (ownClean && _fs.FileExists(cleanInput))
+                                try { _fs.DeleteFile(cleanInput); } catch { }
                         }
                     }
+                    catch (Exception ex) { _logger.LogInfo($"缓存高级指标补算整体异常: {ex.Message}"); }
+                    finally
+                    {
+                        if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                    }
                 }
-
-                if (needUpdate || advancedUpdated)
-                {
-                    _cache.SetMetrics(cacheKey, cachedMetrics);
-                    _logger.LogInfo(
-                        $"缓存指标补充: " +
-                        $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
-                        $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
-                        $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
-                        $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
-                }
-
-                return (cachedMetrics.SSIM, cachedMetrics);
             }
 
-            // ---------- 全新计算 ----------
-            QualityMetrics? metrics = null;
+            if (needUpdate || advancedUpdated)
+            {
+                _cache.SetMetrics(cacheKey, cachedMetrics);
+                _logger.LogInfo(
+                    $"缓存指标补充: " +
+                    $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
+                    $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
+                    $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
+                    $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
+            }
+
+            return (cachedMetrics.SSIM, cachedMetrics);
+        }
+
+        // ---------- 全新计算 ----------
+        QualityMetrics? metrics = null;
+        try
+        {
+            metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+        }
+        catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
+
+        if (metrics != null)
+        {
+            // XPSNR
             try
             {
-                metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+                var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                metrics.XPSNR_Y = y;
+                metrics.XPSNR_U = u;
+                metrics.XPSNR_V = v;
+                metrics.W_XPSNR = weighted;
+                _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
             }
-            catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
+            catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
 
-            if (metrics != null)
+            // 高级指标（独立计算，避免单点故障）
+            bool advancedUpdated = false;
             {
-                // XPSNR
-                try
-                {
-                    var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                    metrics.XPSNR_Y = y;
-                    metrics.XPSNR_U = u;
-                    metrics.XPSNR_V = v;
-                    metrics.W_XPSNR = weighted;
-                    _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                }
-                catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
+                bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
+                bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
+                bool needGmsd = !metrics.GMSD.HasValue;
 
-                // 高级指标
-                // 高级指标 —— 各自独立计算，避免单点故障导致 GMSD 等缺失
-                bool advancedUpdated = false;
+                if (needSsimu2 || needButter || needGmsd)
                 {
-                    bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
-                    bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
-                    bool needGmsd = !metrics.GMSD.HasValue;
-
-                    if (needSsimu2 || needButter || needGmsd)
+                    string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                    try
                     {
-                        string advancedTempDir = Path.Combine(_outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                        _fs.CreateDirectory(advancedTempDir);
+
+                        // ★ 自动清洗 PNG 尾部污染
+                        string? cleanInput = await SanitizePngIfNeededAsync(workingInputPath, advancedTempDir);
+                        bool ownClean = cleanInput != workingInputPath;
                         try
                         {
-                            _fs.CreateDirectory(advancedTempDir);
-                            string? refPng = workingInputPath;
-                            string ext = Path.GetExtension(workingInputPath).ToLower();
+                            string? refPng = cleanInput;
+                            string ext = Path.GetExtension(cleanInput).ToLower();
                             if (ext != ".png")
                             {
-                                try { refPng = await ConvertToPngAsync(workingInputPath, advancedTempDir); }
+                                try { refPng = await ConvertToPngAsync(cleanInput, advancedTempDir); }
                                 catch { refPng = null; }
                             }
                             string? distPng = null;
@@ -2375,39 +2472,45 @@ namespace AvifEncoder
                             {
                                 try
                                 {
-                                    var g = await ComputeGMSDAsync(workingInputPath, outputPath);
+                                    var g = await ComputeGMSDAsync(cleanInput, outputPath);
                                     if (g.HasValue) { metrics.GMSD = g; advancedUpdated = true; }
                                 }
                                 catch (Exception ex) { _logger.LogInfo($"GMSD 计算异常: {ex.Message}"); }
                             }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"高级指标整体计算异常: {ex.Message}"); }
                         finally
                         {
-                            if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                            if (ownClean && _fs.FileExists(cleanInput))
+                                try { _fs.DeleteFile(cleanInput); } catch { }
                         }
                     }
+                    catch (Exception ex) { _logger.LogInfo($"高级指标整体计算异常: {ex.Message}"); }
+                    finally
+                    {
+                        if (_fs.DirectoryExists(advancedTempDir)) try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                    }
                 }
-
-                _cache.SetMetrics(cacheKey, metrics);
-                if (advancedUpdated)
-                    _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
-
-                return (metrics.SSIM, metrics);
             }
 
-            // 回退 SSIM 单一缓存
-            if (_cache.TryGetSSIM(cacheKey, out double cachedSsim) && cachedSsim >= 0)
-                return (cachedSsim, null);
+            _cache.SetMetrics(cacheKey, metrics);
+            if (advancedUpdated)
+                _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
 
-            double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
-            if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
-
-            return (ssim, null);
+            return (metrics.SSIM, metrics);
         }
 
+        // 回退 SSIM 单一缓存
+        if (_cache.TryGetSSIM(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+            return (cachedSsim, null);
 
-        private EncodeResult FailResult(int index, string outputFileName, string name,
+        double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
+        if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
+
+        return (ssim, null);
+    }
+
+
+    private EncodeResult FailResult(int index, string outputFileName, string name,
                                 string inputPath, string error, DateTime fileStartTime)
         {
             var result = new EncodeResult
@@ -5047,4 +5150,3 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
 
 
 
-}
