@@ -4026,16 +4026,19 @@ ExecuteEncodingWithRetries(string input, string output, int crf, string currentP
             catch { }
             double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
 
+
             // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
             string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
 
             string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
                 $"-lavfi \"" +
-                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS,pad=iw:ceil(ih/2)*2:0:0," +
+                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
                 $"scale=in_range=pc:out_range=pc," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black," +
                 $"format={actualPixFmt}[dist];" +
-                $"[1:v]settb=AVTB,setpts=PTS-STARTPTS,pad=iw:ceil(ih/2)*2:0:0," +
+                $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
                 $"scale=in_range=pc:out_range=pc," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black," +
                 $"format={actualPixFmt}[ref];" +
                 $"[dist][ref]xpsnr\" -f null -";
 
