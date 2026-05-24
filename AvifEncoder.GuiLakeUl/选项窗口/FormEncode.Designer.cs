@@ -461,7 +461,7 @@
             txtTemplate.Location = new Point(156, 125);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
-            txtTemplate.Size = new Size(869, 32);
+            txtTemplate.Size = new Size(932, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
             // 
@@ -611,7 +611,7 @@
             progressBar1.Location = new Point(37, 607);
             progressBar1.Margin = new Padding(2, 2, 2, 2);
             progressBar1.Name = "progressBar1";
-            progressBar1.Size = new Size(988, 20);
+            progressBar1.Size = new Size(1051, 20);
             progressBar1.TabIndex = 7;
             progressBar1.TextPadding = new Padding(0);
             progressBar1.TrackColor = Color.White;
@@ -639,7 +639,7 @@
             txtOutput.Location = new Point(156, 78);
             txtOutput.Margin = new Padding(2);
             txtOutput.Name = "txtOutput";
-            txtOutput.Size = new Size(869, 32);
+            txtOutput.Size = new Size(932, 32);
             txtOutput.TabIndex = 5;
             txtOutput.WaterText = "输出路径";
             // 
@@ -685,7 +685,7 @@
             txtInput.Location = new Point(156, 30);
             txtInput.Margin = new Padding(2);
             txtInput.Name = "txtInput";
-            txtInput.Size = new Size(869, 32);
+            txtInput.Size = new Size(932, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径";
             // 

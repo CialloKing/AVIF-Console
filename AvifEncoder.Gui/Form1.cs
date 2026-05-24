@@ -103,6 +103,11 @@ namespace AvifEncoder.Gui
             cmbPreset.SelectedIndexChanged += cmbPreset_SelectedIndexChanged;
             AttachCustomMarkEvents();
 
+            AttachCustomMarkEvents();
+
+            // 初始化遍历模式控件（需在设计器已添加名为 chkSweep 的 CheckBox）
+            chkSweep.Checked = false;
+
             // 启动时异步检测编码器和外部工具，将结果输出到日志
             this.Load += async (s, e) => await PerformStartupCheckAsync();
         }
@@ -171,6 +176,7 @@ namespace AvifEncoder.Gui
                 numSearchCpuUsed.Value = cfg.SearchCpuUsed;
                 numFinalCpuUsed.Value = cfg.FinalCpuUsed;
                 numJobs.Value = cfg.MaxJobs;
+                chkSweep.Checked = false;     // 预设默认不启用遍历模式
             }
             finally { _isApplyingPreset = false; }
         }
@@ -233,6 +239,7 @@ namespace AvifEncoder.Gui
             numSearchCpuUsed.ValueChanged += (s, e) => MarkCustomPreset();
             numFinalCpuUsed.ValueChanged += (s, e) => MarkCustomPreset();
             numJobs.ValueChanged += (s, e) => MarkCustomPreset();
+            chkSweep.CheckedChanged += (s, e) => MarkCustomPreset();
         }
 
         private void btnBrowseInput_Click(object? sender, EventArgs e)
@@ -410,6 +417,8 @@ namespace AvifEncoder.Gui
             config.UseProxySearch = chkProxy.Checked;
             config.SearchCpuUsed = (int)numSearchCpuUsed.Value;
             config.FinalCpuUsed = (int)numFinalCpuUsed.Value;
+            // 遍历模式（自动从 MinCRF 到 MaxCRF 逐个编码）
+            config.SweepMode = chkSweep.Checked;
 
             config.FileConflictStrategy = cmbConflict.SelectedIndex switch
             {

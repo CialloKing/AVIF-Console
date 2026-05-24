@@ -43,7 +43,7 @@
             modernTabListControl1.Location = new Point(0, 0);
             modernTabListControl1.Name = "modernTabListControl1";
             modernTabListControl1.ScrollBarTrackColor = Color.Transparent;
-            modernTabListControl1.Size = new Size(1198, 681);
+            modernTabListControl1.Size = new Size(1264, 681);
             modernTabListControl1.TabIndex = 0;
             modernTabListControl1.TabStripBackColor = Color.Transparent;
             modernTabListControl1.SelectedIndexChanged += modernTabListControl1_SelectedIndexChanged;
@@ -55,13 +55,14 @@
             thisIsYourWindow1.BackdropMaxParallelism = 16;
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;
             thisIsYourWindow1.CaptionButtonGlyphColor = Color.FromArgb(200, 200, 200);
+            thisIsYourWindow1.CaptionHeight = 40;
             thisIsYourWindow1.CloseButtonGlyphColor = Color.FromArgb(200, 200, 200);
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1198, 681);
+            ClientSize = new Size(1264, 681);
             Controls.Add(modernTabListControl1);
             DoubleBuffered = true;
             Font = new Font("Microsoft YaHei UI", 9F);
