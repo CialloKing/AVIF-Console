@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+  </Folder>
   <Project Path="../LakeUI/LakeUI.Demo/LakeUI.Demo.vbproj" />
   <Project Path="../LakeUI/LakeUI/LakeUI.vbproj" />
   <Project Path="AvifEncoder.Core/AvifEncoder.Core.csproj" Id="310a1526-81bf-4b75-b5ba-5c5c8ff3fef3" />

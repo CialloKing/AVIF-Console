@@ -29,6 +29,7 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            chkSweep = new LakeUI.ModernCheckBox();
             chkProxy = new LakeUI.ModernCheckBox();
             chkPriorSearch = new LakeUI.ModernCheckBox();
             chkSerialEncode = new LakeUI.ModernCheckBox();
@@ -77,7 +78,6 @@
             btnBrowseInput = new LakeUI.ModernButton();
             btnStart = new LakeUI.ModernButton();
             txtInput = new LakeUI.ModernTextBox();
-            chkSweep = new LakeUI.ModernCheckBox();
             modernPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numMaxRes).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
@@ -144,6 +144,17 @@
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
             // 
+            // chkSweep
+            // 
+            chkSweep.AnimationFPS = 0;
+            chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkSweep.ForeColor = Color.WhiteSmoke;
+            chkSweep.Location = new Point(625, 395);
+            chkSweep.Name = "chkSweep";
+            chkSweep.Size = new Size(150, 21);
+            chkSweep.TabIndex = 52;
+            chkSweep.Text = "遍历模式";
+            // 
             // chkProxy
             // 
             chkProxy.AnimationFPS = 0;
@@ -194,6 +205,7 @@
             cmbConflict.DropDownAnimationFPS = 0;
             cmbConflict.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbConflict.ForeColor = Color.Gainsboro;
+            cmbConflict.HoverBackColor1 = Color.Silver;
             cmbConflict.Location = new Point(37, 328);
             cmbConflict.Margin = new Padding(2, 2, 2, 2);
             cmbConflict.Name = "cmbConflict";
@@ -268,6 +280,7 @@
             cmbBitDepth.DropDownAnimationFPS = 0;
             cmbBitDepth.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbBitDepth.ForeColor = Color.Gainsboro;
+            cmbBitDepth.HoverBackColor1 = Color.Silver;
             cmbBitDepth.Location = new Point(37, 464);
             cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
             cmbBitDepth.Name = "cmbBitDepth";
@@ -292,6 +305,7 @@
             cmbChroma.DropDownAnimationFPS = 0;
             cmbChroma.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbChroma.ForeColor = Color.Gainsboro;
+            cmbChroma.HoverBackColor1 = Color.Silver;
             cmbChroma.Location = new Point(37, 399);
             cmbChroma.Margin = new Padding(2, 2, 2, 2);
             cmbChroma.Name = "cmbChroma";
@@ -327,6 +341,7 @@
             cmbQualityMode.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbQualityMode.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbQualityMode.ForeColor = Color.Gainsboro;
+            cmbQualityMode.HoverBackColor1 = Color.Silver;
             cmbQualityMode.Location = new Point(230, 464);
             cmbQualityMode.Margin = new Padding(2, 2, 2, 2);
             cmbQualityMode.Name = "cmbQualityMode";
@@ -352,6 +367,7 @@
             cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbMetric.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbMetric.ForeColor = Color.Gainsboro;
+            cmbMetric.HoverBackColor1 = Color.Silver;
             cmbMetric.Location = new Point(230, 399);
             cmbMetric.Margin = new Padding(2, 2, 2, 2);
             cmbMetric.Name = "cmbMetric";
@@ -564,6 +580,7 @@
             cmbEncoder.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbEncoder.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbEncoder.ForeColor = Color.WhiteSmoke;
+            cmbEncoder.HoverBackColor1 = Color.Silver;
             cmbEncoder.Location = new Point(37, 268);
             cmbEncoder.Margin = new Padding(2, 2, 2, 2);
             cmbEncoder.Name = "cmbEncoder";
@@ -588,6 +605,7 @@
             cmbPreset.DropDownAnimationFPS = 0;
             cmbPreset.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbPreset.ForeColor = Color.Gainsboro;
+            cmbPreset.HoverBackColor1 = Color.Silver;
             cmbPreset.Location = new Point(37, 204);
             cmbPreset.Margin = new Padding(2, 2, 2, 2);
             cmbPreset.Name = "cmbPreset";
@@ -690,17 +708,6 @@
             txtInput.Size = new Size(932, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径";
-            // 
-            // chkSweep
-            // 
-            chkSweep.AnimationFPS = 0;
-            chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
-            chkSweep.ForeColor = Color.WhiteSmoke;
-            chkSweep.Location = new Point(625, 395);
-            chkSweep.Name = "chkSweep";
-            chkSweep.Size = new Size(150, 21);
-            chkSweep.TabIndex = 52;
-            chkSweep.Text = "遍历模式";
             // 
             // FormEncode
             // 

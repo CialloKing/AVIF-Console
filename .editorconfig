@@ -1,0 +1,4 @@
+﻿[*.vb]
+
+# BC40005: 成员隐藏基类型中的可重写的方法
+dotnet_diagnostic.BC40005.severity = none

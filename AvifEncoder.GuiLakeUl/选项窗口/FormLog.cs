@@ -29,6 +29,25 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             }
         }
 
+
+        //public void AppendLog(string message)
+        //{
+        //    string line = $"{DateTime.Now:HH:mm:ss} {message}";
+        //    if (txtLog.InvokeRequired)
+        //    {
+        //        txtLog.BeginInvoke(new Action(() => AppendLog(message)));
+        //    }
+        //    else
+        //    {
+        //        // 强制使用 \n 换行，适配 ModernTextBox 的渲染要求
+        //        txtLog.AppendText(line + "\n");
+        //        // 或者更安全的写法：统一替换所有 \r\n 和 \r 为 \n
+        //        // txtLog.AppendText((line + "\n").Replace("\r\n", "\n").Replace("\r", "\n"));
+        //        txtLog.ScrollToBottom();
+        //    }
+        //}
+
+
         private void modernPanel1_Scroll(object sender, ScrollEventArgs e)
         {
             // 空实现（如不需要可删除）
@@ -68,6 +87,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             txtLog.ReadOnly = true;
             txtLog.Size = new Size(1111, 678);
             txtLog.TabIndex = 0;
+            txtLog.WordWrap = false;
             // 
             // FormLog
             // 

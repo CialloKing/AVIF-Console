@@ -2167,142 +2167,165 @@ namespace AvifEncoder
         }
 
 
-            /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标 </summary>
-         private async Task<IEnumerable<EncodeResult>> ProcessFilesSweepAsync(
-             List<(string filePath, int index)> files, PresetConfig config)
-         {
-             var results = new List<EncodeResult>();
+    /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标 </summary>
+            private async Task<IEnumerable<EncodeResult>> ProcessFilesSweepAsync(
+        List<(string filePath, int index)> files, PresetConfig config)
+            {
+                var results = new ConcurrentBag<EncodeResult>();
+                var fileTasks = new List<Task>();
 
-             foreach (var file in files)
-             {
-                 string inputPath = file.filePath;
-                 string name = Path.GetFileName(inputPath);
+                foreach (var file in files)
+                {
+                    string inputPath = file.filePath;
+                    string name = Path.GetFileName(inputPath);
 
-                 // 获取编码基础信息（分辨率、像素格式等）
-                 var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
-                 if (encInfo == null)
-                 {
-                     _logger.LogInfo($"跳过 {name}：无法获取编码信息");
-                     continue;
-                 }
+                    // 1. 准备编码基础信息（复用缓存，可串行提前）
+                    var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
+                    if (encInfo == null)
+                    {
+                        _logger.LogInfo($"跳过 {name}：无法获取编码信息");
+                        continue;
+                    }
 
-                 // 预处理缩放（仅当 MaxResolution > 0 时创建缩放文件）
-                 var scaling = await HandlePreScalingAsync(inputPath, config, name);
-                 string workingInput = scaling.WorkingPath;
+                    // 2. 预缩放（如果需要）
+                    var scaling = await HandlePreScalingAsync(inputPath, config, name);
+                    string workingInput = scaling.WorkingPath;
 
-                 for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
-                 {
-                     var startTime = DateTime.Now;
+                    // 3. 为当前文件创建所有 CRF 任务，用信号量控制并发数
+                    var semaphore = new SemaphoreSlim(config.MaxJobs);
+                    var crfTasks = new List<Task>();
 
-                     // 生成带 CRF 后缀的输出文件名
-                     string baseOutput = GetOutputPath(inputPath, file.index);
-                     string dir = Path.GetDirectoryName(baseOutput)!;
-                     string baseName = Path.GetFileNameWithoutExtension(baseOutput);
-                     string outputPath = Path.Combine(dir, $"{baseName}_CRF{crf}.avif");
+                    for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
+                    {
+                        int capturedCrf = crf;
+                        var task = Task.Run(async () =>
+                        {
+                            await semaphore.WaitAsync();
+                            try
+                            {
+                                var startTime = DateTime.Now;
 
-                     // 直接编码（不搜索）
-                     var swEncode = Stopwatch.StartNew();
-                     (bool ok, TimeSpan t, int retries, string error, bool fromCache, string? actualAom, string? cmd) =
-                    await EncodeToFileExAsync(workingInput, outputPath, crf,
-                       encInfo.TileCols, config.FinalCpuUsed, config,
-                       IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
-                       config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
-                       allowParamDegrade: true);
-                swEncode.Stop();
+                                // 生成输出路径
+                                string baseOutput = GetOutputPath(inputPath, file.index);
+                                string dir = Path.GetDirectoryName(baseOutput)!;
+                                string baseName = Path.GetFileNameWithoutExtension(baseOutput);
+                                string outputPath = Path.Combine(dir, $"{baseName}_CRF{capturedCrf}.avif");
 
-                     if (!ok)
-                     {
-                         _logger.LogInfo($"遍历编码失败: {name} CRF={crf}");
-                         var failResult = new EncodeResult
-                         {
-                             Index = file.index * 1000 + crf,
-                             FileName = Path.GetFileName(outputPath),
-                             OriginalFileName = name,
-                             InputPath = inputPath,
-                             UsedCRF = crf,
-                             Success = false,
-                             ErrorMessage = error,
-                             TotalTime = DateTime.Now - startTime,
-                             PixelFormat = encInfo.ActualPixFmt,
-                         };
-                         MarkProcessed(failResult);
-                         results.Add(failResult);
-                         continue;
-                     }
+                                // 编码（内部会等待 _ffmpegSlots）
+                                (bool ok, TimeSpan t, int retries, string error, bool fromCache,
+                                 string? actualAom, string? cmd) =
+                                    await EncodeToFileExAsync(workingInput, outputPath, capturedCrf,
+                                        encInfo.TileCols, config.FinalCpuUsed, config,
+                                        IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
+                                        config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
+                                        allowParamDegrade: true);
 
-                     // 计算质量指标
-                     (double ssim, QualityMetrics? metrics) = await EvaluateFinalQualityAsync(
-                         workingInput, outputPath,
-                         new FinalEncodeResult
-                         {
-                             Success = true,
-                             Crf = crf,
-                             ActualPixFmt = encInfo.ActualPixFmt,
-                             EncodeTime = t,
-                             Retries = retries,
-                             FromCache = fromCache,
-                             FinalCommand = cmd,
-                             UseSafeMode = false,
-                             ActualAom = actualAom ?? config.GetEffectiveAomParams()
-                         },
-                         encInfo,
-                         new CRFSearchResult
-                         {
-                             Crf = crf,
-                             ActualPixFmt = encInfo.ActualPixFmt,
-                             SearchBasedCRF = false,
-                             UseSafeModeFinalEncode = false,
-                             SearchEvalCount = 0
-                         },
-                         config
-                     );
+                                if (!ok)
+                                {
+                                    var failResult = new EncodeResult
+                                    {
+                                        Index = file.index * 1000 + capturedCrf,
+                                        FileName = Path.GetFileName(outputPath),
+                                        OriginalFileName = name,
+                                        InputPath = inputPath,
+                                        UsedCRF = capturedCrf,
+                                        Success = false,
+                                        ErrorMessage = error,
+                                        TotalTime = DateTime.Now - startTime,
+                                        PixelFormat = encInfo.ActualPixFmt,
+                                    };
+                                    MarkProcessed(failResult);
+                                    results.Add(failResult);
+                                    return;
+                                }
 
-                     var result = new EncodeResult
-                     {
-                         Index = file.index * 1000 + crf,
-                         FileName = Path.GetFileName(outputPath),
-                         OriginalFileName = name,
-                         InputPath = inputPath,
-                         OriginalSize = _fs.FileExists(inputPath) ? _fs.GetFileLength(inputPath) : 0,
-                         OutputSize = _fs.FileExists(outputPath) ? _fs.GetFileLength(outputPath) : 0,
-                         UsedCRF = crf,
-                         FinalSSIM = ssim,
-                         EncodeTime = t,
-                         SearchTime = TimeSpan.Zero,
-                         TotalTime = DateTime.Now - startTime,
-                         Retries = retries,
-                         Success = true,
-                         PixelFormat = encInfo.ActualPixFmt,
-                         SourcePixelFormat = encInfo.SourcePixFmt,
-                         Mode = config.AutoSource ? "自适应" : "手动",
-                         IsSafeMode = false,
-                         CacheReused = fromCache,
-                         CommandLine = cmd,
-                         FinalVMAF = metrics?.VMAF,
-                         FinalPSNR_Y = metrics?.PSNR_Y,
-                         FinalMSSSIM = metrics?.MS_SSIM,
-                         FinalMixScore = metrics != null ? ComputeMixScore(metrics) : null,
-                         FinalXPSNR_Y = metrics?.XPSNR_Y,
-                         FinalXPSNR_U = metrics?.XPSNR_U,
-                         FinalXPSNR_V = metrics?.XPSNR_V,
-                         FinalWXPSNR = metrics?.W_XPSNR,
-                         FinalSSIMULACRA2 = metrics?.SSIMULACRA2,
-                         FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
-                         FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
-                         FinalGMSD = metrics?.GMSD,
-                         SearchEvaluations = 0
-                     };
-                     MarkProcessed(result);
-                     results.Add(result);
-                 }
+                                // 质量指标计算
+                                (double ssim, QualityMetrics? metrics) = await EvaluateFinalQualityAsync(
+                                    workingInput, outputPath,
+                                    new FinalEncodeResult
+                                    {
+                                        Success = true,
+                                        Crf = capturedCrf,
+                                        ActualPixFmt = encInfo.ActualPixFmt,
+                                        EncodeTime = t,
+                                        Retries = retries,
+                                        FromCache = fromCache,
+                                        FinalCommand = cmd,
+                                        UseSafeMode = false,
+                                        ActualAom = actualAom ?? config.GetEffectiveAomParams()
+                                    },
+                                    encInfo,
+                                    new CRFSearchResult
+                                    {
+                                        Crf = capturedCrf,
+                                        ActualPixFmt = encInfo.ActualPixFmt,
+                                        SearchBasedCRF = false,
+                                        UseSafeModeFinalEncode = false,
+                                        SearchEvalCount = 0
+                                    },
+                                    config
+                                );
 
-                 // 清理临时缩放文件
-                 if (scaling.TempFilePath != null)
-                     try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
-             }
+                                var result = new EncodeResult
+                                {
+                                    Index = file.index * 1000 + capturedCrf,
+                                    FileName = Path.GetFileName(outputPath),
+                                    OriginalFileName = name,
+                                    InputPath = inputPath,
+                                    OriginalSize = _fs.FileExists(inputPath) ? _fs.GetFileLength(inputPath) : 0,
+                                    OutputSize = _fs.FileExists(outputPath) ? _fs.GetFileLength(outputPath) : 0,
+                                    UsedCRF = capturedCrf,
+                                    FinalSSIM = ssim,
+                                    EncodeTime = t,
+                                    SearchTime = TimeSpan.Zero,
+                                    TotalTime = DateTime.Now - startTime,
+                                    Retries = retries,
+                                    Success = true,
+                                    PixelFormat = encInfo.ActualPixFmt,
+                                    SourcePixelFormat = encInfo.SourcePixFmt,
+                                    Mode = config.AutoSource ? "自适应" : "手动",
+                                    IsSafeMode = false,
+                                    CacheReused = fromCache,
+                                    CommandLine = cmd,
+                                    FinalVMAF = metrics?.VMAF,
+                                    FinalPSNR_Y = metrics?.PSNR_Y,
+                                    FinalMSSSIM = metrics?.MS_SSIM,
+                                    FinalMixScore = metrics != null ? ComputeMixScore(metrics) : null,
+                                    FinalXPSNR_Y = metrics?.XPSNR_Y,
+                                    FinalXPSNR_U = metrics?.XPSNR_U,
+                                    FinalXPSNR_V = metrics?.XPSNR_V,
+                                    FinalWXPSNR = metrics?.W_XPSNR,
+                                    FinalSSIMULACRA2 = metrics?.SSIMULACRA2,
+                                    FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
+                                    FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
+                                    FinalGMSD = metrics?.GMSD,
+                                    SearchEvaluations = 0
+                                };
+                                MarkProcessed(result);
+                                results.Add(result);
+                            }
+                            finally
+                            {
+                                semaphore.Release();
+                            }
+                        }, _globalCts?.Token ?? CancellationToken.None);
 
-             return results.OrderBy(r => r.Index).ToList();
-         }
+                        crfTasks.Add(task);
+                    }
+
+                    // 4. 当该文件的所有 CRF 任务完成后，清理临时缩放文件
+                    var cleanupTask = Task.WhenAll(crfTasks).ContinueWith(_ =>
+                    {
+                        semaphore.Dispose();
+                        if (scaling.TempFilePath != null)
+                            try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
+                    });
+                    fileTasks.Add(cleanupTask);
+                }
+
+                await Task.WhenAll(fileTasks);
+                return results.OrderBy(r => r.Index).ToList();
+            }
 
 
 
