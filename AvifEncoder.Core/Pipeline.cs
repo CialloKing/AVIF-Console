@@ -38,8 +38,10 @@ namespace AvifEncoder
     {
         bool TryGetEncode(string key, out (string file, TimeSpan encodeTime, string commandLine) cached);
         void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine);
-        bool TryGetMetrics(string key, out QualityMetrics? metrics);   // 改为 QualityMetrics?
+        bool TryGetMetrics(string key, out QualityMetrics? metrics);
         void SetMetrics(string key, QualityMetrics metrics);
+        /// <summary>原子更新缓存中的 QualityMetrics，确保线程安全</summary>
+        void UpdateMetrics(string key, Action<QualityMetrics> updateAction);
         bool TryGetSSIM(string key, out double ssim);
         void SetSSIM(string key, double ssim);
     }
@@ -63,6 +65,26 @@ namespace AvifEncoder
 
         public void SetMetrics(string key, QualityMetrics metrics)
             => _metricsCache[key] = metrics;
+
+        /// <summary>
+        /// 线程安全地更新缓存中的 QualityMetrics 对象。
+        /// 若 key 不存在则创建新对象后执行 updateAction。
+        /// </summary>
+        public void UpdateMetrics(string key, Action<QualityMetrics> updateAction)
+        {
+            _metricsCache.AddOrUpdate(key,
+                _ =>
+                {
+                    var metrics = new QualityMetrics();
+                    updateAction(metrics);
+                    return metrics;
+                },
+                (_, existing) =>
+                {
+                    updateAction(existing);
+                    return existing;
+                });
+        }
 
         public bool TryGetSSIM(string key, out double ssim)
             => _ssimCache.TryGetValue(key, out ssim);
@@ -821,19 +843,10 @@ namespace AvifEncoder
     }
 
     /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
+    /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象（使用原子 AddOrUpdate） </summary>
     private void UpdateCachedMetrics(string cacheKey, Action<QualityMetrics> updateAction)
     {
-        QualityMetrics? metrics = null;
-        if (_cache.TryGetMetrics(cacheKey, out var existing))
-            metrics = existing;
-
-        if (metrics == null)
-        {
-            metrics = new QualityMetrics();
-        }
-
-        updateAction(metrics);
-        _cache.SetMetrics(cacheKey, metrics);
+        _cache.UpdateMetrics(cacheKey, updateAction);
     }
 
 
@@ -3323,9 +3336,9 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             if (imageWidth < 256 || minCols > maxCols)
                 safeTileCols = 0;
             else
-                safeTileCols = Math.Clamp(Math.Max(2, minCols), minCols, maxCols);
+                safeTileCols = minCols;   // minCols 已确保 tile 宽度 ≤4096，无需额外强制 ≥2
 
-            string safeRowMt;
+        string safeRowMt;
             // ===== 极限压缩模式（关闭所有并行）=====
             if (config.SerialEncode)
             {
@@ -3929,7 +3942,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
 
                 string crfPart = isTrueLossless
-                ? (EncoderUtils.IsRav1e(cfg.Encoder) ? "-rav1e-params lossless=1" : "-lossless 1")
+                ? cfg.Encoder switch
+                {
+                _ when EncoderUtils.IsRav1e(cfg.Encoder) => "-rav1e-params lossless=1",
+                _ when EncoderUtils.IsSvtAv1(cfg.Encoder) => "-svtav1-params lossless=1",
+                _ => "-lossless 1"
+                }
                 : $"-crf {crf}";
 
         string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
