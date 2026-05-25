@@ -3927,8 +3927,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 string logLevel = "-loglevel info -hide_banner";
                 string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
-                string crfPart = isTrueLossless ? "-lossless 1" : $"-crf {crf}";
-                string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
+
+                string crfPart = isTrueLossless
+                ? (EncoderUtils.IsRav1e(cfg.Encoder) ? "-rav1e-params lossless=1" : "-lossless 1")
+                : $"-crf {crf}";
+
+        string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
                 string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
                 string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
