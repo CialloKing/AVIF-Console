@@ -131,7 +131,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             cmbQualityMode.Items.Clear();
             cmbQualityMode.Items.AddRange(new string[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
-                                                         "Mix", "SSIMULACRA2", "Butteraugli 3-norm", "GMSD" });
+                                                          "SSIMULACRA2", "Butteraugli 3-norm", "GMSD","Mix" });
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
             numQualityValue.Value = 0.95m; numQualityValue.DecimalPlaces = 4;

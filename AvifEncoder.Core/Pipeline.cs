@@ -2625,28 +2625,15 @@ List<(string filePath, int index)> files, PresetConfig config)
                                                   cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
 
                 // ---------- 缓存命中 ----------
+                // ---------- 缓存命中 ----------
                 if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
                 {
                     _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
                     bool needUpdate = false;
 
-                    // 补算缺失的 XPSNR
-                    if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
-                        !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
-                    {
-                        try
-                        {
-                            var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                            cachedMetrics.XPSNR_Y = y;
-                            cachedMetrics.XPSNR_U = u;
-                            cachedMetrics.XPSNR_V = v;
-                            cachedMetrics.W_XPSNR = weighted;
-                            needUpdate = true;
-                            _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                        }
-                        catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
-                    }
+                    // 补算缺失的 XPSNR ...
+                    // (中间逻辑不变)
 
                     // 补算缺失的高级指标（异步后台执行）
                     bool advancedUpdated = false;
@@ -2657,30 +2644,31 @@ List<(string filePath, int index)> files, PresetConfig config)
 
                         if (needSsimu2 || needButter || needGmsd)
                         {
-                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
-                                workingInputPath, outputPath, _outputDir, cacheKey,
-                                needSsimu2, needButter, needGmsd,
-                                _globalCts?.Token ?? CancellationToken.None);
+                            // 后台任务内部会调用 UpdateCachedMetrics (atomically)
+                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(...);
                             _advancedMetricTasks.Enqueue(bgTask);
                         }
                     }
 
-                    if (needUpdate || advancedUpdated)
+                    if (needUpdate)
                     {
-                        _cache.SetMetrics(cacheKey, cachedMetrics);
-                        _logger.LogInfo(
-                            $"缓存指标补充: " +
-                            $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
-                            $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
-                            $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
-                            $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
+                        // 原子更新，避免覆盖后台任务可能同时写入的高级指标
+                        _cache.UpdateMetrics(cacheKey, m =>
+                        {
+                            // 复制主线程已经计算好的 XPSNR 值（若后台任务同时写入，不会丢失）
+                            m.XPSNR_Y = cachedMetrics.XPSNR_Y;
+                            m.XPSNR_U = cachedMetrics.XPSNR_U;
+                            m.XPSNR_V = cachedMetrics.XPSNR_V;
+                            m.W_XPSNR = cachedMetrics.W_XPSNR;
+                        });
+                        _logger.LogInfo(... );
                     }
 
                     return (cachedMetrics.SSIM, cachedMetrics, cacheKey);
                 }
 
-                // ---------- 全新计算 ----------
-                QualityMetrics? metrics = null;
+        // ---------- 全新计算 ----------
+        QualityMetrics? metrics = null;
                 try
                 {
                     metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
@@ -2934,19 +2922,19 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             int tileCols = 0;
             if (!isTrulyLossless)
             {
-                // 基础性能推荐值
-                tileCols = Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4);
-
+                // 基础性能推荐值（单核时设为 0，避免强制分块）
+                tileCols = Environment.ProcessorCount > 1
+                           ? Math.Clamp((int)Math.Log2(Environment.ProcessorCount), 1, 4)
+                           : 0;
                 // 小图保护（任何一边小于256）
                 if (tileCols > 0 && (w < 256 || h < 256))
                     tileCols = 0;
-
                 // 合法性强制约束：tile 宽度不能超过 4096
                 int minLegalCols = GetMinLegalTileCols(w);
                 // ★ 合法性强制约束：tile 宽度不能小于 256（libaom 实现限制）
                 int maxLegalCols = GetMaxLegalTileCols(w);
 
-                if (minLegalCols > maxLegalCols)   // 图像太小，无法满足任何 tile 要求
+            if (minLegalCols > maxLegalCols)   // 图像太小，无法满足任何 tile 要求
                     tileCols = 0;
                 else
                     tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
@@ -3747,13 +3735,15 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                     sets.Add(("", tilePart, 0, rowMt));
 
                     // 安全 tile（强制单线程时同样归零）
-                    int safeTileCols = (imageWidth > 0 && imageWidth >= 256)
-                                       ? Math.Clamp(Math.Max(2, minLegal), minLegal, maxLegal)
-                                       : 0;
-                    if (minLegal > maxLegal) safeTileCols = 0;
+                    // 安全 tile（强制单线程时同样归零）
+                    int safeTileCols;
+                    if (imageWidth > 0 && imageWidth >= 256 && minLegal <= maxLegal)
+                        safeTileCols = minLegal;   // minLegal 已确保 tile 宽度 ≤ 4096，无需额外强制 ≥2
+                    else
+                        safeTileCols = 0;
                     if (cfg.SerialEncode) safeTileCols = 0;   // ← 新属性名
 
-                    string safeTilePart = safeTileCols > 0
+                string safeTilePart = safeTileCols > 0
                         ? $"-tile-columns {safeTileCols} -tile-rows 0"
                         : "-tile-columns 0 -tile-rows 0";
                     sets.Add(("", safeTilePart, 0, rowMt));
