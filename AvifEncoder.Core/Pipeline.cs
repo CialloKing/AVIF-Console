@@ -28,6 +28,12 @@ namespace AvifEncoder
         public bool HasAlpha { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
+
+        // 新增色彩元数据字段（可能为 null/unknown）
+        public string? ColorPrimaries { get; set; }
+        public string? ColorTransfer { get; set; }
+        public string? ColorSpace { get; set; }
+        public string? ColorRange { get; set; }
     }
 
 
@@ -1336,41 +1342,77 @@ namespace AvifEncoder
             string key = GetNormalizedPathForCache(filePath);
             if (_probeCache.TryGetValue(key, out var cached)) return cached;
 
-            // 一次性 ffprobe 获取所有信息
-            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless -of json \"{filePath}\"";
-            string json = await RunProbeAsync(_ffprobePath, args);
-            if (string.IsNullOrEmpty(json)) return null;
+        // 一次性 ffprobe 获取所有信息
+        string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
+        string json = await RunProbeAsync(_ffprobePath, args);
+        if (string.IsNullOrEmpty(json)) return null;
 
-            try
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var streams = doc.RootElement.GetProperty("streams");
+            if (streams.GetArrayLength() == 0) return null;
+
+            var stream = streams[0];
+            string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
+            int w = stream.GetProperty("width").GetInt32();
+            int h = stream.GetProperty("height").GetInt32();
+
+            bool hasAlpha = fmt switch
             {
-                using var doc = JsonDocument.Parse(json);
-                var streams = doc.RootElement.GetProperty("streams");
-                if (streams.GetArrayLength() == 0) return null;   // ★ 无视频流，返回 null
+                "rgba" or "bgra" or "argb" or "abgr" => true,
+                "rgba64le" or "bgra64le" => true,
+                _ => false
+            };
 
-                var stream = streams[0];
-                string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
-                int w = stream.GetProperty("width").GetInt32();
-                int h = stream.GetProperty("height").GetInt32();
-
-                bool hasAlpha = fmt switch
+            // 尝试提取色彩字段，忽略 unknown/reserved
+            static string? TryGetStringProperty(JsonElement element, string propertyName)
+            {
+                if (element.TryGetProperty(propertyName, out var prop))
                 {
-                    "rgba" or "bgra" or "argb" or "abgr" => true,
-                    "rgba64le" or "bgra64le" => true,
-                    _ => false
-                };
-
-                var info = new ProbeInfo { PixFmt = fmt, HasAlpha = hasAlpha, Width = w, Height = h };
-                _probeCache[key] = info;
-                return info;
+                    string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
+                    return !string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved" ? val : null;
+                }
+                return null;
             }
-            catch { return null; }
+
+            string? colorPrimaries = TryGetStringProperty(stream, "color_primaries");
+            string? colorTransfer = TryGetStringProperty(stream, "color_transfer");
+            string? colorSpace = TryGetStringProperty(stream, "color_space");
+            string? colorRange = TryGetStringProperty(stream, "color_range");
+
+            var info = new ProbeInfo
+            {
+                PixFmt = fmt,
+                HasAlpha = hasAlpha,
+                Width = w,
+                Height = h,
+                ColorPrimaries = colorPrimaries,
+                ColorTransfer = colorTransfer,
+                ColorSpace = colorSpace,
+                ColorRange = colorRange
+            };
+            _probeCache[key] = info;
+            return info;
+        }
+        catch { return null; }
+    }
+
+        static string? TryGetStringProperty(JsonElement element, string propertyName)
+        {
+            if (element.TryGetProperty(propertyName, out var prop))
+            {
+                string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
+                return !string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved" ? val : null;
+            }
+            return null;
         }
 
-        /// <summary>
-        /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
-        /// 替代原先固定的 -cpu-used / -row-mt。
-        /// </summary>
-        private string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
+    /// <summary>
+    /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
+    /// 替代原先固定的 -cpu-used / -row-mt。
+    /// </summary>
+    private string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
         {
             string enc = cfg.Encoder;
 
@@ -2626,14 +2668,29 @@ List<(string filePath, int index)> files, PresetConfig config)
 
                 // ---------- 缓存命中 ----------
                 // ---------- 缓存命中 ----------
+                // ---------- 缓存命中 ----------
                 if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
                 {
                     _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
                     bool needUpdate = false;
 
-                    // 补算缺失的 XPSNR ...
-                    // (中间逻辑不变)
+                    // 补算缺失的 XPSNR
+                    if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
+                        !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
+                    {
+                        try
+                        {
+                            var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                            cachedMetrics.XPSNR_Y = y;
+                            cachedMetrics.XPSNR_U = u;
+                            cachedMetrics.XPSNR_V = v;
+                            cachedMetrics.W_XPSNR = weighted;
+                            needUpdate = true;
+                            _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
+                    }
 
                     // 补算缺失的高级指标（异步后台执行）
                     bool advancedUpdated = false;
@@ -2644,28 +2701,29 @@ List<(string filePath, int index)> files, PresetConfig config)
 
                         if (needSsimu2 || needButter || needGmsd)
                         {
-                            // 后台任务内部会调用 UpdateCachedMetrics (atomically)
-                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(...);
+                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
+                                workingInputPath, outputPath, _outputDir, cacheKey,
+                                needSsimu2, needButter, needGmsd,
+                                _globalCts?.Token ?? CancellationToken.None);
                             _advancedMetricTasks.Enqueue(bgTask);
+                            advancedUpdated = true;
                         }
                     }
 
-                    if (needUpdate)
+                    if (needUpdate || advancedUpdated)
                     {
-                        // 原子更新，避免覆盖后台任务可能同时写入的高级指标
-                        _cache.UpdateMetrics(cacheKey, m =>
-                        {
-                            // 复制主线程已经计算好的 XPSNR 值（若后台任务同时写入，不会丢失）
-                            m.XPSNR_Y = cachedMetrics.XPSNR_Y;
-                            m.XPSNR_U = cachedMetrics.XPSNR_U;
-                            m.XPSNR_V = cachedMetrics.XPSNR_V;
-                            m.W_XPSNR = cachedMetrics.W_XPSNR;
-                        });
-                        _logger.LogInfo(... );
+                        _cache.SetMetrics(cacheKey, cachedMetrics);
+                        _logger.LogInfo(
+                            $"缓存指标补充: " +
+                            $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
+                            $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
+                            $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
+                            $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
                     }
 
                     return (cachedMetrics.SSIM, cachedMetrics, cacheKey);
-                }
+                
+            }
 
         // ---------- 全新计算 ----------
         QualityMetrics? metrics = null;
@@ -3871,60 +3929,28 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
-            /// <summary>
-            /// 通过 ffprobe (JSON 模式) 探测输入文件的色彩元数据。
-            /// 如果任何核心字段缺失、为 unknown/reserved，则返回 null，避免半继承。
-            /// </summary>
-            private async Task<(string primaries, string trc, string space, string? range)?>
-            GetSourceColorInfoAsync(string inputPath)
-            {
-                try
+                /// <summary>
+                /// 通过 ffprobe (JSON 模式) 探测输入文件的色彩元数据。
+                /// 如果任何核心字段缺失、为 unknown/reserved，则返回 null，避免半继承。
+                /// </summary>
+                private async Task<(string primaries, string trc, string space, string? range)?>
+                GetSourceColorInfoAsync(string inputPath)
                 {
-                    string args = $"-v error -select_streams v:0 " +
-                                  $"-show_entries stream=color_primaries,color_transfer,color_space,color_range " +
-                                  $"-of json \"{inputPath}\"";
+                    var probe = await GetProbeInfoAsync(inputPath);
+                    if (probe == null) return null;
 
-                    var (exitCode, stdout, _) = await _processRunner.RunAsync(
-                        _ffprobePath, args, TimeSpan.FromSeconds(5), CancellationToken.None);
-
-                    if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+                    // 任何核心色彩字段缺失则返回 null
+                    if (probe.ColorPrimaries == null || probe.ColorTransfer == null || probe.ColorSpace == null)
                         return null;
 
-                    using var doc = JsonDocument.Parse(stdout);
-                    var stream = doc.RootElement.GetProperty("streams")[0];
-
-                    string? Get(string name)
-                    {
-                        if (stream.TryGetProperty(name, out var prop))
-                        {
-                            string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
-                            if (!string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved")
-                                return val;
-                        }
-                        return null;
-                    }
-
-                    var prim = Get("color_primaries");
-                    var trc = Get("color_transfer");
-                    var spc = Get("color_space");
-                    var rng = Get("color_range");
-
-                    if (prim == null || trc == null || spc == null)
-                        return null;
-
-                    return (prim, trc, spc, rng);
+                    return (probe.ColorPrimaries, probe.ColorTransfer, probe.ColorSpace, probe.ColorRange);
                 }
-                catch
-                {
-                    return null;
-                }
-            }
 
 
 
-            /// <summary> 构建 ffmpeg 参数字符串 </summary>
-            /// <summary> 构建 ffmpeg 参数字符串 </summary>
-            private async Task<string> BuildFfmpegArgsAsync(string input, string output, int crf, string pixFmt,
+    /// <summary> 构建 ffmpeg 参数字符串 </summary>
+    /// <summary> 构建 ffmpeg 参数字符串 </summary>
+    private async Task<string> BuildFfmpegArgsAsync(string input, string output, int crf, string pixFmt,
                (string aomParams, string tilePart, int actualCpu, string rowMt) param,
                PresetConfig cfg, bool isTrueLossless)
             {
@@ -4236,12 +4262,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             {
                 if (!await _ssimConcurrency.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    _logger.LogSearch($"GetOrComputeMetrics 信号量等待超时: [{Path.GetFileName(input)}] CRF={crf}");
+                    _logger.LogError($"GetOrComputeMetrics 信号量等待超时 (300s)，可能资源耗尽。文件: {Path.GetFileName(input)}, CRF={crf}");
                     newTask.SetResult(null);
                     return null;
                 }
 
-                try
+            try
                 {
                     string tmp = Path.Combine(_outputDir, $"_p_{Guid.NewGuid():N}.avif");
                     try
@@ -4391,38 +4417,34 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
-            /// <summary>
-            /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
-            /// </summary>
-            private double GetSearchScore(QualityMetrics m, string metricMode)
-            {
-                switch (metricMode?.ToLower())
+                /// <summary>
+                /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
+                /// </summary>
+                private double GetSearchScore(QualityMetrics m, string metricMode)
                 {
-                    case "ssim": return m.SSIM;
-                    case "psnr": return Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                    case "msssim": return m.MS_SSIM;
-                    case "vmaf":
-                        return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
-                    case "mix":
-                        if (double.IsNaN(m.VMAF)) return -1;
-                        double vmafNorm = m.VMAF / 100.0;
-                        double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                        return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
-                    // ---------- XPSNR 原生值 ----------
-                    case "xpsnr_y": return m.XPSNR_Y ?? -1;
-                    case "xpsnr_u": return m.XPSNR_U ?? -1;
-                    case "xpsnr_v": return m.XPSNR_V ?? -1;
-                    case "xpsnr_w": return m.W_XPSNR ?? -1;
-                    case "xpsnr":   // 未指定通道时默认加权 W‑XPSNR
-                        return m.W_XPSNR ?? -1;
-                    // ★ 高级指标（返回原生值，搜索时可能反转）
-                    case "ssimu2": return m.SSIMULACRA2 ?? -1;
-                    case "butter3": return m.Butteraugli_3norm ?? -1;
-                    case "gmsd": return m.GMSD ?? -1;
-                    default:
-                        return m.SSIM;
+                    switch (metricMode?.ToLower())
+                    {
+                        case "ssim": return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
+                        case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                        case "msssim": return double.IsNaN(m.MS_SSIM) ? -1 : m.MS_SSIM;
+                        case "vmaf":
+                            return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
+                        case "mix":
+                            if (double.IsNaN(m.VMAF)) return -1;
+                            double vmafNorm = m.VMAF / 100.0;
+                            double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                            return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
+                        case "xpsnr_y": return m.XPSNR_Y.HasValue && !double.IsNaN(m.XPSNR_Y.Value) ? m.XPSNR_Y.Value : -1;
+                        case "xpsnr_u": return m.XPSNR_U.HasValue && !double.IsNaN(m.XPSNR_U.Value) ? m.XPSNR_U.Value : -1;
+                        case "xpsnr_v": return m.XPSNR_V.HasValue && !double.IsNaN(m.XPSNR_V.Value) ? m.XPSNR_V.Value : -1;
+                        case "xpsnr_w": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
+                        case "xpsnr": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
+                        case "ssimu2": return m.SSIMULACRA2.HasValue && !double.IsNaN(m.SSIMULACRA2.Value) ? m.SSIMULACRA2.Value : -1;
+                        case "butter3": return m.Butteraugli_3norm.HasValue && !double.IsNaN(m.Butteraugli_3norm.Value) ? m.Butteraugli_3norm.Value : -1;
+                        case "gmsd": return m.GMSD.HasValue && !double.IsNaN(m.GMSD.Value) ? m.GMSD.Value : -1;
+                        default: return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
+                    }
                 }
-            }
 
     /// <summary>
     /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W‑XPSNR (6:1:1)。
@@ -4438,111 +4460,111 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
     /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
     /// </summary>
     private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
-    string refPath, string distPath, string pixFmt = "yuv444p")
-        {
-            if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
-                return (null, null, null, null);
+            string refPath, string distPath, string pixFmt = "yuv444p")
+                {
+                    if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
+                        return (null, null, null, null);
 
-            string CleanPath(string p)
-            {
-                if (p.StartsWith(@"\\?\")) p = p.Substring(4);
-                return Path.GetFullPath(p);
+                    string CleanPath(string p)
+                    {
+                        if (p.StartsWith(@"\\?\")) p = p.Substring(4);
+                        return Path.GetFullPath(p);
+                    }
+                    string safeRef = CleanPath(refPath);
+                    string safeDist = CleanPath(distPath);
+
+                    int bitDepth = 8;
+                    try
+                    {
+                        var infoRef = await GetProbeInfoAsync(refPath);
+                        if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
+                            bitDepth = 10;
+                        var infoDist = await GetProbeInfoAsync(distPath);
+                        if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
+                            bitDepth = Math.Max(bitDepth, 10);
+                    }
+                    catch { }
+                    double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
+
+
+                    // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
+                    string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
+
+                    string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
+                        $"-lavfi \"" +
+                        $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
+                        $"scale=in_range=pc:out_range=pc," +
+                        $"format={actualPixFmt}," +
+                        $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
+                        $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
+                        $"scale=in_range=pc:out_range=pc," +
+                        $"format={actualPixFmt}," +
+                        $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
+                        $"[dist][ref]xpsnr\" -f null -";
+
+                    var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                        _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
+                        _globalCts?.Token ?? default);
+
+                    string combinedOutput = stdout + stderr;
+
+                    if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
+                    {
+                        _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
+                        return (null, null, null, null);
+                    }
+
+                    // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
+                    var combinedMatch = Regex.Match(combinedOutput,
+                        @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
+                        RegexOptions.IgnoreCase);
+                    double? y, u, v;
+                    if (combinedMatch.Success)
+                    {
+                        y = ParseSingleValue(combinedMatch.Groups[1].Value);
+                        u = ParseSingleValue(combinedMatch.Groups[2].Value);
+                        v = ParseSingleValue(combinedMatch.Groups[3].Value);
+                    }
+                    else
+                    {
+                        // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
+                        var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                        var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                        var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                        y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
+                        u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
+                        v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
+                    }
+
+                    // 值解析辅助方法（局部函数）
+                    static double? ParseSingleValue(string val)
+                    {
+                        if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
+                            return 100.0;   // 将 inf 映射为极高值，表示几乎无损
+                        if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
+                            return result;
+                        return null;
+                    }
+
+                    // 计算加权 W‑XPSNR
+                    double? weighted = null;
+                    if (y.HasValue && u.HasValue && v.HasValue)
+                    {
+                        weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
+                    }
+                    return (y, u, v, weighted);
             }
-            string safeRef = CleanPath(refPath);
-            string safeDist = CleanPath(distPath);
 
-            int bitDepth = 8;
-            try
-            {
-                var infoRef = await GetProbeInfoAsync(refPath);
-                if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
-                    bitDepth = 10;
-                var infoDist = await GetProbeInfoAsync(distPath);
-                if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
-                    bitDepth = Math.Max(bitDepth, 10);
-            }
-            catch { }
-            double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
-
-
-            // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
-            string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
-
-            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
-                $"-lavfi \"" +
-                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
-                $"scale=in_range=pc:out_range=pc," +
-                $"format={actualPixFmt}," +
-                $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
-                $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
-                $"scale=in_range=pc:out_range=pc," +
-                $"format={actualPixFmt}," +
-                $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
-                $"[dist][ref]xpsnr\" -f null -";
-
-            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
-                _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
-                _globalCts?.Token ?? default);
-
-            string combinedOutput = stdout + stderr;
-
-            if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
-            {
-                _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
-                return (null, null, null, null);
-            }
-
-            // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
-            var combinedMatch = Regex.Match(combinedOutput,
-                @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
-                RegexOptions.IgnoreCase);
-            double? y, u, v;
-            if (combinedMatch.Success)
-            {
-                y = ParseSingleValue(combinedMatch.Groups[1].Value);
-                u = ParseSingleValue(combinedMatch.Groups[2].Value);
-                v = ParseSingleValue(combinedMatch.Groups[3].Value);
-            }
-            else
-            {
-                // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
-                var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
-                u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
-                v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
-            }
-
-            // 值解析辅助方法（局部函数）
-            static double? ParseSingleValue(string val)
-            {
-                if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
-                    return 100.0;   // 将 inf 映射为极高值，表示几乎无损
-                if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
-                    return result;
-                return null;
-            }
-
-            // 计算加权 W‑XPSNR
-            double? weighted = null;
-            if (y.HasValue && u.HasValue && v.HasValue)
-            {
-                weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
-            }
-            return (y, u, v, weighted);
-        }
-
-        /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
-        /// <param name="maxVal">像素最大值，8‑bit=255, 10‑bit=1023</param>
-        private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
-        {
-            double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
-            double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
-            double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
-            double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
-            return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
-        }
+                /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
+                /// <param name="maxVal">像素最大值，8‑bit=255, 10‑bit=1023</param>
+                private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
+                {
+                    double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
+                    double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
+                    double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
+                    double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
+                    return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
+                }
 
 
 
