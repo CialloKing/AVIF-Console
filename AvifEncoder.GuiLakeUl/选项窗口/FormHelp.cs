@@ -65,8 +65,17 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -b, --bit-depth <位数>       输出位深: 8 或 10
 
 其他编码选项:
-  -l, --lossless               无损模式 (有bug，不建议使用)
+  -l, --lossless               无损模式 (不同版本ffmpeg相关的支持不同，谨慎使用)
+
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
+                               可用占位符: {name} 源文件主名, {index} 序号(01,02...)
+                               正确示例:
+                                 -m {name}.avif            按源文件名
+                                 -m img_{index}.avif       自定义前缀
+                                 -m {name}_{index}.avif   源名+序号
+                               错误示例:
+                                 -m ""{name}.avif""        （引号会被当成文件名的一部分）
+
   -r, --recursive              递归处理子目录
 
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程）

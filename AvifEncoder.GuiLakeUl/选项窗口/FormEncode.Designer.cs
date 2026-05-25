@@ -92,6 +92,7 @@
             // 
             // modernPanel1
             // 
+            modernPanel1.AllowDrop = true;
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
@@ -465,7 +466,7 @@
             modernButton1.BackColor1 = Color.Transparent;
             modernButton1.BorderRadius = 10;
             modernButton1.ForeColor = Color.WhiteSmoke;
-            modernButton1.Location = new Point(37, 125);
+            modernButton1.Location = new Point(37, 113);
             modernButton1.Margin = new Padding(2);
             modernButton1.Name = "modernButton1";
             modernButton1.Size = new Size(97, 32);
@@ -476,10 +477,10 @@
             // 
             txtTemplate.BackColor1 = Color.Transparent;
             txtTemplate.ForeColor = Color.WhiteSmoke;
-            txtTemplate.Location = new Point(156, 125);
+            txtTemplate.Location = new Point(156, 113);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
-            txtTemplate.Size = new Size(932, 32);
+            txtTemplate.Size = new Size(619, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
             // 
@@ -542,7 +543,7 @@
             btnStop.BorderRadius = 10;
             btnStop.ForeColor = Color.WhiteSmoke;
             btnStop.HoverBackColor1 = Color.DarkGray;
-            btnStop.Location = new Point(230, 548);
+            btnStop.Location = new Point(230, 516);
             btnStop.Margin = new Padding(2);
             btnStop.Name = "btnStop";
             btnStop.PressedBackColor1 = Color.White;
@@ -628,10 +629,10 @@
             progressBar1.BorderColor = Color.Gainsboro;
             progressBar1.DisabledOverlayColor = Color.White;
             progressBar1.FillColor = Color.FromArgb(0, 120, 215);
-            progressBar1.Location = new Point(37, 607);
+            progressBar1.Location = new Point(37, 564);
             progressBar1.Margin = new Padding(2, 2, 2, 2);
             progressBar1.Name = "progressBar1";
-            progressBar1.Size = new Size(1051, 20);
+            progressBar1.Size = new Size(738, 20);
             progressBar1.TabIndex = 7;
             progressBar1.TextPadding = new Padding(0);
             progressBar1.TrackColor = Color.White;
@@ -642,7 +643,7 @@
             btnBrowseOutput.BorderRadius = 10;
             btnBrowseOutput.ForeColor = Color.WhiteSmoke;
             btnBrowseOutput.HoverBackColor1 = Color.Gainsboro;
-            btnBrowseOutput.Location = new Point(37, 78);
+            btnBrowseOutput.Location = new Point(37, 67);
             btnBrowseOutput.Margin = new Padding(2);
             btnBrowseOutput.Name = "btnBrowseOutput";
             btnBrowseOutput.PressedBackColor1 = Color.White;
@@ -656,10 +657,10 @@
             txtOutput.AllowDrop = true;
             txtOutput.BackColor1 = Color.Transparent;
             txtOutput.ForeColor = Color.WhiteSmoke;
-            txtOutput.Location = new Point(156, 78);
+            txtOutput.Location = new Point(156, 67);
             txtOutput.Margin = new Padding(2);
             txtOutput.Name = "txtOutput";
-            txtOutput.Size = new Size(932, 32);
+            txtOutput.Size = new Size(619, 32);
             txtOutput.TabIndex = 5;
             txtOutput.WaterText = "输出路径";
             // 
@@ -671,7 +672,7 @@
             btnBrowseInput.BorderRadius = 10;
             btnBrowseInput.ForeColor = Color.WhiteSmoke;
             btnBrowseInput.HoverBackColor1 = Color.Gainsboro;
-            btnBrowseInput.Location = new Point(37, 30);
+            btnBrowseInput.Location = new Point(37, 21);
             btnBrowseInput.Margin = new Padding(2);
             btnBrowseInput.Name = "btnBrowseInput";
             btnBrowseInput.PressedBackColor1 = Color.White;
@@ -688,7 +689,7 @@
             btnStart.BorderRadius = 10;
             btnStart.ForeColor = Color.WhiteSmoke;
             btnStart.HoverBackColor1 = Color.DarkGray;
-            btnStart.Location = new Point(37, 548);
+            btnStart.Location = new Point(37, 516);
             btnStart.Margin = new Padding(2);
             btnStart.Name = "btnStart";
             btnStart.PressedBackColor1 = Color.White;
@@ -702,15 +703,16 @@
             txtInput.AllowDrop = true;
             txtInput.BackColor1 = Color.Transparent;
             txtInput.ForeColor = Color.WhiteSmoke;
-            txtInput.Location = new Point(156, 30);
+            txtInput.Location = new Point(156, 21);
             txtInput.Margin = new Padding(2);
             txtInput.Name = "txtInput";
-            txtInput.Size = new Size(932, 32);
+            txtInput.Size = new Size(619, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径";
             // 
             // FormEncode
             // 
+            AllowDrop = true;
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1114, 681);

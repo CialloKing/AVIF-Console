@@ -47,6 +47,7 @@
             // 
             // txtHelp
             // 
+            txtHelp.AllowDrop = true;
             txtHelp.BackColor1 = Color.Transparent;
             txtHelp.BackgroundSource = modernPanel1;
             txtHelp.BorderColor = Color.Transparent;
@@ -66,6 +67,7 @@
             // 
             // FormHelp
             // 
+            AllowDrop = true;
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1114, 681);

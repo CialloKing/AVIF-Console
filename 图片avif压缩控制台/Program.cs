@@ -40,6 +40,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
     "".jpg"", "".jpeg"", "".png"", "".webp"",
     "".bmp"", "".tif"", "".tiff"", "".gif"",
     "".jp2"", "".j2k"", "".jpx""
+注:测试环节只测试了jpg/png/webp，其他格式理论上支持但可能存在兼容性问题
 
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
@@ -51,6 +52,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 质量控制:
   -s, --search                 启用 CRF 搜索 (默认启用)
       --no-search              禁用 CRF 搜索
+
       --metric <模式>           质量评价模式: vmaf, ssim, psnr, msssim, mix, XPSNR, ssimu2, butter3, gmsd (默认 vmaf)
                                设置目标分数自动切换模式
       --target-vmaf <0-100>    直接设置 VMAF 目标
@@ -74,6 +76,13 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 其他编码选项:
   -l, --lossless               无损模式 (有bug，不建议使用)
   -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
+                               可用占位符: {name} 源文件主名, {index} 序号(01,02...)
+                               正确示例:
+                                 -m {name}.avif            按源文件名
+                                 -m img_{index}.avif       自定义前缀
+                                 -m {name}_{index}.avif   源名+序号
+                               错误示例:
+                                 -m ""{name}.avif""        （引号会被当成文件名的一部分）
   -r, --recursive              递归处理子目录
 
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程）

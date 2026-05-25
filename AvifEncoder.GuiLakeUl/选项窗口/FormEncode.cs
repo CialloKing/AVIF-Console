@@ -43,6 +43,51 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             ApplyPresetToUI(CliPreset.Balanced);
             SetComboBoxItem(cmbPreset, "balanced");
             AttachAllEvents();
+
+            SetupDragDrop();   // ← 新增此行
+        }
+
+        private void SetupDragDrop()
+        {
+            // 为输入路径文本框启用拖放
+            txtInput.AllowDrop = true;
+            txtInput.DragEnter += TxtPath_DragEnter;
+            txtInput.DragDrop += TxtPath_DragDrop;
+
+            // 为输出路径文本框启用拖放
+            txtOutput.AllowDrop = true;
+            txtOutput.DragEnter += TxtPath_DragEnter;
+            txtOutput.DragDrop += TxtPath_DragDrop;
+        }
+
+        private void TxtPath_DragEnter(object? sender, DragEventArgs e)
+        {
+            // 仅当拖放的是文件夹时显示复制光标
+            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files != null && files.Length == 1 && Directory.Exists(files[0]))
+                    e.Effect = DragDropEffects.Copy;
+                else
+                    e.Effect = DragDropEffects.None;
+            }
+            else
+                e.Effect = DragDropEffects.None;
+        }
+
+        private void TxtPath_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files != null && files.Length == 1 && Directory.Exists(files[0]))
+                {
+                    // 修改点：使用 Control 基类设置路径，兼容自定义控件
+                    if (sender is Control control)
+                        control.Text = files[0];
+                    // 或者使用：((dynamic)sender).Text = files[0];  但建议用 Control
+                }
+            }
         }
 
         /// <summary>辅助：根据字符串设置 ModernComboBox 选中项</summary>

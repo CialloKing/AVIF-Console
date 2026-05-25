@@ -36,6 +36,7 @@
             // 
             // modernTabListControl1
             // 
+            modernTabListControl1.AllowDrop = true;
             modernTabListControl1.BackColor = Color.Transparent;
             modernTabListControl1.ContentBackColor = Color.Transparent;
             modernTabListControl1.ContentBorderColor = Color.Transparent;
@@ -60,6 +61,7 @@
             // 
             // Form1
             // 
+            AllowDrop = true;
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1264, 681);
