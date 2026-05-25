@@ -2065,89 +2065,95 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, string> _srcPixFmtCache = new();
 
-        /// <summary>
-        /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
-        /// </summary>
-        /// <summary>
-        /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
-        /// </summary>
-        /// <summary>
-        /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p
-        /// </summary>
-        /// <summary>
-        /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p
-        /// </summary>
-        /// <summary>
-        /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
-        /// 高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p。
-        /// </summary>
-        private async Task<string> GetSourcePixelFormat(string filePath)
-        {
-            // ★ 优先从统一 Probe 缓存获取
-            var info = await GetProbeInfoAsync(filePath);
-            if (info != null)
+            /// <summary>
+            /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
+            /// </summary>
+            /// <summary>
+            /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
+            /// </summary>
+            /// <summary>
+            /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p
+            /// </summary>
+            /// <summary>
+            /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p
+            /// </summary>
+            /// <summary>
+            /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
+            /// 高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p。
+            /// </summary>
+            /// <summary>
+            /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
+            /// 高位深 RGB 会保留对应位深（10‑bit），灰度映射为 yuv420p。
+            /// </summary>
+            private async Task<string> GetSourcePixelFormat(string filePath)
             {
-                string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
-
-                // 填充旧的 Alpha 缓存（如果未填充）
-                string normalizedPath = GetNormalizedPathForCache(filePath);
-                if (!_srcAlphaCache.ContainsKey(normalizedPath))
-                    _srcAlphaCache[normalizedPath] = info.HasAlpha;
-
-                // 像素格式标准化（复用原有逻辑）
-                if (fmt == "gray" || fmt.StartsWith("gray"))
+                // ★ 优先从统一 Probe 缓存获取
+                var info = await GetProbeInfoAsync(filePath);
+                if (info != null)
                 {
-                    bool is10bit = fmt.Contains("16") || fmt.Contains("10");
-                    fmt = is10bit ? "yuv420p10le" : "yuv420p";
+                    string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
+
+                    // 填充旧的 Alpha 缓存（如果未填充）
+                    string normalizedPath = GetNormalizedPathForCache(filePath);
+                    if (!_srcAlphaCache.ContainsKey(normalizedPath))
+                        _srcAlphaCache[normalizedPath] = info.HasAlpha;
+
+                    // 像素格式标准化（复用原有逻辑）
+                    if (fmt == "gray" || fmt.StartsWith("gray"))
+                    {
+                        bool is10bit = fmt.Contains("16") || fmt.Contains("10");
+                        fmt = is10bit ? "yuv420p10le" : "yuv420p";
+                    }
+                    else if (fmt.Contains("yuvj"))
+                    {
+                        fmt = fmt.Replace("yuvj", "yuv");
+                    }
+                    // ★ 修改处：扩展 RGB 格式前缀判断，涵盖 argb、abgr、rgba、bgra 等
+                    else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr") ||
+                             fmt.StartsWith("argb") || fmt.StartsWith("abgr") || fmt.StartsWith("rgba") || fmt.StartsWith("bgra"))
+                    {
+                        bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
+                                       fmt == "argb" || fmt == "abgr";
+                        if (fmt.Contains("64") && !is4Comp) is4Comp = true;
+
+                        int components = is4Comp ? 4 : 3;
+                        var match = Regex.Match(fmt, @"(\d+)");
+                        int totalBits = 0;
+                        if (match.Success) int.TryParse(match.Groups[1].Value, out totalBits);
+                        if (totalBits == 0) totalBits = components * 8;
+                        int perCompBits = totalBits / components;
+                        int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
+
+                        string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+                        if (info.HasAlpha)
+                            chromaFmt = chromaFmt.Replace("yuv", "yuva");
+                        fmt = chromaFmt;
+                    }
+
+                    if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
+
+                    // 更新旧的像素格式缓存
+                    _srcPixFmtCache[normalizedPath] = fmt;
+                    return fmt;
                 }
-                else if (fmt.Contains("yuvj"))
-                {
-                    fmt = fmt.Replace("yuvj", "yuv");
-                }
-                else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr"))
-                {
-                    bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
-                                   fmt == "argb" || fmt == "abgr";
-                    if (fmt.Contains("64") && !is4Comp) is4Comp = true;
 
-                    int components = is4Comp ? 4 : 3;
-                    var match = Regex.Match(fmt, @"(\d+)");
-                    int totalBits = 0;
-                    if (match.Success) int.TryParse(match.Groups[1].Value, out totalBits);
-                    if (totalBits == 0) totalBits = components * 8;
-                    int perCompBits = totalBits / components;
-                    int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
+                // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
+                string raw = await RunProbeAsync(_ffprobePath,
+                    $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
+                string fmtFallback = raw.Trim().ToLower();
 
-                    string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
-                    if (info.HasAlpha)
-                        chromaFmt = chromaFmt.Replace("yuv", "yuva");
-                    fmt = chromaFmt;
-                }
+                // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
+                if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
+                    fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
+                else if (fmtFallback.Contains("yuvj"))
+                    fmtFallback = fmtFallback.Replace("yuvj", "yuv");
+                else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
+                    fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
 
-                if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
-
-                // 更新旧的像素格式缓存
-                _srcPixFmtCache[normalizedPath] = fmt;
-                return fmt;
+                if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
+                _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
+                return fmtFallback;
             }
-
-            // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
-            string raw = await RunProbeAsync(_ffprobePath,
-                $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
-            string fmtFallback = raw.Trim().ToLower();
-
-            // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
-            if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
-                fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
-            else if (fmtFallback.Contains("yuvj"))
-                fmtFallback = fmtFallback.Replace("yuvj", "yuv");
-            else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
-                fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
-
-            if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
-            _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
-            return fmtFallback;
-        }
 
 
         private async Task<string> GetPixelFormatForFileAsync(string filePath, bool isLosslessMode, bool isTrulyLossless, bool hasAlpha)
