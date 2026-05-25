@@ -586,11 +586,11 @@ namespace AvifEncoder
 
 
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
-        private readonly ConcurrentDictionary<string, HashSet<string>> _fatalFmts = new();
+        // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
 
 
-
-        private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
+    private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
         private readonly SemaphoreSlim _advancedMetricSemaphore;
 
     /// <summary>
@@ -3580,18 +3580,17 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
             string lastError = "所有像素格式尝试均失败";
             string fileName = Path.GetFileName(input);
             string normalizedKey = GetNormalizedPathForCache(input);
-            var fatalSet = _fatalFmts.GetOrAdd(normalizedKey, _ => new HashSet<string>());
-
+            var fatalSet = _fatalFmts.GetOrAdd(normalizedKey, _ => new ConcurrentDictionary<string, byte>());
             foreach (var currentPixFmt in pixFmtsToTry)
             {
                 // 若该格式之前已被标记为“无法生成任何输出”，直接跳过
-                if (fatalSet.Contains(currentPixFmt))
+                if (fatalSet.ContainsKey(currentPixFmt))
                 {
                     _logger.LogInfo($"致命格式 {currentPixFmt} 已禁用，跳过 [{fileName}]");
                     continue;
                 }
 
-                var result = await TryEncodeWithPixelFormatFallback(
+            var result = await TryEncodeWithPixelFormatFallback(
                     input, output, crf, tileCols, cpuUsed, cfg, jpeg, currentPixFmt, isTrueLossless,
                     timeoutMinutes, allowParamDegrade, fileName);
 
@@ -3600,20 +3599,21 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
 
                 lastError = result.error ?? "未知错误";
 
-                // 在 EncodeToFileExAsync 的循环内，替换原有的致命标记逻辑：
-                if (result.error?.StartsWith("FATAL_NOTHING:", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    // 只有所有参数集都 Nothing 才标记
-                    fatalSet.Add(currentPixFmt);
-                    _logger.LogInfo($"致命格式 {currentPixFmt} 已记录 [{fileName}]，将不再重试");
-                }
-                // 原有的降级日志保留
+            // 在 EncodeToFileExAsync 的循环内，替换原有的致命标记逻辑：
+            // 在编码结果处理中：
+            if (result.error?.StartsWith("FATAL_NOTHING:", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                // 只有所有参数集都 Nothing 才标记
+                fatalSet.TryAdd(currentPixFmt, 0);
+                _logger.LogInfo($"致命格式 {currentPixFmt} 已记录 [{fileName}]，将不再重试");
+            }
+            // 原有的降级日志保留
 
-                // 仅当还有后续格式时才输出降级日志
-                if (currentPixFmt != pixFmtsToTry.Last())
+            // 仅当还有后续格式时才输出降级日志
+            if (currentPixFmt != pixFmtsToTry.Last())
                 {
                     string nextFmt = pixFmtsToTry[Array.IndexOf(pixFmtsToTry, currentPixFmt) + 1];
-                    if (!fatalSet.Contains(nextFmt))
+                    if (!fatalSet.ContainsKey(nextFmt))
                         _logger.LogInfo($"像素格式 {currentPixFmt} 编码失败，降级尝试 {nextFmt} ...");
                 }
             }
@@ -4383,51 +4383,53 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
-        /// <summary>
-        /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
-        /// </summary>
-        private double GetSearchScore(QualityMetrics m, string metricMode)
-        {
-            switch (metricMode?.ToLower())
+            /// <summary>
+            /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0‑1 的分数。
+            /// </summary>
+            private double GetSearchScore(QualityMetrics m, string metricMode)
             {
-                case "ssim": return m.SSIM;
-                case "psnr": return Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                case "msssim": return m.MS_SSIM;
-                case "vmaf": return m.VMAF / 100.0;
-                case "mix":
-                    double vmafNorm = m.VMAF / 100.0;
-                    double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                    return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
-                // ---------- XPSNR 原生值 ----------
-                case "xpsnr_y": return m.XPSNR_Y ?? -1;
-                case "xpsnr_u": return m.XPSNR_U ?? -1;
-                case "xpsnr_v": return m.XPSNR_V ?? -1;
-                case "xpsnr_w": return m.W_XPSNR ?? -1;
-                case "xpsnr":   // 未指定通道时默认加权 W‑XPSNR
-                    return m.W_XPSNR ?? -1;
-                // ★ 高级指标（返回原生值，搜索时可能反转）
-                case "ssimu2": return m.SSIMULACRA2 ?? -1;
-                case "butter3": return m.Butteraugli_3norm ?? -1;
-                case "gmsd": return m.GMSD ?? -1;
-                default:
-                    return m.SSIM;
+                switch (metricMode?.ToLower())
+                {
+                    case "ssim": return m.SSIM;
+                    case "psnr": return Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                    case "msssim": return m.MS_SSIM;
+                    case "vmaf":
+                        return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
+                    case "mix":
+                        if (double.IsNaN(m.VMAF)) return -1;
+                        double vmafNorm = m.VMAF / 100.0;
+                        double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                        return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
+                    // ---------- XPSNR 原生值 ----------
+                    case "xpsnr_y": return m.XPSNR_Y ?? -1;
+                    case "xpsnr_u": return m.XPSNR_U ?? -1;
+                    case "xpsnr_v": return m.XPSNR_V ?? -1;
+                    case "xpsnr_w": return m.W_XPSNR ?? -1;
+                    case "xpsnr":   // 未指定通道时默认加权 W‑XPSNR
+                        return m.W_XPSNR ?? -1;
+                    // ★ 高级指标（返回原生值，搜索时可能反转）
+                    case "ssimu2": return m.SSIMULACRA2 ?? -1;
+                    case "butter3": return m.Butteraugli_3norm ?? -1;
+                    case "gmsd": return m.GMSD ?? -1;
+                    default:
+                        return m.SSIM;
+                }
             }
-        }
 
-        /// <summary>
-        /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W‑XPSNR (6:1:1)。
-        /// 失败时各字段为 null。
-        /// </summary>
-        /// <summary>
-        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
-        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
-        /// </summary>
-        /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
-        /// <summary>
-        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
-        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
-        /// </summary>
-        private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
+    /// <summary>
+    /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W‑XPSNR (6:1:1)。
+    /// 失败时各字段为 null。
+    /// </summary>
+    /// <summary>
+    /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
+    /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+    /// </summary>
+    /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
+    /// <summary>
+    /// 计算 XPSNR 各通道分（Y/U/V）及加权 W‑XPSNR。
+    /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+    /// </summary>
+    private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
     string refPath, string distPath, string pixFmt = "yuv444p")
         {
             if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
@@ -5066,7 +5068,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             return async crf =>
             {
                 // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
-                if (_fatalFmts.TryGetValue(normalizedKey, out var fatalSet) && fatalSet.Contains(pixFmt))
+                // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
+                if (_fatalFmts.TryGetValue(normalizedKey, out var fatalSet) && fatalSet.ContainsKey(pixFmt))
                 {
                     _logger.LogInfo($"⚠️ 致命格式 {pixFmt} 已禁用，跳过 CRF={crf} [{name}]");
                     return -1;
@@ -5088,7 +5091,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     }
 
                     // 仅在 yuv420p 未被标记致命时才降级尝试
-                    if (!pixFmt.StartsWith("yuv420p") && (!_fatalFmts.TryGetValue(normalizedKey, out var fs) || !fs.Contains("yuv420p")))
+                    if (!pixFmt.StartsWith("yuv420p") && (!_fatalFmts.TryGetValue(normalizedKey, out var fs) || !fs.ContainsKey("yuv420p")))
                     {
                         m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
                         if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
