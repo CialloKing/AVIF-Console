@@ -329,7 +329,8 @@ namespace AvifEncoder
 #endif
         }
     }
-    }
+
+}
 
 
 
@@ -596,17 +597,17 @@ namespace AvifEncoder
     /// 根据目标 VMAF 返回先验中位数及大致搜索范围（基于真实图片统计）
     /// 使用分段线性插值，整数点完全准确，外推采用局部斜率
     /// </summary>
-    private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> VmafPriorTable = new()
-{
-    // 数据使用实际中位数，Lo/Hi 为真实 min/max
-    (90, 38, 26, 58),
-    (91, 36, 24, 57),
-    (92, 34, 20, 56),
-    (93, 32, 16, 54),
-    (94, 29, 13, 52),
-    (95, 25,  9, 49),
-    (96, 19,  5, 43),
-};
+        private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> VmafPriorTable = new()
+    {
+        // 数据使用实际中位数，Lo/Hi 为真实 min/max
+        (90, 38, 26, 58),
+        (91, 36, 24, 57),
+        (92, 34, 20, 56),
+        (93, 32, 16, 54),
+        (94, 29, 13, 52),
+        (95, 25,  9, 49),
+        (96, 19,  5, 43),
+    };
 
         public static (int median, int lo, int hi) GetPriorFromVmaf(double targetVmaf)
         {
@@ -1462,68 +1463,75 @@ namespace AvifEncoder
                     }
                 };
 
-                process.Start();
-                var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                var stderrTask = process.StandardError.ReadToEndAsync();
+                    process.Start();
 
-                var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
-                using var timeoutCts = new CancellationTokenSource(timeout);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
-
-                try
-                {
-                    await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
-                }
-                catch (OperationCanceledException)
-                {
-                    if (!process.HasExited)
+                    // ★ 仅在 Windows 平台将子进程加入全局 Job Object
+                    if (OperatingSystem.IsWindows())
                     {
-                        try { process.Kill(entireProcessTree: true); } catch { }
-                        try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                        JobObjectHelper.AssignProcess(process);
                     }
-                }
 
-                string stdout = await stdoutTask;
-                string stderr = await stderrTask;
-                int exitCode = process.ExitCode;
+                    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                    var stderrTask = process.StandardError.ReadToEndAsync();
 
-                if (!string.IsNullOrWhiteSpace(stderr))
-                    _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
+                    using var timeoutCts = new CancellationTokenSource(timeout);
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                        _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
 
-                if (exitCode != 0)
-                {
-                    _logger.LogInfo($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
-                    return null;
-                }
-
-                if (!File.Exists(jsonPath))
-                {
-                    _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
-                    return null;
-                }
-
-                string json = await File.ReadAllTextAsync(jsonPath);
-                QualityMetrics? metrics = ParseVmafJson(json);
-                if (metrics == null) return null;
-
-                // 合并 stdout 与 stderr，统一提取 VMAF，避免因输出位置不同而漏掉
-                string combinedOutput = stdout + "\n" + stderr;
-                double? vmafFromConsole = TryExtractVmaf(combinedOutput);
-
-                if (vmafFromConsole.HasValue)
-                {
-                    // 控制台提取成功，覆盖 JSON 值（部分版本 JSON 中 VMAF 缺失或为假值）
-                    metrics.VMAF = vmafFromConsole.Value;
-                }
-                else
-                {
-                    // 控制台也未提取到 → 检查 JSON 是否已给出有效 VMAF
-                    if (double.IsNaN(metrics.VMAF))
+                    try
                     {
-                        _logger.LogInfo($"未提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
+                        await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
                     }
-                }
+                    catch (OperationCanceledException)
+                    {
+                        if (!process.HasExited)
+                        {
+                            try { process.Kill(entireProcessTree: true); } catch { }
+                            try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                        }
+                    }
+
+                    string stdout = await stdoutTask;
+                    string stderr = await stderrTask;
+                    int exitCode = process.ExitCode;
+
+                    if (!string.IsNullOrWhiteSpace(stderr))
+                        _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+
+                    if (exitCode != 0)
+                    {
+                        _logger.LogInfo($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                        return null;
+                    }
+
+                    if (!File.Exists(jsonPath))
+                    {
+                        _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
+                        return null;
+                    }
+
+                    string json = await File.ReadAllTextAsync(jsonPath);
+                    QualityMetrics? metrics = ParseVmafJson(json);
+                    if (metrics == null) return null;
+
+                    // 合并 stdout 与 stderr，统一提取 VMAF，避免因输出位置不同而漏掉
+                    string combinedOutput = stdout + "\n" + stderr;
+                    double? vmafFromConsole = TryExtractVmaf(combinedOutput);
+
+                    if (vmafFromConsole.HasValue)
+                    {
+                        // 控制台提取成功，覆盖 JSON 值（部分版本 JSON 中 VMAF 缺失或为假值）
+                        metrics.VMAF = vmafFromConsole.Value;
+                    }
+                    else
+                    {
+                        // 控制台也未提取到 → 检查 JSON 是否已给出有效 VMAF
+                        if (double.IsNaN(metrics.VMAF))
+                        {
+                            _logger.LogInfo($"未提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
+                        }
+                    }
 
                 return metrics;
             }
@@ -5430,6 +5438,139 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             return null;
         }
     }
+
+
+        /// <summary>
+        /// 全局 Windows Job Object，用于将子进程生命周期与主进程绑定。
+        /// 主进程退出（包括崩溃、taskkill、关窗等）时，操作系统自动终止本 Job 内的所有子进程。
+        /// </summary>
+        internal static class JobObjectHelper
+        {
+            private static IntPtr hJob;
+            private static readonly bool isSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+            static JobObjectHelper()
+            {
+                if (!isSupported) return;
+
+                // 1. 创建 Job Object
+                IntPtr tempJob = CreateJobObject(IntPtr.Zero, null);
+                if (tempJob == IntPtr.Zero)
+                {
+                    Trace.TraceError($"无法创建全局 Job Object。Win32 错误码: {Marshal.GetLastWin32Error()}");
+                    return;
+                }
+
+                // 2. 设置 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                var basicLimits = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                {
+                    BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+                    {
+                        LimitFlags = (uint)JOB_OBJECT_LIMIT.KILL_ON_JOB_CLOSE
+                    }
+                };
+
+                int size = Marshal.SizeOf(basicLimits);
+                IntPtr ptr = Marshal.AllocHGlobal(size);
+                Marshal.StructureToPtr(basicLimits, ptr, false);
+                try
+                {
+                    if (!SetInformationJobObject(tempJob, JOBOBJECTINFOCLASS.ExtendedLimitInformation, ptr, (uint)size))
+                    {
+                        Trace.TraceError($"无法设置 Job Object 的 KILL_ON_JOB_CLOSE 标志。Win32 错误码: {Marshal.GetLastWin32Error()}");
+                        CloseHandle(tempJob);
+                        return;
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(ptr);
+                }
+
+                // 3. 设置成功后才赋值给静态字段
+                hJob = tempJob;
+                Trace.WriteLine("全局 Job Object 已创建并配置完成。");
+            }
+
+            /// <summary>
+            /// 将 <paramref name="process"/> 分配至全局 Job Object。
+            /// 失败时会记录错误，但不影响正常流程（仅表示无法启用额外保护）。
+            /// </summary>
+            public static bool AssignProcess(Process process)
+            {
+                if (!isSupported || hJob == IntPtr.Zero) return false;
+
+                bool ok = AssignProcessToJobObject(hJob, process.Handle);
+                if (!ok)
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    Trace.TraceWarning($"AssignProcessToJobObject 失败，PID={process.Id}，Win32 错误码: {err}");
+                }
+                return ok;
+            }
+
+            // ---------- P/Invoke 定义 ----------
+            [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool SetInformationJobObject(
+                IntPtr hJob, JOBOBJECTINFOCLASS JobObjectInfoClass,
+                IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool CloseHandle(IntPtr hObject);
+
+            [Flags]
+            private enum JOB_OBJECT_LIMIT : uint
+            {
+                KILL_ON_JOB_CLOSE = 0x2000
+            }
+
+            private enum JOBOBJECTINFOCLASS
+            {
+                ExtendedLimitInformation = 9
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+            {
+                public long PerProcessUserTimeLimit;
+                public long PerJobUserTimeLimit;
+                public uint LimitFlags;
+                public UIntPtr MinimumWorkingSetSize;
+                public UIntPtr MaximumWorkingSetSize;
+                public uint ActiveProcessLimit;
+                public UIntPtr Affinity;
+                public uint PriorityClass;
+                public uint SchedulingClass;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct IO_COUNTERS
+            {
+                public ulong ReadOperationCount;
+                public ulong WriteOperationCount;
+                public ulong OtherOperationCount;
+                public ulong ReadTransferCount;
+                public ulong WriteTransferCount;
+                public ulong OtherTransferCount;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+            {
+                public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+                public IO_COUNTERS IoInfo;
+                public UIntPtr ProcessMemoryLimit;
+                public UIntPtr JobMemoryLimit;
+                public UIntPtr PeakProcessMemoryUsed;
+                public UIntPtr PeakJobMemoryUsed;
+            }
+        }
 
 
 

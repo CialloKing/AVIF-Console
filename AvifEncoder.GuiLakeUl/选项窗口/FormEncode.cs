@@ -45,6 +45,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             AttachAllEvents();
 
             SetupDragDrop();   // ← 新增此行
+            this.FormClosing += FormEncode_FormClosing;
         }
 
         private void SetupDragDrop()
@@ -646,7 +647,14 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 progressBar1.Value = 100;
             }
         }
-
+        private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            if (_isEncoding)
+            {
+                // 主动取消编码任务（内部已通过 Job Object 兜底，此处只是提前通知）
+                _cts?.Cancel();
+            }
+        }
         private void btnStop_Click(object? sender, EventArgs e)
         {
             if (_cts != null && !_cts.IsCancellationRequested)

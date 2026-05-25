@@ -15,6 +15,8 @@ namespace AvifEncoder.Gui
         private bool _isApplyingPreset = false;
         // 预设对应选项文本（与 CliPreset 枚举 + 自定义）
         private const string CustomPresetName = "自定义";
+        private AvifPipeline? _pipeline;
+        private CancellationTokenSource? _globalCts;
         private readonly Dictionary<string, CliPreset?> _presetMap = new()
         {
             { CustomPresetName, null },
@@ -110,8 +112,13 @@ namespace AvifEncoder.Gui
 
             // 启动时异步检测编码器和外部工具，将结果输出到日志
             this.Load += async (s, e) => await PerformStartupCheckAsync();
+            // 绑定窗口关闭事件
+            this.FormClosing += Form1_FormClosing;   // ← 新增绑定
         }
-
+        private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            _pipeline?.Dispose();
+        }
         private void ApplyPresetToUI(CliPreset preset)
         {
             _isApplyingPreset = true;
@@ -445,7 +452,13 @@ namespace AvifEncoder.Gui
                         UpdateProgress(percent);
                 });
 
-                using var pipeline = new AvifPipeline(
+                // 创建取消令牌供外部使用
+                _globalCts = new CancellationTokenSource();
+                // 注意：AvifPipeline 内部会创建自己的 _globalCts，我们可以用外部令牌取消
+                // 但更好的做法是从外部控制。这里我们只在关闭时通知 pipeline 取消。
+                // 我们直接将此令牌传入 pipeline 构造函数？目前构造函数未暴露令牌。
+                // 简便：记录 pipeline 实例，关闭时调用其 Dispose（会触发取消）。
+                _pipeline = new AvifPipeline(
                     txtInput.Text, txtOutput.Text, config,
                     logger: logger,
                     processRunner: new RealProcessRunner(),
@@ -453,7 +466,15 @@ namespace AvifEncoder.Gui
                     cacheManager: new CacheManager(),
                     progress: progress);
 
-                await pipeline.RunAsync();
+                try
+                {
+                    await _pipeline.RunAsync();
+                }
+                finally
+                {
+                    _pipeline?.Dispose();
+                    _pipeline = null;
+                }
 
                 AppendLog("===== 全部完成 =====");
                 MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
