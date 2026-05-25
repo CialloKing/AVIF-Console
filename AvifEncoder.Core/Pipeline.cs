@@ -2023,27 +2023,40 @@ namespace AvifEncoder
 
 
 
-        /// <summary>
-        /// 确保路径在 Windows 上使用长路径格式（添加 \\?\ 前缀），
-        /// 从而突破 260 字符的 MAX_PATH 限制。
-        /// </summary>
-        private static string EnsureLongPath(string path)
+    /// <summary>
+    /// 确保路径在 Windows 上使用长路径格式（添加 \\?\ 前缀），
+    /// 从而突破 260 字符的 MAX_PATH 限制。
+    /// </summary>
+    private static string EnsureLongPath(string path)
+    {
+        if (OperatingSystem.IsWindows())
         {
-            if (OperatingSystem.IsWindows() && !path.StartsWith(@"\\?\"))
-            {
-                // 如果是根路径，直接添加前缀；否则 Path.GetFullPath 会规范化
-                string full = Path.GetFullPath(path);
-                if (!full.StartsWith(@"\\?\"))
-                    full = @"\\?\" + full;
-                return full;
-            }
-            return path;
-        }
+            // 已添加过长路径前缀，直接返回
+            if (path.StartsWith(@"\\?\"))
+                return path;
 
-        /// <summary>
-        /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
-        /// </summary>
-        private async Task<bool> SourceHasAlpha(string filePath)
+            string full = Path.GetFullPath(path);
+
+            // 处理 UNC 路径：\\server\share\... → \\?\UNC\server\share\...
+            if (full.StartsWith(@"\\") && !full.StartsWith(@"\\?\"))
+            {
+                // UNC 路径有两个开头的反斜杠，将第一个反斜杠替换为 \\?\UNC
+                return @"\\?\UNC" + full.Substring(1);
+            }
+            else
+            {
+                // 普通盘符路径（如 C:\...）
+                return @"\\?\" + full;
+            }
+        }
+        // 非 Windows 系统原样返回（Linux/macOS 无需处理）
+        return path;
+    }
+
+    /// <summary>
+    /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
+    /// </summary>
+    private async Task<bool> SourceHasAlpha(string filePath)
         {
             // ★ 优先从统一 Probe 缓存获取
             var info = await GetProbeInfoAsync(filePath);
