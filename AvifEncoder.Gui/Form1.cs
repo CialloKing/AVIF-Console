@@ -124,7 +124,7 @@ namespace AvifEncoder.Gui
             _isApplyingPreset = true;
             try
             {
-                var cfg = AvifPipeline.CreateFromPreset(preset);
+                var cfg = PresetConfig.CreateFromPreset(preset);
 
                 chkSearch.Checked = cfg.UseCRFSearch;
                 if (cfg.UseCRFSearch)

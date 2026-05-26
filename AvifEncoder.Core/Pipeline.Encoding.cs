@@ -238,7 +238,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                                                 IsJpeg(input), currentPixFmt.Contains("10le") ? 10 : 8,
                                                 encW, encH, param.rowMt);   // ¡ï ÐÂÔö param.rowMt
 
-            string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{Sha256(cacheKey)}.avif");
+            string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{EncodeHelpers.Sha256(cacheKey)}.avif");
 
             // »º´æÃüÖÐ
             if (_cache.TryGetEncode(cacheKey, out var cached) && File.Exists(cached.file))

@@ -1067,24 +1067,7 @@ namespace AvifEncoder
 
 
 
-        public static PresetConfig CreateFromPreset(CliPreset preset)
-        {
-            return preset switch
-            {
-                CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91, UseCRFSearch = false },
-                CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.97, UseCRFSearch = true },
-                CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.97, UseCRFSearch = true },
-                CliPreset.Extreme => new PresetConfig { BaseCRF = 35, TargetSSIM = 0.99, UseCRFSearch = true },
-                _ => throw new ArgumentOutOfRangeException(nameof(preset))
-            };
-        }
 
-
-        private static string Sha256(string text)
-        {
-            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-            return Convert.ToHexString(hash)[..16];
-        }
 
 
 

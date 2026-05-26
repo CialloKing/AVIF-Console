@@ -1,4 +1,4 @@
-ï»¿using AvifEncoder;
+using AvifEncoder;
 using LakeUI;
 using System;
 using System.Collections.Generic;
@@ -10,11 +10,11 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using static AvifEncoder.PresetConfig;
 
-namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
+namespace AvifEncoder.GuiLakeUl.Ñ¡Ïî´°¿Ú
 {
     public partial class FormEncode : Form
     {
-        private const string CustomPresetName = "è‡ªå®šä¹‰";
+        private const string CustomPresetName = "×Ô¶¨Òå";
         private bool _isApplyingPreset;
         private readonly Dictionary<string, CliPreset?> _presetMap = new()
         {
@@ -44,18 +44,18 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             SetComboBoxItem(cmbPreset, "balanced");
             AttachAllEvents();
 
-            SetupDragDrop();   // â† æ–°å¢æ­¤è¡Œ
+            SetupDragDrop();   // ¡û ĞÂÔö´ËĞĞ
             this.FormClosing += FormEncode_FormClosing;
         }
 
         private void SetupDragDrop()
         {
-            // ä¸ºè¾“å…¥è·¯å¾„æ–‡æœ¬æ¡†å¯ç”¨æ‹–æ”¾
+            // ÎªÊäÈëÂ·¾¶ÎÄ±¾¿òÆôÓÃÍÏ·Å
             txtInput.AllowDrop = true;
             txtInput.DragEnter += TxtPath_DragEnter;
             txtInput.DragDrop += TxtPath_DragDrop;
 
-            // ä¸ºè¾“å‡ºè·¯å¾„æ–‡æœ¬æ¡†å¯ç”¨æ‹–æ”¾
+            // ÎªÊä³öÂ·¾¶ÎÄ±¾¿òÆôÓÃÍÏ·Å
             txtOutput.AllowDrop = true;
             txtOutput.DragEnter += TxtPath_DragEnter;
             txtOutput.DragDrop += TxtPath_DragDrop;
@@ -63,7 +63,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
 
         private void TxtPath_DragEnter(object? sender, DragEventArgs e)
         {
-            // ä»…å½“æ‹–æ”¾çš„æ˜¯æ–‡ä»¶å¤¹æ—¶æ˜¾ç¤ºå¤åˆ¶å…‰æ ‡
+            // ½öµ±ÍÏ·ÅµÄÊÇÎÄ¼ş¼ĞÊ±ÏÔÊ¾¸´ÖÆ¹â±ê
             if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
@@ -83,15 +83,15 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                 string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
                 if (files != null && files.Length == 1 && Directory.Exists(files[0]))
                 {
-                    // ä¿®æ”¹ç‚¹ï¼šä½¿ç”¨ Control åŸºç±»è®¾ç½®è·¯å¾„ï¼Œå…¼å®¹è‡ªå®šä¹‰æ§ä»¶
+                    // ĞŞ¸Äµã£ºÊ¹ÓÃ Control »ùÀàÉèÖÃÂ·¾¶£¬¼æÈİ×Ô¶¨Òå¿Ø¼ş
                     if (sender is Control control)
                         control.Text = files[0];
-                    // æˆ–è€…ä½¿ç”¨ï¼š((dynamic)sender).Text = files[0];  ä½†å»ºè®®ç”¨ Control
+                    // »òÕßÊ¹ÓÃ£º((dynamic)sender).Text = files[0];  µ«½¨ÒéÓÃ Control
                 }
             }
         }
 
-        /// <summary>è¾…åŠ©ï¼šæ ¹æ®å­—ç¬¦ä¸²è®¾ç½® ModernComboBox é€‰ä¸­é¡¹</summary>
+        /// <summary>¸¨Öú£º¸ù¾İ×Ö·û´®ÉèÖÃ ModernComboBox Ñ¡ÖĞÏî</summary>
         private void SetComboBoxItem(ModernComboBox combo, string item)
         {
             int idx = combo.Items.IndexOf(item);
@@ -107,7 +107,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             cmbEncoder.Items.AddRange(new string[] { "libaom-av1", "libsvtav1", "librav1e",
                                                       "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" });
             SetComboBoxItem(cmbEncoder, "libaom-av1");
-            UpdateCpuUsedLimits();   // æ·»åŠ æ­¤è¡Œï¼Œä½¿åˆå§‹ä¸Šé™ä¸ç¼–ç å™¨åŒ¹é…
+            UpdateCpuUsedLimits();   // Ìí¼Ó´ËĞĞ£¬Ê¹³õÊ¼ÉÏÏŞÓë±àÂëÆ÷Æ¥Åä
 
             numJobs.Minimum = 0; numJobs.Maximum = 128; numJobs.Value = 0;
 
@@ -131,7 +131,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.AddRange(new string[] { "æ— ", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
+            cmbQualityMode.Items.AddRange(new string[] { "ÎŞ", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
                                                           "SSIMULACRA2", "Butteraugli 3-norm", "GMSD","Mix" });
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
@@ -151,12 +151,12 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             numMaxRes.Minimum = 0; numMaxRes.Maximum = 10000; numMaxRes.Value = 0;
             chkOutputFullRes.Checked = false;
             cmbConflict.Items.Clear();
-            cmbConflict.Items.AddRange(new string[] { "è‡ªåŠ¨é‡å‘½å", "è¦†ç›–å·²å­˜åœ¨æ–‡ä»¶", "è·³è¿‡å·²å­˜åœ¨æ–‡ä»¶" });
+            cmbConflict.Items.AddRange(new string[] { "×Ô¶¯ÖØÃüÃû", "¸²¸ÇÒÑ´æÔÚÎÄ¼ş", "Ìø¹ıÒÑ´æÔÚÎÄ¼ş" });
             cmbConflict.SelectedIndex = 0;
             chkSerialEncode.Checked = false;
             chkPriorSearch.Checked = false;
             chkProxy.Checked = false;
-            // éå†æ¨¡å¼å¼€å…³
+            // ±éÀúÄ£Ê½¿ª¹Ø
             chkSweep.Checked = false;
         }
 
@@ -228,7 +228,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
         }
 
         // ------------------------------------------------
-        // å…³é”®ä¿®å¤ï¼šè®¾ç½® numQualityValue çš„æœ‰æ•ˆèŒƒå›´
+        // ¹Ø¼üĞŞ¸´£ºÉèÖÃ numQualityValue µÄÓĞĞ§·¶Î§
         // ------------------------------------------------
         private void SetQualityRange(string mode)
         {
@@ -270,7 +270,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                     numQualityValue.Increment = 0.001;
                     break;
             }
-            numQualityValue.Enabled = mode != "æ— ";
+            numQualityValue.Enabled = mode != "ÎŞ";
         }
 
         private void ApplyPresetToUI(CliPreset preset)
@@ -278,7 +278,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             _isApplyingPreset = true;
             try
             {
-                var cfg = AvifPipeline.CreateFromPreset(preset);
+                var cfg = PresetConfig.CreateFromPreset(preset);
 
                 chkSearch.Checked = cfg.UseCRFSearch;
                 if (cfg.UseCRFSearch)
@@ -306,7 +306,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                 string metricMode = cfg.MetricMode ?? "vmaf";
                 SetComboBoxItem(cmbMetric, metricMode);
 
-                // --- è´¨é‡ç›®æ ‡ ---
+                // --- ÖÊÁ¿Ä¿±ê ---
                 if (!string.IsNullOrEmpty(metricMode))
                 {
                     string qMode = metricMode switch
@@ -317,10 +317,10 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                         "msssim" => "MS-SSIM",
                         "mix" => "Mix",
                         "xpsnr" => "XPSNR",
-                        _ => "æ— "
+                        _ => "ÎŞ"
                     };
                     SetComboBoxItem(cmbQualityMode, qMode);
-                    // â˜… æ‰‹åŠ¨åŒæ­¥èŒƒå›´ï¼Œé˜²æ­¢ combo äº‹ä»¶å»¶è¿Ÿå¯¼è‡´è¶Šç•Œ
+                    // ¡ï ÊÖ¶¯Í¬²½·¶Î§£¬·ÀÖ¹ combo ÊÂ¼şÑÓ³Ùµ¼ÖÂÔ½½ç
                     SetQualityRange(qMode);
 
                     double rawVal = metricMode switch
@@ -329,8 +329,8 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                         "psnr" => cfg.TargetSSIM * 20 + 30,
                         _ => cfg.TargetSSIM
                     };
-                    // å®‰å…¨è°ƒæ•´æ§ä»¶èŒƒå›´ï¼ˆMaximum / Minimum ä¸º double ç±»å‹ï¼‰
-                    // å®‰å…¨èµ‹å€¼ï¼ˆå‡ä¸º double ç±»å‹ï¼‰
+                    // °²È«µ÷Õû¿Ø¼ş·¶Î§£¨Maximum / Minimum Îª double ÀàĞÍ£©
+                    // °²È«¸³Öµ£¨¾ùÎª double ÀàĞÍ£©
                     if (rawVal > numQualityValue.Maximum)
                         numQualityValue.Maximum = rawVal;
                     if (rawVal < numQualityValue.Minimum)
@@ -368,7 +368,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             if (mode == null) return;
 
             SetQualityRange(mode);
-            // æ ¹æ®æ¨¡å¼è®¾ç½®é»˜è®¤å€¼ï¼ˆä»…å½“æ‰‹åŠ¨åˆ‡æ¢æ—¶ä½¿ç”¨ï¼‰
+            // ¸ù¾İÄ£Ê½ÉèÖÃÄ¬ÈÏÖµ£¨½öµ±ÊÖ¶¯ÇĞ»»Ê±Ê¹ÓÃ£©
             switch (mode)
             {
                 case "VMAF": numQualityValue.Value = 95; break;
@@ -412,13 +412,13 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                 }
             }
             finally { _isApplyingPreset = false; }
-            // æ— æŸæ¨¡å¼å‹¾é€‰æ—¶è‡ªåŠ¨å…³é—­éå†æ¨¡å¼
+            // ÎŞËğÄ£Ê½¹´Ñ¡Ê±×Ô¶¯¹Ø±Õ±éÀúÄ£Ê½
             if (chkLossless.Checked && chkSweep.Checked)
                 chkSweep.Checked = false;
             MarkCustom(sender, e);
         }
 
-        /// <summary> æ ¹æ®éå†æ¨¡å¼å¼€å…³çŠ¶æ€æ›´æ–°ç›¸å…³æ§ä»¶çš„å¯ç”¨/ç¦ç”¨ </summary>
+        /// <summary> ¸ù¾İ±éÀúÄ£Ê½¿ª¹Ø×´Ì¬¸üĞÂÏà¹Ø¿Ø¼şµÄÆôÓÃ/½ûÓÃ </summary>
         private void UpdateSweepControlsState(bool sweepEnabled)
         {
             bool lossless = chkLossless.Checked;
@@ -429,7 +429,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             if (sweepEnabled)
             {
                 chkSearch.Checked = false;
-                // å¼ºåˆ¶åˆ‡æ¢åˆ°èŒƒå›´æ¨¡å¼ï¼ˆè‹¥è¿˜æ²¡åˆ‡ï¼‰
+                // Ç¿ÖÆÇĞ»»µ½·¶Î§Ä£Ê½£¨Èô»¹Ã»ÇĞ£©
                 if (!rbCrfRange.Checked)
                 {
                     numCrfMin.Value = numCrfFix.Value;
@@ -447,12 +447,12 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                 "libsvtav1" => 13,
                 "librav1e" => 10,
                 "libaom-av1" => 8,
-                _ => 8 // ç¡¬ä»¶ç¼–ç å™¨ç­‰é»˜è®¤ä»ä¸º 8ï¼Œåç»­å¯é’ˆå¯¹æ€§ç¦ç”¨æ§ä»¶
+                _ => 8 // Ó²¼ş±àÂëÆ÷µÈÄ¬ÈÏÈÔÎª 8£¬ºóĞø¿ÉÕë¶ÔĞÔ½ûÓÃ¿Ø¼ş
             };
             numSearchCpuUsed.Maximum = maxCpu;
             numFinalCpuUsed.Maximum = maxCpu;
 
-            // å½“å‰å€¼è‹¥è¶…å‡ºæ–°ä¸Šé™åˆ™å¼ºåˆ¶æ‹‰å›
+            // µ±Ç°ÖµÈô³¬³öĞÂÉÏÏŞÔòÇ¿ÖÆÀ­»Ø
             if (numSearchCpuUsed.Value > maxCpu)
                 numSearchCpuUsed.Value = maxCpu;
             if (numFinalCpuUsed.Value > maxCpu)
@@ -467,20 +467,20 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             {
                 if (chkLossless.Checked)
                 {
-                    MessageBox.Show("æ— æŸæ¨¡å¼ä¸‹æ— æ³•ä½¿ç”¨éå†æ¨¡å¼ã€‚", "æç¤º",
+                    MessageBox.Show("ÎŞËğÄ£Ê½ÏÂÎŞ·¨Ê¹ÓÃ±éÀúÄ£Ê½¡£", "ÌáÊ¾",
                                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                     chkSweep.Checked = false;
                     return;
                 }
 
-                // è®°å½•åŸCRFæ¨¡å¼ï¼Œä¾›å–æ¶ˆéå†æ—¶æ¢å¤
+                // ¼ÇÂ¼Ô­CRFÄ£Ê½£¬¹©È¡Ïû±éÀúÊ±»Ö¸´
                 _sweepPreviousCrfRangeMode = rbCrfRange.Checked;
-                chkSweep.Text = "éå†æ¨¡å¼ (æœç´¢å·²ç¦ç”¨)";
+                chkSweep.Text = "±éÀúÄ£Ê½ (ËÑË÷ÒÑ½ûÓÃ)";
             }
             else
             {
-                chkSweep.Text = "éå†æ¨¡å¼ (--sweep)";
-                // æ¢å¤åˆ‡æ¢å‰çš„CRFæ¨¡å¼ï¼ˆè‹¥ä¸Šæ¬¡è®°å½•ä¸ºå›ºå®šæ¨¡å¼ï¼‰
+                chkSweep.Text = "±éÀúÄ£Ê½ (--sweep)";
+                // »Ö¸´ÇĞ»»Ç°µÄCRFÄ£Ê½£¨ÈôÉÏ´Î¼ÇÂ¼Îª¹Ì¶¨Ä£Ê½£©
                 if (!_sweepPreviousCrfRangeMode)
                     rbCrfFix.Checked = true;
             }
@@ -509,17 +509,17 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             string outputDir = txtOutput.Text.Trim('"').Trim();
             if (string.IsNullOrWhiteSpace(inputDir) || string.IsNullOrWhiteSpace(outputDir))
             {
-                MessageBox.Show("è¯·è¾“å…¥è¾“å…¥å’Œè¾“å‡ºç›®å½•", "æç¤º", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("ÇëÊäÈëÊäÈëºÍÊä³öÄ¿Â¼", "ÌáÊ¾", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             if (_isEncoding)
             {
-                MessageBox.Show("ç¼–ç æ­£åœ¨è¿›è¡Œä¸­â€¦", "æç¤º", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("±àÂëÕıÔÚ½øĞĞÖĞ¡­", "ÌáÊ¾", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             if (!Directory.Exists(inputDir))
             {
-                MessageBox.Show($"è¾“å…¥ç›®å½•ä¸å­˜åœ¨:\n{inputDir}", "é”™è¯¯", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"ÊäÈëÄ¿Â¼²»´æÔÚ:\n{inputDir}", "´íÎó", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -529,7 +529,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                                  .ToList();
             if (files.Count == 0)
             {
-                MessageBox.Show($"è¾“å…¥ç›®å½•ä¸­æ²¡æœ‰æ”¯æŒçš„å›¾ç‰‡æ–‡ä»¶:\n{inputDir}", "æç¤º", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"ÊäÈëÄ¿Â¼ÖĞÃ»ÓĞÖ§³ÖµÄÍ¼Æ¬ÎÄ¼ş:\n{inputDir}", "ÌáÊ¾", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -537,15 +537,15 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             btnStart.Enabled = false;
             btnStop.Enabled = true;
             progressBar1.Value = 0;
-            // ä»»åŠ¡æ è¿›åº¦ï¼šåˆå§‹ Normal çŠ¶æ€ï¼Œè¿›åº¦ 0/100
+            // ÈÎÎñÀ¸½ø¶È£º³õÊ¼ Normal ×´Ì¬£¬½ø¶È 0/100
             SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, 0u, 100u);
 
             try
             {
-                LogPage?.AppendLog("===== å¼€å§‹ç¼–ç  =====");
-                LogPage?.AppendLog($"è¾“å…¥ç›®å½•: {inputDir}");
-                LogPage?.AppendLog($"è¾“å‡ºç›®å½•: {outputDir}");
-                LogPage?.AppendLog($"å‘ç°å›¾ç‰‡: {files.Count} å¼ ");
+                LogPage?.AppendLog("===== ¿ªÊ¼±àÂë =====");
+                LogPage?.AppendLog($"ÊäÈëÄ¿Â¼: {inputDir}");
+                LogPage?.AppendLog($"Êä³öÄ¿Â¼: {outputDir}");
+                LogPage?.AppendLog($"·¢ÏÖÍ¼Æ¬: {files.Count} ÕÅ");
 
 
 
@@ -583,19 +583,19 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                     }
                     catch (OperationCanceledException)
                     {
-                        LogPage?.AppendLog("ç¼–ç å·²è¢«ç”¨æˆ·å–æ¶ˆã€‚");
-                        MessageBox.Show("ç¼–ç å·²å–æ¶ˆã€‚", "ä¿¡æ¯", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        LogPage?.AppendLog("±àÂëÒÑ±»ÓÃ»§È¡Ïû¡£");
+                        MessageBox.Show("±àÂëÒÑÈ¡Ïû¡£", "ĞÅÏ¢", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
                 }
 
-                LogPage?.AppendLog("===== å…¨éƒ¨å®Œæˆ =====");
-                MessageBox.Show("è½¬æ¢å®Œæˆï¼", "ä¿¡æ¯", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LogPage?.AppendLog("===== È«²¿Íê³É =====");
+                MessageBox.Show("×ª»»Íê³É£¡", "ĞÅÏ¢", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                LogPage?.AppendLog($"ä¸¥é‡é”™è¯¯: {ex.Message}\n{ex.StackTrace}");
-                MessageBox.Show($"é”™è¯¯: {ex.Message}", "é”™è¯¯", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogPage?.AppendLog($"ÑÏÖØ´íÎó: {ex.Message}\n{ex.StackTrace}");
+                MessageBox.Show($"´íÎó: {ex.Message}", "´íÎó", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -604,7 +604,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
                 progressBar1.Value = 100;
-                // æ¸…é™¤ä»»åŠ¡æ è¿›åº¦ï¼ˆæ¢å¤æ— è¿›åº¦çŠ¶æ€ï¼‰
+                // Çå³ıÈÎÎñÀ¸½ø¶È£¨»Ö¸´ÎŞ½ø¶È×´Ì¬£©
                 SysTaskBarProgress.Clear(this.Handle);
             }
         }
@@ -612,7 +612,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
         {
             if (_isEncoding)
             {
-                // ä¸»åŠ¨å–æ¶ˆç¼–ç ä»»åŠ¡ï¼ˆå†…éƒ¨å·²é€šè¿‡ Job Object å…œåº•ï¼Œæ­¤å¤„åªæ˜¯æå‰é€šçŸ¥ï¼‰
+                // Ö÷¶¯È¡Ïû±àÂëÈÎÎñ£¨ÄÚ²¿ÒÑÍ¨¹ı Job Object ¶µµ×£¬´Ë´¦Ö»ÊÇÌáÇ°Í¨Öª£©
                 _cts?.Cancel();
             }
         }
@@ -620,16 +620,16 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
         {
             if (_cts != null && !_cts.IsCancellationRequested)
             {
-                LogPage?.AppendLog("æ­£åœ¨è¯·æ±‚å–æ¶ˆç¼–ç ...");
+                LogPage?.AppendLog("ÕıÔÚÇëÇóÈ¡Ïû±àÂë...");
                 _cts.Cancel();
                 btnStop.Enabled = false;
-                // ä»»åŠ¡æ è¿›åº¦è®¾ä¸ºæš‚åœçŠ¶æ€ï¼ˆå¯é€‰ï¼‰
+                // ÈÎÎñÀ¸½ø¶ÈÉèÎªÔİÍ£×´Ì¬£¨¿ÉÑ¡£©
                 SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
             }
         }
 
         /// <summary>
-        /// ä» UI æ§ä»¶æ”¶é›†ç¼–ç å‚æ•°ï¼Œæ„å»º PresetConfigã€‚
+        /// ´Ó UI ¿Ø¼şÊÕ¼¯±àÂë²ÎÊı£¬¹¹½¨ PresetConfig¡£
         /// </summary>
         private PresetConfig BuildConfigFromUI()
         {
@@ -710,7 +710,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
 
             string? qMode = cmbQualityMode
                 .Items[cmbQualityMode.SelectedIndex]?.ToString();
-            if (!string.IsNullOrEmpty(qMode) && qMode != "æ— ")
+            if (!string.IsNullOrEmpty(qMode) && qMode != "ÎŞ")
             {
                 double rawValue = (double)numQualityValue.Value;
                 string metricMode = qMode.ToLower() switch
@@ -759,7 +759,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
             int clamped = Math.Max(0, Math.Min(percent, 100));
             progressBar1.Value = clamped;
-            // åŒæ­¥ä»»åŠ¡æ è¿›åº¦ï¼ˆçŠ¶æ€ä¸º Normalï¼Œè¿›åº¦å€¼ 0~100ï¼‰
+            // Í¬²½ÈÎÎñÀ¸½ø¶È£¨×´Ì¬Îª Normal£¬½ø¶ÈÖµ 0~100£©
             SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
         }
 
@@ -774,7 +774,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
         }
 
         /// <summary>
-        /// ä» AppConfig æ¢å¤ç¼–ç è®¾ç½®åˆ° UI æ§ä»¶ã€‚
+        /// ´Ó AppConfig »Ö¸´±àÂëÉèÖÃµ½ UI ¿Ø¼ş¡£
         /// </summary>
         public void ApplyConfig(AppConfig cfg)
         {
@@ -817,7 +817,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
                     SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
                 }
 
-                // æ˜¾å¼åŒæ­¥èŒƒå›´å†èµ‹å€¼ï¼Œé¿å…æ¢å¤æ—¶è¶Šç•Œ
+                // ÏÔÊ½Í¬²½·¶Î§ÔÙ¸³Öµ£¬±ÜÃâ»Ö¸´Ê±Ô½½ç
                 string? qMode =
                     cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
                         ?.ToString();
@@ -871,7 +871,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
         }
 
         /// <summary>
-        /// ä» UI æ§ä»¶æ”¶é›†ç¼–ç è®¾ç½®åˆ° AppConfigã€‚
+        /// ´Ó UI ¿Ø¼şÊÕ¼¯±àÂëÉèÖÃµ½ AppConfig¡£
         /// </summary>
         public void BuildConfig(AppConfig cfg)
         {
@@ -915,7 +915,7 @@ namespace AvifEncoder.GuiLakeUl.é€‰é¡¹çª—å£
 
 
 
-    // ========== æ—¥å¿—é€‚é…å™¨ ==========
+    // ========== ÈÕÖ¾ÊÊÅäÆ÷ ==========
     public class GuiLogger : ILogger
     {
         private readonly FormLog? _logForm;

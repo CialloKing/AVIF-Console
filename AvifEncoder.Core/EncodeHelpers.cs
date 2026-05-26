@@ -131,6 +131,14 @@ namespace AvifEncoder
             };
         }
 
+        /// <summary>SHA256 哈希并截取前 16 位 hex 字符串</summary>
+        public static string Sha256(string text)
+        {
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(text));
+            return Convert.ToHexString(hash)[..16];
+        }
+
         /// <summary>时间跨度格式化</summary>
         public static string FormatTimeSpan(TimeSpan t)
         {
