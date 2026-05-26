@@ -547,104 +547,21 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 LogPage?.AppendLog($"输出目录: {outputDir}");
                 LogPage?.AppendLog($"发现图片: {files.Count} 张");
 
-                var config = new PresetConfig();
-                config.Encoder = cmbEncoder.SelectedIndex >= 0
-                            ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString() ?? "libaom-av1"
-                            : "libaom-av1";
 
-                int jobs = (int)numJobs.Value;
-                if (jobs > 0) { config.MaxJobs = jobs; config.UserSpecifiedMaxJobs = true; }
 
-                config.OutputNameFormat = string.IsNullOrWhiteSpace(txtTemplate.Text) ? "covers-{index}.avif" : txtTemplate.Text.Trim();
-                config.RecurseSubdirectories = chkRecursive.Checked;
-                config.Lossless = chkLossless.Checked;
-
-                config.UseCRFSearch = chkSearch.Checked;
-                if (rbCrfFix.Checked)
-                {
-                    config.BaseCRF = (int)numCrfFix.Value;
-                }
-                else
-                {
-                    config.MinCRF = (int)numCrfMin.Value;
-                    config.MaxCRF = (int)numCrfMax.Value;
-                    config.UseCRFSearch = true;
-                }
-                // ---------- 遍历模式 ----------
-                if (chkSweep.Checked)
-                {
-                    if (rbCrfFix.Checked)
-                    {
-                        // 固定 CRF 时，范围设为该值，仅生成一个文件（但仍附加 _CRF{值}）
-                        config.MinCRF = config.MaxCRF = (int)numCrfFix.Value;
-                    }
-                    config.SweepMode = true;
-                    config.UseCRFSearch = false;   // 遍历模式强制关闭搜索
-                }
-
-                string chroma = cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString()?.ToLower() ?? "auto";
-                if (chroma != "auto")
-                {
-                    config.AutoSource = false;
-                    config.UserSetChroma = true;
-                    config.PixelFormat = chroma switch
-                    {
-                        "420" => "yuv420p",
-                        "422" => "yuv422p",
-                        "444" => "yuv444p",
-                        _ => "yuv420p"
-                    };
-                }
-
-                string? bitStr = cmbBitDepth.Items[cmbBitDepth.SelectedIndex]?.ToString();
-                if (!string.IsNullOrEmpty(bitStr) && bitStr != "auto" && int.TryParse(bitStr, out int b))
-                {
-                    config.BitDepth = b;
-                    config.UserSetBitDepth = true;
-                    config.AutoSource = false;
-                    AvifPipeline.ApplyBitDepth(config);
-                }
-
-                config.MetricMode = cmbMetric.Items[cmbMetric.SelectedIndex]?.ToString()?.ToLower() ?? "vmaf";
-
-                string? qMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString();
-                if (!string.IsNullOrEmpty(qMode) && qMode != "无")
-                {
-                    double rawValue = (double)numQualityValue.Value;
-                    string metricMode = qMode.ToLower() switch
-                    {
-                        "vmaf" => "vmaf",
-                        "ssim" => "ssim",
-                        "psnr-y" => "psnr",
-                        "ms-ssim" => "msssim",
-                        "mix" => "mix",
-                        "xpsnr" => "xpsnr",
-                        "ssimulacra2" => "ssimu2",
-                        "butteraugli 3-norm" => "butter3",
-                        "gmsd" => "gmsd",
-                        _ => "vmaf"
-                    };
-                    config.MetricMode = metricMode;
-                    config.SetQualityTarget(rawValue, metricMode);
-                }
-
-                config.MaxResolution = (int)numMaxRes.Value;
-                config.ApplyScalingToOutput = !chkOutputFullRes.Checked;
-
-                config.SerialEncode = chkSerialEncode.Checked;
-                config.UsePriorSearch = chkPriorSearch.Checked;
-                config.UseProxySearch = chkProxy.Checked;
-                config.SearchCpuUsed = (int)numSearchCpuUsed.Value;
-                config.FinalCpuUsed = (int)numFinalCpuUsed.Value;
-
-                config.FileConflictStrategy = cmbConflict.SelectedIndex switch
-                {
-                    1 => PresetConfig.ConflictStrategy.Overwrite,
-                    2 => PresetConfig.ConflictStrategy.Skip,
-                    _ => PresetConfig.ConflictStrategy.Rename
-                };
+                var config = BuildConfigFromUI();
 
                 var guiLogger = new GuiLogger(LogPage);
+
+
+
+
+
+
+
+
+
+
                 var fileLogger = new FileLogger(outputDir);
                 var logger = new CompositeLogger(guiLogger, fileLogger);
 
@@ -710,6 +627,132 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
             }
         }
+
+        /// <summary>
+        /// 从 UI 控件收集编码参数，构建 PresetConfig。
+        /// </summary>
+        private PresetConfig BuildConfigFromUI()
+        {
+            var config = new PresetConfig();
+            config.Encoder = cmbEncoder.SelectedIndex >= 0
+                ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString()
+                    ?? "libaom-av1"
+                : "libaom-av1";
+
+            int jobs = (int)numJobs.Value;
+            if (jobs > 0)
+            {
+                config.MaxJobs = jobs;
+                config.UserSpecifiedMaxJobs = true;
+            }
+
+            config.OutputNameFormat =
+                string.IsNullOrWhiteSpace(txtTemplate.Text)
+                    ? "covers-{index}.avif"
+                    : txtTemplate.Text.Trim();
+            config.RecurseSubdirectories = chkRecursive.Checked;
+            config.Lossless = chkLossless.Checked;
+
+            config.UseCRFSearch = chkSearch.Checked;
+            if (rbCrfFix.Checked)
+            {
+                config.BaseCRF = (int)numCrfFix.Value;
+            }
+            else
+            {
+                config.MinCRF = (int)numCrfMin.Value;
+                config.MaxCRF = (int)numCrfMax.Value;
+                config.UseCRFSearch = true;
+            }
+
+            if (chkSweep.Checked)
+            {
+                if (rbCrfFix.Checked)
+                {
+                    config.MinCRF = config.MaxCRF =
+                        (int)numCrfFix.Value;
+                }
+                config.SweepMode = true;
+                config.UseCRFSearch = false;
+            }
+
+            string chroma = cmbChroma
+                .Items[cmbChroma.SelectedIndex]?.ToString()
+                ?.ToLower() ?? "auto";
+            if (chroma != "auto")
+            {
+                config.AutoSource = false;
+                config.UserSetChroma = true;
+                config.PixelFormat = chroma switch
+                {
+                    "420" => "yuv420p",
+                    "422" => "yuv422p",
+                    "444" => "yuv444p",
+                    _ => "yuv420p"
+                };
+            }
+
+            string? bitStr = cmbBitDepth
+                .Items[cmbBitDepth.SelectedIndex]?.ToString();
+            if (!string.IsNullOrEmpty(bitStr)
+                && bitStr != "auto"
+                && int.TryParse(bitStr, out int b))
+            {
+                config.BitDepth = b;
+                config.UserSetBitDepth = true;
+                config.AutoSource = false;
+                AvifPipeline.ApplyBitDepth(config);
+            }
+
+            config.MetricMode = cmbMetric
+                .Items[cmbMetric.SelectedIndex]?.ToString()
+                ?.ToLower() ?? "vmaf";
+
+            string? qMode = cmbQualityMode
+                .Items[cmbQualityMode.SelectedIndex]?.ToString();
+            if (!string.IsNullOrEmpty(qMode) && qMode != "无")
+            {
+                double rawValue = (double)numQualityValue.Value;
+                string metricMode = qMode.ToLower() switch
+                {
+                    "vmaf" => "vmaf",
+                    "ssim" => "ssim",
+                    "psnr-y" => "psnr",
+                    "ms-ssim" => "msssim",
+                    "mix" => "mix",
+                    "xpsnr" => "xpsnr",
+                    "ssimulacra2" => "ssimu2",
+                    "butteraugli 3-norm" => "butter3",
+                    "gmsd" => "gmsd",
+                    _ => "vmaf"
+                };
+                config.MetricMode = metricMode;
+                config.SetQualityTarget(rawValue, metricMode);
+            }
+
+            config.MaxResolution = (int)numMaxRes.Value;
+            config.ApplyScalingToOutput =
+                !chkOutputFullRes.Checked;
+
+            config.SerialEncode = chkSerialEncode.Checked;
+            config.UsePriorSearch = chkPriorSearch.Checked;
+            config.UseProxySearch = chkProxy.Checked;
+            config.SearchCpuUsed =
+                (int)numSearchCpuUsed.Value;
+            config.FinalCpuUsed =
+                (int)numFinalCpuUsed.Value;
+
+            config.FileConflictStrategy =
+                cmbConflict.SelectedIndex switch
+                {
+                    1 => PresetConfig.ConflictStrategy.Overwrite,
+                    2 => PresetConfig.ConflictStrategy.Skip,
+                    _ => PresetConfig.ConflictStrategy.Rename
+                };
+
+            return config;
+        }
+
 
         private void UpdateProgress(int percent)
         {
