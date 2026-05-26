@@ -888,13 +888,5 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         }
     }
 
-    public class CompositeLogger : ILogger
-    {
-        private readonly ILogger[] _loggers;
-        public CompositeLogger(params ILogger[] loggers) => _loggers = loggers ?? Array.Empty<ILogger>();
-        public void LogInfo(string m) { foreach (var l in _loggers) l.LogInfo(m); }
-        public void LogError(string m) { foreach (var l in _loggers) l.LogError(m); }
-        public void LogMetric(string mt, string m) { foreach (var l in _loggers) l.LogMetric(mt, m); }
-        public void LogSearch(string m) { foreach (var l in _loggers) l.LogSearch(m); }
-    }
+
 }

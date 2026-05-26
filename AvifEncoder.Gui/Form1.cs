@@ -557,29 +557,5 @@ namespace AvifEncoder.Gui
     /// <summary>
     /// CompositeLogger 保留在此文件（无冲突），GuiLogger 已移至独立文件。
     /// </summary>
-    public class CompositeLogger : ILogger
-    {
-        private readonly ILogger[] _loggers;
-        public CompositeLogger(params ILogger[] loggers)
-        {
-            _loggers = loggers ?? Array.Empty<ILogger>();
-        }
-
-        public void LogInfo(string message)
-        {
-            foreach (var logger in _loggers) logger.LogInfo(message);
-        }
-        public void LogError(string message)
-        {
-            foreach (var logger in _loggers) logger.LogError(message);
-        }
-        public void LogMetric(string metric, string message)
-        {
-            foreach (var logger in _loggers) logger.LogMetric(metric, message);
-        }
-        public void LogSearch(string message)
-        {
-            foreach (var logger in _loggers) logger.LogSearch(message);
-        }
-    }
+    
 }
