@@ -1233,7 +1233,6 @@ namespace AvifEncoder
 
         private static string Sha256(string text)
         {
-            using var sha = SHA256.Create();
             byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(text));
             return Convert.ToHexString(hash)[..16];
         }
