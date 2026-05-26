@@ -120,7 +120,7 @@ namespace AvifEncoder
         /// </summary>
         public string GetEffectiveAomParams()
         {
-            if (EncoderUtils.SupportsAomParams(Encoder))
+            if (Av1EncoderFactory.Get(Encoder).SupportsAomParams)
                 return AomParams;
             return "";
         }

@@ -164,24 +164,17 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt;
 
+            var enc = Av1EncoderFactory.Get(cfg.Encoder);
+
             // ===== 极限压缩：强制关闭所有并行 =====
             if (cfg.SerialEncode)
             {
-                // 宽度 ≤ 4096 时 tileCols = 0；否则采用最小合法列数，保证每个 tile ≤ 4096 像素
                 tileCols = GetMinLegalTileCols(imageWidth);
-                if (EncoderUtils.IsLibAom(cfg.Encoder))
-                {
-                    rowMt = "-row-mt 0";
-                    // 全局 -threads 1 已控制线程数，无需在 -aom-params 中注入 threads
-                }
-                else
-                {
-                    rowMt = "";
-                }
+                rowMt = enc.SupportsRowMt ? "-row-mt 0" : "";
             }
             else
             {
-                rowMt = EncoderUtils.IsLibAom(cfg.Encoder) ? "-row-mt 1" : "";
+                rowMt = enc.SupportsRowMt ? "-row-mt 1" : "";
             }
             // =====================================
 
@@ -197,8 +190,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                 {
                     sets.Add((effectiveAom, TilePart(legalTileCols, false), 0, rowMt));
 
-                    bool supportsTile = EncoderUtils.IsLibAom(cfg.Encoder) || EncoderUtils.IsSvtAv1(cfg.Encoder);
-                    string tilePart = supportsTile ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
+                    string tilePart = enc.SupportsTiles ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
                     // 安全 tile（强制单线程时同样归零）

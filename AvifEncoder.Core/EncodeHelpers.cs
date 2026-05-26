@@ -8,7 +8,8 @@ namespace AvifEncoder
         /// <summary>libaom 独享 row-mt，其他编码器返回空</summary>
         public static string GetRowMtArg(PresetConfig cfg)
         {
-            if (!EncoderUtils.IsLibAom(cfg.Encoder))
+            var encoder = Av1EncoderFactory.Get(cfg.Encoder);
+            if (!encoder.SupportsRowMt)
                 return "";
             return cfg.SerialEncode ? "-row-mt 0" : "-row-mt 1";
         }

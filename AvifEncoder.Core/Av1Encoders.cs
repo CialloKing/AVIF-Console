@@ -7,6 +7,7 @@ namespace AvifEncoder
         bool SupportsStillPicture { get; }
         bool SupportsTiles { get; }
         bool SupportsRowMt { get; }
+        bool SupportsAomParams { get; }
         int MinSpeed { get; }
         int MaxSpeed { get; }
         string BuildSpeedArg(int cpuUsed);
@@ -21,6 +22,7 @@ namespace AvifEncoder
         public bool SupportsStillPicture => true;
         public bool SupportsTiles => true;
         public bool SupportsRowMt => true;
+        public bool SupportsAomParams => true;
         public int MinSpeed => 0;
         public int MaxSpeed => 8;
 
@@ -52,6 +54,7 @@ namespace AvifEncoder
         public bool SupportsStillPicture => false;
         public bool SupportsTiles => true;
         public bool SupportsRowMt => false;
+        public bool SupportsAomParams => false;
         public int MinSpeed => 0;
         public int MaxSpeed => 13;
 
@@ -86,6 +89,7 @@ namespace AvifEncoder
         public bool SupportsStillPicture => false;
         public bool SupportsTiles => false;
         public bool SupportsRowMt => false;
+        public bool SupportsAomParams => false;
         public int MinSpeed => 0;
         public int MaxSpeed => 10;
 
@@ -137,6 +141,7 @@ namespace AvifEncoder
         public bool SupportsStillPicture => false;
         public bool SupportsTiles => false;
         public bool SupportsRowMt => false;
+        public bool SupportsAomParams => false;
         public int MinSpeed => 0;
         public int MaxSpeed => 0;
 

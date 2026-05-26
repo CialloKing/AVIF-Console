@@ -372,26 +372,19 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 safeTileCols = minCols;   // minCols 已确保 tile 宽度 ≤4096，无需额外强制 ≥2
 
             string safeRowMt;
-            // ===== 极限压缩模式（关闭所有并行）=====
+            var enc = Av1EncoderFactory.Get(config.Encoder);
+
             if (config.SerialEncode)
             {
                 safeTileCols = GetMinLegalTileCols(imageWidth);
-                if (EncoderUtils.IsLibAom(config.Encoder))
-                {
-                    safeRowMt = "-row-mt 0";
-                }
-                else
-                {
-                    safeRowMt = "";
-                }
+                safeRowMt = enc.SupportsRowMt ? "-row-mt 0" : "";
             }
             else
             {
-                safeRowMt = (EncoderUtils.IsLibAom(config.Encoder)) ? "-row-mt 1" : "";
+                safeRowMt = enc.SupportsRowMt ? "-row-mt 1" : "";
             }
-            // =====================
 
-            string safeTile = EncoderUtils.IsLibAom(config.Encoder)
+            string safeTile = enc.SupportsTiles
                 ? $"-tile-columns {safeTileCols} -tile-rows 0" : "";
             string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
             string threadsArg = config.SerialEncode ? "-threads 1" : "";  // 新属性名
