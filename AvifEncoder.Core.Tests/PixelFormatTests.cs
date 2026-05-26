@@ -11,8 +11,8 @@ namespace AvifEncoder.Core.Tests
             var cfg = new PresetConfig { BitDepth = 8 };
             var fmts = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", false);
 
-            Assert.IsTrue(fmts.Count >= 1);
-            Assert.IsTrue(fmts.Contains("yuv444p"));
+            Assert.IsGreaterThanOrEqualTo(1, fmts.Count);
+            Assert.Contains("yuv444p", fmts);
         }
 
         [TestMethod]
@@ -22,8 +22,8 @@ namespace AvifEncoder.Core.Tests
             var fmtsNoAlpha = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", false);
             var fmtsAlpha = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", true);
 
-            Assert.IsTrue(fmtsAlpha.Count >= fmtsNoAlpha.Count,
-                $"Alpha should produce at least as many formats");
+            Assert.IsGreaterThanOrEqualTo(fmtsNoAlpha.Count,
+fmtsAlpha.Count, $"Alpha should produce at least as many formats");
         }
 
         [TestMethod]
@@ -32,7 +32,7 @@ namespace AvifEncoder.Core.Tests
             var cfg = new PresetConfig { BitDepth = 10 };
             var fmts = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv420p", false);
 
-            Assert.IsTrue(fmts.Count >= 1);
+            Assert.IsGreaterThanOrEqualTo(1, fmts.Count);
             Assert.IsTrue(fmts.All(f => f.Length > 0), "All formats should be non-empty strings");
         }
 
@@ -43,7 +43,7 @@ namespace AvifEncoder.Core.Tests
             var fmts = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", true);
 
             var distinct = new HashSet<string>(fmts);
-            Assert.AreEqual(distinct.Count, fmts.Count, "Formats should be unique");
+            Assert.HasCount(distinct.Count, fmts, "Formats should be unique");
         }
 
         [TestMethod]

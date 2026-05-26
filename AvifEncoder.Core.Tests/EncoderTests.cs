@@ -100,7 +100,7 @@ namespace AvifEncoder.Core.Tests
         {
             // cpuUsed=0 (slowest) → preset=13
             string result = Av1EncoderFactory.Get("libsvtav1").BuildSpeedArg(0);
-            Assert.IsTrue(result.Contains("-preset 13"));
+            Assert.Contains("-preset 13", result);
         }
 
         [TestMethod]
@@ -125,10 +125,10 @@ namespace AvifEncoder.Core.Tests
         public void SvtAv1_BuildFullTuneArg_ContainsSvtav1Params()
         {
             string result = Av1EncoderFactory.Get("libsvtav1").BuildFullTuneArg("vmaf");
-            Assert.IsTrue(result.Contains("-svtav1-params"));
-            Assert.IsTrue(result.Contains("tune=3"));
-            Assert.IsTrue(result.Contains("keyint=1"));
-            Assert.IsTrue(result.Contains("avif=1"));
+            Assert.Contains("-svtav1-params", result);
+            Assert.Contains("tune=3", result);
+            Assert.Contains("keyint=1", result);
+            Assert.Contains("avif=1", result);
         }
 
         #endregion
@@ -152,7 +152,7 @@ namespace AvifEncoder.Core.Tests
         public void Rav1e_BuildFullTuneArg_IncludesDashDashTune()
         {
             string result = Av1EncoderFactory.Get("librav1e").BuildFullTuneArg("vmaf");
-            Assert.IsTrue(result.Contains("--tune psychovisual"));
+            Assert.Contains("--tune psychovisual", result);
         }
 
         #endregion

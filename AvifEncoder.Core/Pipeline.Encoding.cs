@@ -367,7 +367,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string stillPic = encoder.SupportsStillPicture
                 ? "-still-picture 1 -aom-params enable-keyframe-filtering=0:lag-in-frames=0"
                 : "";
-            string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+            string encoderSpecific = EncodeHelpers.BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
             string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
             // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------

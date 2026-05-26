@@ -16,34 +16,34 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public void Compare_NullFirst_ReturnsNegative()
         {
-            Assert.IsTrue(_comparer.Compare(null, "a") < 0);
+            Assert.IsLessThan(0, _comparer.Compare(null, "a"));
         }
 
         [TestMethod]
         public void Compare_NullSecond_ReturnsPositive()
         {
-            Assert.IsTrue(_comparer.Compare("a", null) > 0);
+            Assert.IsGreaterThan(0, _comparer.Compare("a", null));
         }
 
         [TestMethod]
         public void Compare_NumericalOrdering()
         {
             // "img2" < "img10" in natural sort
-            Assert.IsTrue(_comparer.Compare("img2", "img10") < 0);
+            Assert.IsLessThan(0, _comparer.Compare("img2", "img10"));
         }
 
         [TestMethod]
         public void Compare_PureNumbers()
         {
-            Assert.IsTrue(_comparer.Compare("10", "2") > 0);
+            Assert.IsGreaterThan(0, _comparer.Compare("10", "2"));
         }
 
         [TestMethod]
         public void Compare_MixedTextAndNumbers()
         {
             // Natural: file1 < file2 < file10
-            Assert.IsTrue(_comparer.Compare("file1", "file2") < 0);
-            Assert.IsTrue(_comparer.Compare("file2", "file10") < 0);
+            Assert.IsLessThan(0, _comparer.Compare("file1", "file2"));
+            Assert.IsLessThan(0, _comparer.Compare("file2", "file10"));
         }
     }
 }

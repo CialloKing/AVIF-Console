@@ -105,9 +105,9 @@ namespace AvifEncoder.Core.Tests
             };
 
             string json = JsonSerializer.Serialize(cfg);
-            Assert.IsTrue(json.Contains("EncodeEncoder"));
-            Assert.IsTrue(json.Contains("EncodeSweep"));
-            Assert.IsTrue(json.Contains("EncodeConflict"));
+            Assert.Contains("EncodeEncoder", json);
+            Assert.Contains("EncodeSweep", json);
+            Assert.Contains("EncodeConflict", json);
         }
     }
 }

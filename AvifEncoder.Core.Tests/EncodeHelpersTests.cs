@@ -87,7 +87,7 @@ namespace AvifEncoder.Core.Tests
         {
             var t = TimeSpan.FromSeconds(45.5);
             string result = EncodeHelpers.FormatTimeSpan(t);
-            Assert.IsTrue(result.Contains("45.5000s"));
+            Assert.Contains("45.5000s", result);
         }
 
         [TestMethod]
@@ -215,9 +215,9 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = new PresetConfig { Encoder = "libaom-av1", MetricMode = "ssim" };
             string result = EncodeHelpers.BuildEncoderSpecificArgs(cfg, 4, "-tile-columns 2 -tile-rows 0", "-row-mt 1");
-            Assert.IsTrue(result.Contains("-cpu-used 4"));
-            Assert.IsTrue(result.Contains("-row-mt 1"));
-            Assert.IsTrue(result.Contains("-tile-columns 2"));
+            Assert.Contains("-cpu-used 4", result);
+            Assert.Contains("-row-mt 1", result);
+            Assert.Contains("-tile-columns 2", result);
         }
 
         [TestMethod]
@@ -233,7 +233,7 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = new PresetConfig { Encoder = "libaom-av1", Lossless = true };
             string result = EncodeHelpers.BuildEncoderSpecificArgs(cfg, 0, "", "-row-mt 1");
-            Assert.IsFalse(result.Contains("tune"));
+            Assert.DoesNotContain("tune", result);
         }
 
         #endregion

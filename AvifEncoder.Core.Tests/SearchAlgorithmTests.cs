@@ -23,7 +23,7 @@ namespace AvifEncoder.Core.Tests
                 CancellationToken.None, 20, 50);
 
             Assert.AreEqual(35, bestCrf);
-            Assert.IsTrue(evals <= 8, $"Too many evaluations: {evals}");
+            Assert.IsLessThanOrEqualTo(8, evals, $"Too many evaluations: {evals}");
         }
 
         [TestMethod]

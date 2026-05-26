@@ -233,7 +233,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     if (metrics != null)
                     {
                         string normalizedInput = GetNormalizedPathForCache(inputPath);
-                        string rowMtSafe = GetRowMtArg(config);
+                        string rowMtSafe = EncodeHelpers.GetRowMtArg(config);
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput, testCrf, "yuv420p", 0, 0,
                             IsJpeg(inputPath), effectiveAom, 8, w, h, rowMtSafe);
@@ -386,7 +386,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             string safeTile = enc.SupportsTiles
                 ? $"-tile-columns {safeTileCols} -tile-rows 0" : "";
-            string encArgs = BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
+            string encArgs = EncodeHelpers.BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
             string threadsArg = config.SerialEncode ? "-threads 1" : "";  // –¬ Ù–‘√˚
 
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +

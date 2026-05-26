@@ -635,7 +635,7 @@ namespace AvifEncoder
             _logger = logger;
             _cache = cacheManager ?? new CacheManager();
 
-            bool isHardwareEncoder = !EncoderUtils.IsSoftwareEncoder(config.Encoder);
+            bool isHardwareEncoder = !Av1EncoderFactory.Get(config.Encoder).SupportsLossless;
             int cpuCount = Environment.ProcessorCount;
 
             // 若用户未通过 -j 指定并发数，则自动计算
@@ -1595,4 +1595,3 @@ namespace AvifEncoder
     }
 
 }
-

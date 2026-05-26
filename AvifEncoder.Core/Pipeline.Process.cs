@@ -389,7 +389,7 @@ namespace AvifEncoder
             int tileCols = encInfo.TileCols;
             int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
             var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
-            string rowMtArg = GetRowMtArg(config);
+            string rowMtArg = EncodeHelpers.GetRowMtArg(config);
             string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
                                               cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
 

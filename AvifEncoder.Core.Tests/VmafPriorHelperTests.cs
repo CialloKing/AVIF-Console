@@ -11,10 +11,10 @@ namespace AvifEncoder.Core.Tests
             var (median, lo, hi) = VmafPriorHelper.GetPriorFromVmaf(90);
 
             Assert.IsTrue(median > 30 && median < 45, $"median={median}");
-            Assert.IsTrue(lo < median, $"lo={lo} >= median={median}");
-            Assert.IsTrue(hi > median, $"hi={hi} <= median={median}");
-            Assert.IsTrue(lo >= 0, $"lo={lo} < 0");
-            Assert.IsTrue(hi <= 63, $"hi={hi} > 63");
+            Assert.IsLessThan(median, lo, $"lo={lo} >= median={median}");
+            Assert.IsGreaterThan(median, hi, $"hi={hi} <= median={median}");
+            Assert.IsGreaterThanOrEqualTo(0, lo, $"lo={lo} < 0");
+            Assert.IsLessThanOrEqualTo(63, hi, $"hi={hi} > 63");
         }
 
         [TestMethod]
@@ -40,8 +40,8 @@ namespace AvifEncoder.Core.Tests
             var (median, lo, hi) = VmafPriorHelper.GetPriorFromVmaf(85);
 
             Assert.IsTrue(median >= 0 && median <= 63);
-            Assert.IsTrue(lo <= median);
-            Assert.IsTrue(hi >= median);
+            Assert.IsLessThanOrEqualTo(median, lo);
+            Assert.IsGreaterThanOrEqualTo(median, hi);
         }
 
         [TestMethod]
@@ -71,8 +71,8 @@ namespace AvifEncoder.Core.Tests
             for (double vmaf = 89; vmaf <= 97; vmaf += 0.5)
             {
                 var (median, _, _) = VmafPriorHelper.GetPriorFromVmaf(vmaf);
-                Assert.IsTrue(median <= prevMedian,
-                    $"VMAF={vmaf}: median={median} > previous={prevMedian}");
+                Assert.IsLessThanOrEqualTo(prevMedian,
+median, $"VMAF={vmaf}: median={median} > previous={prevMedian}");
                 prevMedian = median;
             }
         }

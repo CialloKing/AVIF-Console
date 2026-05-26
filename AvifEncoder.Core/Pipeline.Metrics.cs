@@ -205,7 +205,7 @@ namespace AvifEncoder
             string effectiveAom = cfg.GetEffectiveAomParams();
 
             var (metricsW, metricsH) = await GetResolutionAsync(input);
-            string rowMtArg = GetRowMtArg(cfg);
+            string rowMtArg = EncodeHelpers.GetRowMtArg(cfg);
             string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg,
                                          effectiveAom, actualDepth, metricsW, metricsH, rowMtArg);
 
