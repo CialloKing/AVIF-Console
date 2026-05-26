@@ -169,7 +169,10 @@ namespace AvifEncoder.GuiLakeUl
             await RunStartupCheckAsync();
 
             TryLoadDefaultConfig();
-        
+
+            // ★ 启动后静默检查更新
+            _ = CheckForUpdateSilentlyAsync();
+
         }
 
         private async Task RunStartupCheckAsync()
@@ -221,36 +224,53 @@ namespace AvifEncoder.GuiLakeUl
         {
             string configPath = Path.Combine(Environment.CurrentDirectory, "app_settings.json");
             AppConfig? config = AppConfigHelper.LoadFromFile(configPath);
-            if (config != null && !string.IsNullOrWhiteSpace(config.FontFamily))
+            if (config == null)
+            {
+                return;
+            }
+
+            // 字体（仅当配置了字体时才应用，不影响其他设置）
+            if (!string.IsNullOrWhiteSpace(config.FontFamily))
             {
                 try
                 {
                     var font = new Font(config.FontFamily, config.FontSize);
                     ApplyGlobalFont(font);
+                    _otherOptionsPage?.SyncCurrentFont(font);
                 }
                 catch { /* 忽略无效字体 */ }
-                // 应用窗口状态（若需要）
-                try
+            }
+
+            // 编码设置（始终尝试恢复）
+            try
+            {
+                _encodePage?.ApplyConfig(config);
+            }
+            catch { /* 忽略编码设置恢复失败 */ }
+
+            // 窗口状态
+            try
+            {
+                if (config.Maximized)
                 {
-                    if (config.Maximized)
-                        WindowState = FormWindowState.Maximized;
-                    else
+                    WindowState = FormWindowState.Maximized;
+                }
+                else
+                {
+                    WindowState = FormWindowState.Normal;
+                    if (config.WindowLeft >= 0 && config.WindowTop >= 0)
                     {
-                        WindowState = FormWindowState.Normal;
-                        if (config.WindowLeft >= 0 && config.WindowTop >= 0)
-                        {
-                            Left = config.WindowLeft;
-                            Top = config.WindowTop;
-                        }
-                        if (config.WindowWidth > 0 && config.WindowHeight > 0)
-                        {
-                            Width = config.WindowWidth;
-                            Height = config.WindowHeight;
-                        }
+                        Left = config.WindowLeft;
+                        Top = config.WindowTop;
+                    }
+                    if (config.WindowWidth > 0 && config.WindowHeight > 0)
+                    {
+                        Width = config.WindowWidth;
+                        Height = config.WindowHeight;
                     }
                 }
-                catch { /* 忽略窗口状态加载失败 */ }
             }
+            catch { /* 忽略窗口状态加载失败 */ }
         }
 
         /// <summary>
@@ -288,6 +308,48 @@ namespace AvifEncoder.GuiLakeUl
                     }
                 }
             }
+        }
+
+        // ★ 静默检查更新
+        // ★ 静默检查更新
+        private async Task CheckForUpdateSilentlyAsync()
+        {
+            try
+            {
+                await Task.Delay(3000);
+
+                var manager = new UpdateManager();
+                var release = await manager.CheckForUpdateAsync();
+
+                if (release != null && release.Success)
+                {
+                    this.BeginInvoke(new Action(() =>
+                    {
+                        using var frm = new FormUpdate();
+                        frm.StartPosition = FormStartPosition.CenterParent;
+                        frm.ShowDialog(this);
+                    }));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>
+        /// 供 FormOtherOptions 保存时调用，收集编码页的控件状态。
+        /// </summary>
+        public void BuildEncodeConfig(AppConfig cfg)
+        {
+            _encodePage?.BuildConfig(cfg);
+        }
+
+        /// <summary>
+        /// 供 FormOtherOptions 加载时调用，恢复编码页的控件状态。
+        /// </summary>
+        public void ApplyEncodeConfig(AppConfig cfg)
+        {
+            _encodePage?.ApplyConfig(cfg);
         }
 
     }

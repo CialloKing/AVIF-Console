@@ -718,7 +718,112 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         {
 
         }
+
+        /// <summary>
+        /// 从 AppConfig 恢复编码设置到 UI 控件。
+        /// </summary>
+        public void ApplyConfig(AppConfig cfg)
+        {
+            if (cfg.EncodePreset != null)
+            {
+                SetComboBoxItem(cmbPreset, cfg.EncodePreset);
+            }
+            if (cfg.EncodeEncoder != null)
+            {
+                SetComboBoxItem(cmbEncoder, cfg.EncodeEncoder);
+            }
+            numJobs.Value = cfg.EncodeJobs;
+            numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
+            numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
+            if (cfg.EncodeTemplate != null)
+            {
+                txtTemplate.Text = cfg.EncodeTemplate;
+            }
+            chkSearch.Checked = cfg.EncodeSearch;
+            if (cfg.EncodeCrfRangeMode)
+            {
+                rbCrfRange.Checked = true;
+                numCrfMin.Value = cfg.EncodeCrfMin;
+                numCrfMax.Value = cfg.EncodeCrfMax;
+            }
+            else
+            {
+                rbCrfFix.Checked = true;
+                numCrfFix.Value = cfg.EncodeCrfFix;
+            }
+            if (cfg.EncodeMetric != null)
+            {
+                SetComboBoxItem(cmbMetric, cfg.EncodeMetric);
+            }
+            if (cfg.EncodeQualityMode != null)
+            {
+                SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
+            }
+            numQualityValue.Value = cfg.EncodeQualityValue;
+            if (cfg.EncodeChroma != null)
+            {
+                SetComboBoxItem(cmbChroma, cfg.EncodeChroma);
+            }
+            if (cfg.EncodeBitDepth != null)
+            {
+                SetComboBoxItem(cmbBitDepth, cfg.EncodeBitDepth);
+            }
+            chkLossless.Checked = cfg.EncodeLossless;
+            chkRecursive.Checked = cfg.EncodeRecursive;
+            numMaxRes.Value = cfg.EncodeMaxRes;
+            chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
+            if (cfg.EncodeConflict >= 0
+                && cfg.EncodeConflict < cmbConflict.Items.Count)
+            {
+                cmbConflict.SelectedIndex = cfg.EncodeConflict;
+            }
+            chkSerialEncode.Checked = cfg.EncodeSerialEncode;
+            chkPriorSearch.Checked = cfg.EncodePriorSearch;
+            chkProxy.Checked = cfg.EncodeProxy;
+            chkSweep.Checked = cfg.EncodeSweep;
+        }
+
+        /// <summary>
+        /// 从 UI 控件收集编码设置到 AppConfig。
+        /// </summary>
+        public void BuildConfig(AppConfig cfg)
+        {
+            cfg.EncodePreset =
+                cmbPreset.Items[cmbPreset.SelectedIndex]?.ToString();
+            cfg.EncodeEncoder =
+                cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString();
+            cfg.EncodeJobs = (int)numJobs.Value;
+            cfg.EncodeSearchCpuUsed = (int)numSearchCpuUsed.Value;
+            cfg.EncodeFinalCpuUsed = (int)numFinalCpuUsed.Value;
+            cfg.EncodeTemplate = txtTemplate.Text;
+            cfg.EncodeSearch = chkSearch.Checked;
+            cfg.EncodeCrfRangeMode = rbCrfRange.Checked;
+            cfg.EncodeCrfFix = (int)numCrfFix.Value;
+            cfg.EncodeCrfMin = (int)numCrfMin.Value;
+            cfg.EncodeCrfMax = (int)numCrfMax.Value;
+            cfg.EncodeMetric =
+                cmbMetric.Items[cmbMetric.SelectedIndex]?.ToString();
+            cfg.EncodeQualityMode =
+                cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
+                    ?.ToString();
+            cfg.EncodeQualityValue = (double)numQualityValue.Value;
+            cfg.EncodeChroma =
+                cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString();
+            cfg.EncodeBitDepth =
+                cmbBitDepth.Items[cmbBitDepth.SelectedIndex]?.ToString();
+            cfg.EncodeLossless = chkLossless.Checked;
+            cfg.EncodeRecursive = chkRecursive.Checked;
+            cfg.EncodeMaxRes = (int)numMaxRes.Value;
+            cfg.EncodeOutputFullRes = chkOutputFullRes.Checked;
+            cfg.EncodeConflict = cmbConflict.SelectedIndex;
+            cfg.EncodeSerialEncode = chkSerialEncode.Checked;
+            cfg.EncodePriorSearch = chkPriorSearch.Checked;
+            cfg.EncodeProxy = chkProxy.Checked;
+            cfg.EncodeSweep = chkSweep.Checked;
+        }
     }
+
+
 
     // ========== 日志适配器 ==========
     public class GuiLogger : ILogger

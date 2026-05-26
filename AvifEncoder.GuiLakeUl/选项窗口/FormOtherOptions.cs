@@ -24,22 +24,8 @@ namespace AvifEncoder.GuiLakeUl
 
 
 
+
         private void btnSelectFont_Click(object? sender, EventArgs e)
-        {
-            using var fontDlg = new FontDialog();
-            // 可选：将当前已选字体预置到对话框中
-            if (_currentFont != null)
-                fontDlg.Font = _currentFont;
-            if (fontDlg.ShowDialog(this) == DialogResult.OK)
-            {
-                Font selectedFont = fontDlg.Font;
-                _currentFont = selectedFont;
-                btnSelectFont.Font = selectedFont;
-                btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
-                ApplyFontToApp(selectedFont);
-            }
-        }
-        private void btnSelectFont_Click2(object? sender, EventArgs e)
         {
             using var fontDlg = new ModernFontDialog();
             // 必须附着到主窗口的窗口管理器，否则可能导致 UI 卡死或异常退出
@@ -47,6 +33,22 @@ namespace AvifEncoder.GuiLakeUl
             {
                 mainForm.AttachDialog(fontDlg);
             }
+            if (fontDlg.ShowDialog(this) == DialogResult.OK)
+            {
+                Font selectedFont = fontDlg.SelectedFont;
+                _currentFont = selectedFont;
+                btnSelectFont.Font = selectedFont;
+                btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
+                ApplyFontToApp(selectedFont);
+            }
+        }
+
+        private void btnSelectFont_Click2(object? sender, EventArgs e)
+        {
+            using var fontDlg = new FontDialog();
+            // 可选：将当前已选字体预置到对话框中
+            if (_currentFont != null)
+                fontDlg.Font = _currentFont;
             if (fontDlg.ShowDialog(this) == DialogResult.OK)
             {
                 Font selectedFont = fontDlg.Font;
@@ -111,6 +113,9 @@ namespace AvifEncoder.GuiLakeUl
                 cfg.WindowLeft = mainForm.Left;
                 cfg.WindowTop = mainForm.Top;
                 cfg.Maximized = mainForm.WindowState == FormWindowState.Maximized;
+
+                // ★ 同步收集编码设置
+                mainForm.BuildEncodeConfig(cfg);
             }
             return cfg;
         }
@@ -128,7 +133,7 @@ namespace AvifEncoder.GuiLakeUl
                 btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
             }
             catch { /* 忽略无效字体 */ }
-            // 窗口状态
+            // 窗口状态 + 编码设置
             if (Application.OpenForms["Form1"] is Form1 mainForm)
             {
                 mainForm.SuspendLayout();
@@ -141,6 +146,9 @@ namespace AvifEncoder.GuiLakeUl
                     mainForm.Height = Math.Max(100, config.WindowHeight);
                 }
                 mainForm.ResumeLayout();
+
+                // ★ 同步恢复编码设置
+                mainForm.ApplyEncodeConfig(config);
             }
         }
 
@@ -148,6 +156,20 @@ namespace AvifEncoder.GuiLakeUl
         {
             if (Application.OpenForms["Form1"] is Form1 mainForm)
                 mainForm.ApplyGlobalFont(font);
+        }
+
+        /// <summary>
+        /// 供主窗口在加载默认配置后调用，同步当前字体状态到按钮显示。
+        /// </summary>
+        public void SyncCurrentFont(Font font)
+        {
+            if (font == null)
+            {
+                return;
+            }
+            _currentFont = font;
+            btnSelectFont.Font = font;
+            btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
         }
 
         private void InitializeComponent()

@@ -11,11 +11,15 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using static AvifEncoder.PresetConfig;
 
+
+
 namespace AvifEncoder
 {
     class Program
     {
-        private const string AppVersion = "1.1";
+        private static string AppVersion =>
+    System.Reflection.Assembly.GetEntryAssembly()?
+        .GetName().Version?.ToString(3) ?? "1.1.0";
 
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);
