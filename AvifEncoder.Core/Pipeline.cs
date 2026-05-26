@@ -1,13 +1,10 @@
-using AvifEncoder;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;   // 如果使用 System.Text.Json
 using System.Text.RegularExpressions;
-using static AvifEncoder.PresetConfig;
 
 
 namespace AvifEncoder
@@ -104,7 +101,7 @@ namespace AvifEncoder
 
 
 
-    public class AvifPipeline : IDisposable
+    public partial class AvifPipeline : IDisposable
     {
         private readonly string _inputDir;
         private readonly string _outputDir;
@@ -162,13 +159,13 @@ namespace AvifEncoder
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
 
 
-    private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
+        private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
         private readonly SemaphoreSlim _advancedMetricSemaphore;
 
-    /// <summary>
-    /// 根据目标 VMAF 返回先验中位数及大致搜索范围（基于真实图片统计）
-    /// 使用分段线性插值，整数点完全准确，外推采用局部斜率
-    /// </summary>
+        /// <summary>
+        /// 根据目标 VMAF 返回先验中位数及大致搜索范围（基于真实图片统计）
+        /// 使用分段线性插值，整数点完全准确，外推采用局部斜率
+        /// </summary>
         private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> VmafPriorTable = new()
     {
         // 数据使用实际中位数，Lo/Hi 为真实 min/max
@@ -261,148 +258,148 @@ namespace AvifEncoder
         }
 
 
-    // ===== PNG 尾部清洗 =====
-    /// <summary>
-    /// 若 PNG 文件 IEND 后有额外字节，则创建清洗后的临时文件并返回其路径；
-    /// 否则返回原路径（不修改原文件）。
-    /// </summary>
-    private async Task<string> SanitizePngIfNeededAsync(string originalPath, string tempDir)
-    {
-        // 仅处理 .png 文件
-        if (!originalPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-            return originalPath;
-
-        byte[] bytes = await _fs.ReadAllBytesAsync(originalPath);
-        int iendEnd = FindIendEndOffset(bytes);
-        if (iendEnd < 0 || iendEnd == bytes.Length)
+        // ===== PNG 尾部清洗 =====
+        /// <summary>
+        /// 若 PNG 文件 IEND 后有额外字节，则创建清洗后的临时文件并返回其路径；
+        /// 否则返回原路径（不修改原文件）。
+        /// </summary>
+        private async Task<string> SanitizePngIfNeededAsync(string originalPath, string tempDir)
         {
-            // 没找到 IEND 或干净文件，直接返回
-            return originalPath;
+            // 仅处理 .png 文件
+            if (!originalPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                return originalPath;
+
+            byte[] bytes = await _fs.ReadAllBytesAsync(originalPath);
+            int iendEnd = FindIendEndOffset(bytes);
+            if (iendEnd < 0 || iendEnd == bytes.Length)
+            {
+                // 没找到 IEND 或干净文件，直接返回
+                return originalPath;
+            }
+
+            // 有尾部垃圾，创建清洗版本
+            string cleanFileName = $"_clean_{Guid.NewGuid():N}.png";
+            string cleanPath = Path.Combine(tempDir, cleanFileName);
+            byte[] cleanBytes = new byte[iendEnd];
+            Array.Copy(bytes, cleanBytes, iendEnd);
+            await _fs.WriteAllBytesAsync(cleanPath, cleanBytes);
+            _logger.LogInfo($"PNG 尾部清洗: {Path.GetFileName(originalPath)} 移除 {bytes.Length - iendEnd} 字节 -> {cleanFileName}");
+            return cleanPath;
         }
 
-        // 有尾部垃圾，创建清洗版本
-        string cleanFileName = $"_clean_{Guid.NewGuid():N}.png";
-        string cleanPath = Path.Combine(tempDir, cleanFileName);
-        byte[] cleanBytes = new byte[iendEnd];
-        Array.Copy(bytes, cleanBytes, iendEnd);
-        await _fs.WriteAllBytesAsync(cleanPath, cleanBytes);
-        _logger.LogInfo($"PNG 尾部清洗: {Path.GetFileName(originalPath)} 移除 {bytes.Length - iendEnd} 字节 -> {cleanFileName}");
-        return cleanPath;
-    }
-
-    /// <summary>
-    /// 查找 PNG 文件中标准 IEND 块结束的偏移量（即第一个不属于 PNG 的字节位置）。
-    /// 失败返回 -1，干净文件返回文件总长度。
-    /// </summary>
-    private static int FindIendEndOffset(byte[] bytes)
-    {
-        // 标准 IEND chunk: 长度 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
-        int limit = bytes.Length - 12; // 至少需要 8 字节的块 + 最后可能的 CRC
-
-        for (int i = 0; i <= limit; i++)
+        /// <summary>
+        /// 查找 PNG 文件中标准 IEND 块结束的偏移量（即第一个不属于 PNG 的字节位置）。
+        /// 失败返回 -1，干净文件返回文件总长度。
+        /// </summary>
+        private static int FindIendEndOffset(byte[] bytes)
         {
-            if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
+            // 标准 IEND chunk: 长度 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
+            int limit = bytes.Length - 12; // 至少需要 8 字节的块 + 最后可能的 CRC
+
+            for (int i = 0; i <= limit; i++)
             {
-                // 找到 "IEND"，检查前 4 字节是否为 0（块长度必须为 0）
-                if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
+                if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
                 {
-                    // IEND 块结束 = 类型起始 + 8（类型 + CRC）
-                    return i + 8;
+                    // 找到 "IEND"，检查前 4 字节是否为 0（块长度必须为 0）
+                    if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
+                    {
+                        // IEND 块结束 = 类型起始 + 8（类型 + CRC）
+                        return i + 8;
+                    }
                 }
             }
+
+            // 未找到任何有效 IEND 块
+            return -1;
         }
 
-        // 未找到任何有效 IEND 块
-        return -1;
-    }
 
-
-    private async Task ComputeAdvancedMetricsInBackgroundAsync(
-    string refPath, string distPath, string outputDir, string cacheKey,
-    bool needSsimu2, bool needButter, bool needGmsd,
-    CancellationToken cancellationToken)
-    {
-        await _advancedMetricSemaphore.WaitAsync(cancellationToken);
-        try
+        private async Task ComputeAdvancedMetricsInBackgroundAsync(
+        string refPath, string distPath, string outputDir, string cacheKey,
+        bool needSsimu2, bool needButter, bool needGmsd,
+        CancellationToken cancellationToken)
         {
-            string advancedTempDir = Path.Combine(outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+            await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
             {
-                _fs.CreateDirectory(advancedTempDir);
-                string? cleanRef = await SanitizePngIfNeededAsync(refPath, advancedTempDir);
-                bool ownClean = cleanRef != refPath;
-
-                string? refPng = cleanRef;
-                if (Path.GetExtension(cleanRef).ToLower() != ".png")
+                string advancedTempDir = Path.Combine(outputDir, $"_advanced_metrics_{Guid.NewGuid():N}");
+                try
                 {
-                    try { refPng = await ConvertToPngAsync(cleanRef, advancedTempDir); }
-                    catch { refPng = null; }
-                }
+                    _fs.CreateDirectory(advancedTempDir);
+                    string? cleanRef = await SanitizePngIfNeededAsync(refPath, advancedTempDir);
+                    bool ownClean = cleanRef != refPath;
 
-                string? distPng = null;
-                if (needSsimu2 || needButter)
-                {
-                    try { distPng = await ConvertToPngAsync(distPath, advancedTempDir); }
-                    catch { distPng = null; }
-                }
-
-                if (needSsimu2 && refPng != null && distPng != null)
-                {
-                    try
+                    string? refPng = cleanRef;
+                    if (Path.GetExtension(cleanRef).ToLower() != ".png")
                     {
-                        var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                        if (s.HasValue) UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s);
+                        try { refPng = await ConvertToPngAsync(cleanRef, advancedTempDir); }
+                        catch { refPng = null; }
                     }
-                    catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 后台异常: {ex.Message}"); }
-                }
 
-                if (needButter && refPng != null && distPng != null)
-                {
-                    try
+                    string? distPng = null;
+                    if (needSsimu2 || needButter)
                     {
-                        var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
-                        if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
-                        if (p3.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3);
+                        try { distPng = await ConvertToPngAsync(distPath, advancedTempDir); }
+                        catch { distPng = null; }
                     }
-                    catch (Exception ex) { _logger.LogInfo($"Butteraugli 后台异常: {ex.Message}"); }
-                }
 
-                if (needGmsd)
-                {
-                    try
+                    if (needSsimu2 && refPng != null && distPng != null)
                     {
-                        var g = await ComputeGMSDAsync(cleanRef, distPath);
-                        if (g.HasValue) UpdateCachedMetrics(cacheKey, m => m.GMSD = g);
+                        try
+                        {
+                            var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                            if (s.HasValue) UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s);
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 后台异常: {ex.Message}"); }
                     }
-                    catch (Exception ex) { _logger.LogInfo($"GMSD 后台异常: {ex.Message}"); }
-                }
 
-                if (ownClean && _fs.FileExists(cleanRef))
-                    try { _fs.DeleteFile(cleanRef); } catch { }
+                    if (needButter && refPng != null && distPng != null)
+                    {
+                        try
+                        {
+                            var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                            if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
+                            if (p3.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3);
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"Butteraugli 后台异常: {ex.Message}"); }
+                    }
+
+                    if (needGmsd)
+                    {
+                        try
+                        {
+                            var g = await ComputeGMSDAsync(cleanRef, distPath);
+                            if (g.HasValue) UpdateCachedMetrics(cacheKey, m => m.GMSD = g);
+                        }
+                        catch (Exception ex) { _logger.LogInfo($"GMSD 后台异常: {ex.Message}"); }
+                    }
+
+                    if (ownClean && _fs.FileExists(cleanRef))
+                        try { _fs.DeleteFile(cleanRef); } catch { }
+                }
+                finally
+                {
+                    if (_fs.DirectoryExists(advancedTempDir))
+                        try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                }
             }
             finally
             {
-                if (_fs.DirectoryExists(advancedTempDir))
-                    try { _fs.DeleteDirectory(advancedTempDir, true); } catch { }
+                _advancedMetricSemaphore.Release();
             }
         }
-        finally
+
+        /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
+        /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象（使用原子 AddOrUpdate） </summary>
+        private void UpdateCachedMetrics(string cacheKey, Action<QualityMetrics> updateAction)
         {
-            _advancedMetricSemaphore.Release();
+            _cache.UpdateMetrics(cacheKey, updateAction);
         }
-    }
-
-    /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
-    /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象（使用原子 AddOrUpdate） </summary>
-    private void UpdateCachedMetrics(string cacheKey, Action<QualityMetrics> updateAction)
-    {
-        _cache.UpdateMetrics(cacheKey, updateAction);
-    }
 
 
 
-    // ===== SSIMULACRA2 =====
-    private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
+        // ===== SSIMULACRA2 =====
+        private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
         {
             string exe = EncoderUtils.FindExecutable("ssimulacra2.exe") ?? "ssimulacra2.exe";
             string cleanRef = NormalizePathForExternalTool(refPath);
@@ -869,61 +866,61 @@ namespace AvifEncoder
             string key = GetNormalizedPathForCache(filePath);
             if (_probeCache.TryGetValue(key, out var cached)) return cached;
 
-        // 一次性 ffprobe 获取所有信息
-        string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
-        string json = await RunProbeAsync(_ffprobePath, args);
-        if (string.IsNullOrEmpty(json)) return null;
+            // 一次性 ffprobe 获取所有信息
+            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
+            string json = await RunProbeAsync(_ffprobePath, args);
+            if (string.IsNullOrEmpty(json)) return null;
 
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var streams = doc.RootElement.GetProperty("streams");
-            if (streams.GetArrayLength() == 0) return null;
-
-            var stream = streams[0];
-            string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
-            int w = stream.GetProperty("width").GetInt32();
-            int h = stream.GetProperty("height").GetInt32();
-
-            bool hasAlpha = fmt switch
+            try
             {
-                "rgba" or "bgra" or "argb" or "abgr" => true,
-                "rgba64le" or "bgra64le" => true,
-                _ => false
-            };
+                using var doc = JsonDocument.Parse(json);
+                var streams = doc.RootElement.GetProperty("streams");
+                if (streams.GetArrayLength() == 0) return null;
 
-            // 尝试提取色彩字段，忽略 unknown/reserved
-            static string? TryGetStringProperty(JsonElement element, string propertyName)
-            {
-                if (element.TryGetProperty(propertyName, out var prop))
+                var stream = streams[0];
+                string fmt = stream.GetProperty("pix_fmt").GetString()?.ToLower() ?? "yuv420p";
+                int w = stream.GetProperty("width").GetInt32();
+                int h = stream.GetProperty("height").GetInt32();
+
+                bool hasAlpha = fmt switch
                 {
-                    string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
-                    return !string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved" ? val : null;
+                    "rgba" or "bgra" or "argb" or "abgr" => true,
+                    "rgba64le" or "bgra64le" => true,
+                    _ => false
+                };
+
+                // 尝试提取色彩字段，忽略 unknown/reserved
+                static string? TryGetStringProperty(JsonElement element, string propertyName)
+                {
+                    if (element.TryGetProperty(propertyName, out var prop))
+                    {
+                        string val = prop.GetString()?.Trim().ToLowerInvariant() ?? "";
+                        return !string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved" ? val : null;
+                    }
+                    return null;
                 }
-                return null;
+
+                string? colorPrimaries = TryGetStringProperty(stream, "color_primaries");
+                string? colorTransfer = TryGetStringProperty(stream, "color_transfer");
+                string? colorSpace = TryGetStringProperty(stream, "color_space");
+                string? colorRange = TryGetStringProperty(stream, "color_range");
+
+                var info = new ProbeInfo
+                {
+                    PixFmt = fmt,
+                    HasAlpha = hasAlpha,
+                    Width = w,
+                    Height = h,
+                    ColorPrimaries = colorPrimaries,
+                    ColorTransfer = colorTransfer,
+                    ColorSpace = colorSpace,
+                    ColorRange = colorRange
+                };
+                _probeCache[key] = info;
+                return info;
             }
-
-            string? colorPrimaries = TryGetStringProperty(stream, "color_primaries");
-            string? colorTransfer = TryGetStringProperty(stream, "color_transfer");
-            string? colorSpace = TryGetStringProperty(stream, "color_space");
-            string? colorRange = TryGetStringProperty(stream, "color_range");
-
-            var info = new ProbeInfo
-            {
-                PixFmt = fmt,
-                HasAlpha = hasAlpha,
-                Width = w,
-                Height = h,
-                ColorPrimaries = colorPrimaries,
-                ColorTransfer = colorTransfer,
-                ColorSpace = colorSpace,
-                ColorRange = colorRange
-            };
-            _probeCache[key] = info;
-            return info;
+            catch { return null; }
         }
-        catch { return null; }
-    }
 
         static string? TryGetStringProperty(JsonElement element, string propertyName)
         {
@@ -935,10 +932,10 @@ namespace AvifEncoder
             return null;
         }
 
-    /// <summary>
-    /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
-    /// 替代原先固定的 -cpu-used / -row-mt。
-    /// </summary>
+        /// <summary>
+        /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
+        /// 替代原先固定的 -cpu-used / -row-mt。
+        /// </summary>
         private static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
         {
             string enc = cfg.Encoder;
@@ -974,7 +971,7 @@ namespace AvifEncoder
             // 硬件编码器：无统一速度参数，保留空字符串使用 ffmpeg 默认行为
             return "";
         }
-        
+
 
 
 
@@ -1048,75 +1045,75 @@ namespace AvifEncoder
                     }
                 };
 
-                    process.Start();
+                process.Start();
 
-                    // ★ 仅在 Windows 平台将子进程加入全局 Job Object
-                    if (OperatingSystem.IsWindows())
+                // ★ 仅在 Windows 平台将子进程加入全局 Job Object
+                if (OperatingSystem.IsWindows())
+                {
+                    JobObjectHelper.AssignProcess(process);
+                }
+
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
+
+                var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
+                using var timeoutCts = new CancellationTokenSource(timeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+
+                try
+                {
+                    await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited)
                     {
-                        JobObjectHelper.AssignProcess(process);
+                        try { process.Kill(entireProcessTree: true); } catch { }
+                        try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                     }
+                }
 
-                    var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                    var stderrTask = process.StandardError.ReadToEndAsync();
+                string stdout = await stdoutTask;
+                string stderr = await stderrTask;
+                int exitCode = process.ExitCode;
 
-                    var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
-                    using var timeoutCts = new CancellationTokenSource(timeout);
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                        _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
 
-                    try
+                if (exitCode != 0)
+                {
+                    _logger.LogInfo($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    return null;
+                }
+
+                if (!File.Exists(jsonPath))
+                {
+                    _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
+                    return null;
+                }
+
+                string json = await File.ReadAllTextAsync(jsonPath);
+                QualityMetrics? metrics = ParseVmafJson(json);
+                if (metrics == null) return null;
+
+                // 合并 stdout 与 stderr，统一提取 VMAF，避免因输出位置不同而漏掉
+                string combinedOutput = stdout + "\n" + stderr;
+                double? vmafFromConsole = TryExtractVmaf(combinedOutput);
+
+                if (vmafFromConsole.HasValue)
+                {
+                    // 控制台提取成功，覆盖 JSON 值（部分版本 JSON 中 VMAF 缺失或为假值）
+                    metrics.VMAF = vmafFromConsole.Value;
+                }
+                else
+                {
+                    // 控制台也未提取到 → 检查 JSON 是否已给出有效 VMAF
+                    if (double.IsNaN(metrics.VMAF))
                     {
-                        await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                        _logger.LogInfo($"未提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
                     }
-                    catch (OperationCanceledException)
-                    {
-                        if (!process.HasExited)
-                        {
-                            try { process.Kill(entireProcessTree: true); } catch { }
-                            try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
-                        }
-                    }
-
-                    string stdout = await stdoutTask;
-                    string stderr = await stderrTask;
-                    int exitCode = process.ExitCode;
-
-                    if (!string.IsNullOrWhiteSpace(stderr))
-                        _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
-
-                    if (exitCode != 0)
-                    {
-                        _logger.LogInfo($"ComputeAllMetrics 失败 (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
-                        return null;
-                    }
-
-                    if (!File.Exists(jsonPath))
-                    {
-                        _logger.LogInfo($"ComputeAllMetrics: JSON 文件未生成: {jsonPath}");
-                        return null;
-                    }
-
-                    string json = await File.ReadAllTextAsync(jsonPath);
-                    QualityMetrics? metrics = ParseVmafJson(json);
-                    if (metrics == null) return null;
-
-                    // 合并 stdout 与 stderr，统一提取 VMAF，避免因输出位置不同而漏掉
-                    string combinedOutput = stdout + "\n" + stderr;
-                    double? vmafFromConsole = TryExtractVmaf(combinedOutput);
-
-                    if (vmafFromConsole.HasValue)
-                    {
-                        // 控制台提取成功，覆盖 JSON 值（部分版本 JSON 中 VMAF 缺失或为假值）
-                        metrics.VMAF = vmafFromConsole.Value;
-                    }
-                    else
-                    {
-                        // 控制台也未提取到 → 检查 JSON 是否已给出有效 VMAF
-                        if (double.IsNaN(metrics.VMAF))
-                        {
-                            _logger.LogInfo($"未提取到 VMAF 分数 [{Path.GetFileName(refPath)}]");
-                        }
-                    }
+                }
 
                 return metrics;
             }
@@ -1221,25 +1218,25 @@ namespace AvifEncoder
 
 
 
-            public static PresetConfig CreateFromPreset(CliPreset preset)
+        public static PresetConfig CreateFromPreset(CliPreset preset)
+        {
+            return preset switch
             {
-                return preset switch
-                {
-                    CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91, UseCRFSearch = false },
-                    CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.97, UseCRFSearch = true },
-                    CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.97, UseCRFSearch = true },
-                    CliPreset.Extreme => new PresetConfig { BaseCRF = 35, TargetSSIM = 0.99, UseCRFSearch = true },
-                    _ => throw new ArgumentOutOfRangeException(nameof(preset))
-                };
-            }
+                CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91, UseCRFSearch = false },
+                CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.97, UseCRFSearch = true },
+                CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.97, UseCRFSearch = true },
+                CliPreset.Extreme => new PresetConfig { BaseCRF = 35, TargetSSIM = 0.99, UseCRFSearch = true },
+                _ => throw new ArgumentOutOfRangeException(nameof(preset))
+            };
+        }
 
 
-            private static string Sha256(string text)
-            {
-                using var sha = SHA256.Create();
-                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
-                return Convert.ToHexString(hash)[..16];
-            }
+        private static string Sha256(string text)
+        {
+            using var sha = SHA256.Create();
+            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(text));
+            return Convert.ToHexString(hash)[..16];
+        }
 
 
 
@@ -1552,40 +1549,40 @@ namespace AvifEncoder
 
 
 
-    /// <summary>
-    /// 确保路径在 Windows 上使用长路径格式（添加 \\?\ 前缀），
-    /// 从而突破 260 字符的 MAX_PATH 限制。
-    /// </summary>
-    private static string EnsureLongPath(string path)
-    {
-        if (OperatingSystem.IsWindows())
+        /// <summary>
+        /// 确保路径在 Windows 上使用长路径格式（添加 \\?\ 前缀），
+        /// 从而突破 260 字符的 MAX_PATH 限制。
+        /// </summary>
+        private static string EnsureLongPath(string path)
         {
-            // 已添加过长路径前缀，直接返回
-            if (path.StartsWith(@"\\?\"))
-                return path;
-
-            string full = Path.GetFullPath(path);
-
-            // 处理 UNC 路径：\\server\share\... → \\?\UNC\server\share\...
-            if (full.StartsWith(@"\\") && !full.StartsWith(@"\\?\"))
+            if (OperatingSystem.IsWindows())
             {
-                // UNC 路径有两个开头的反斜杠，将第一个反斜杠替换为 \\?\UNC
-                return @"\\?\UNC" + full.Substring(1);
+                // 已添加过长路径前缀，直接返回
+                if (path.StartsWith(@"\\?\"))
+                    return path;
+
+                string full = Path.GetFullPath(path);
+
+                // 处理 UNC 路径：\\server\share\... → \\?\UNC\server\share\...
+                if (full.StartsWith(@"\\") && !full.StartsWith(@"\\?\"))
+                {
+                    // UNC 路径有两个开头的反斜杠，将第一个反斜杠替换为 \\?\UNC
+                    return @"\\?\UNC" + full.Substring(1);
+                }
+                else
+                {
+                    // 普通盘符路径（如 C:\...）
+                    return @"\\?\" + full;
+                }
             }
-            else
-            {
-                // 普通盘符路径（如 C:\...）
-                return @"\\?\" + full;
-            }
+            // 非 Windows 系统原样返回（Linux/macOS 无需处理）
+            return path;
         }
-        // 非 Windows 系统原样返回（Linux/macOS 无需处理）
-        return path;
-    }
 
-    /// <summary>
-    /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
-    /// </summary>
-    private async Task<bool> SourceHasAlpha(string filePath)
+        /// <summary>
+        /// 检查源文件是否包含 Alpha 通道，优先从统一 Probe 缓存获取。
+        /// </summary>
+        private async Task<bool> SourceHasAlpha(string filePath)
         {
             // ★ 优先从统一 Probe 缓存获取
             var info = await GetProbeInfoAsync(filePath);
@@ -1615,97 +1612,97 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, string> _srcPixFmtCache = new();
 
-            /// <summary>
-            /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
-            /// </summary>
-            /// <summary>
-            /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
-            /// </summary>
-            /// <summary>
-            /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p
-            /// </summary>
-            /// <summary>
-            /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p
-            /// </summary>
-            /// <summary>
-            /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
-            /// 高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p。
-            /// </summary>
-            /// <summary>
-            /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
-            /// 高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p。
-            /// </summary>
-            private async Task<string> GetSourcePixelFormat(string filePath)
+        /// <summary>
+        /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
+        /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式（例如 yuv420p、yuv444p10le）
+        /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p
+        /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式，高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p
+        /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
+        /// 高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p。
+        /// </summary>
+        /// <summary>
+        /// 获取源文件的标准化像素格式，优先使用统一 Probe 缓存，消除重复 ffprobe。
+        /// 高位深 RGB 会保留对应位深（10?bit），灰度映射为 yuv420p。
+        /// </summary>
+        private async Task<string> GetSourcePixelFormat(string filePath)
+        {
+            // ★ 优先从统一 Probe 缓存获取
+            var info = await GetProbeInfoAsync(filePath);
+            if (info != null)
             {
-                // ★ 优先从统一 Probe 缓存获取
-                var info = await GetProbeInfoAsync(filePath);
-                if (info != null)
+                string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
+
+                // 填充旧的 Alpha 缓存（如果未填充）
+                string normalizedPath = GetNormalizedPathForCache(filePath);
+                if (!_srcAlphaCache.ContainsKey(normalizedPath))
+                    _srcAlphaCache[normalizedPath] = info.HasAlpha;
+
+                // 像素格式标准化（复用原有逻辑）
+                if (fmt == "gray" || fmt.StartsWith("gray"))
                 {
-                    string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
+                    bool is10bit = fmt.Contains("16") || fmt.Contains("10");
+                    fmt = is10bit ? "yuv420p10le" : "yuv420p";
+                }
+                else if (fmt.Contains("yuvj"))
+                {
+                    fmt = fmt.Replace("yuvj", "yuv");
+                }
+                // ★ 修改处：扩展 RGB 格式前缀判断，涵盖 argb、abgr、rgba、bgra 等
+                else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr") ||
+                         fmt.StartsWith("argb") || fmt.StartsWith("abgr") || fmt.StartsWith("rgba") || fmt.StartsWith("bgra"))
+                {
+                    bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
+                                   fmt == "argb" || fmt == "abgr";
+                    if (fmt.Contains("64") && !is4Comp) is4Comp = true;
 
-                    // 填充旧的 Alpha 缓存（如果未填充）
-                    string normalizedPath = GetNormalizedPathForCache(filePath);
-                    if (!_srcAlphaCache.ContainsKey(normalizedPath))
-                        _srcAlphaCache[normalizedPath] = info.HasAlpha;
-
-                    // 像素格式标准化（复用原有逻辑）
-                    if (fmt == "gray" || fmt.StartsWith("gray"))
+                    int components = is4Comp ? 4 : 3;
+                    var match = Regex.Match(fmt, @"(\d+)");
+                    int totalBits = 0;
+                    if (match.Success && int.TryParse(match.Groups[1].Value, out totalBits))
                     {
-                        bool is10bit = fmt.Contains("16") || fmt.Contains("10");
-                        fmt = is10bit ? "yuv420p10le" : "yuv420p";
                     }
-                    else if (fmt.Contains("yuvj"))
-                    {
-                        fmt = fmt.Replace("yuvj", "yuv");
-                    }
-                    // ★ 修改处：扩展 RGB 格式前缀判断，涵盖 argb、abgr、rgba、bgra 等
-                    else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr") ||
-                             fmt.StartsWith("argb") || fmt.StartsWith("abgr") || fmt.StartsWith("rgba") || fmt.StartsWith("bgra"))
-                    {
-                        bool is4Comp = fmt.Contains('a') || fmt.Contains('0') || fmt.Contains('x') ||
-                                       fmt == "argb" || fmt == "abgr";
-                        if (fmt.Contains("64") && !is4Comp) is4Comp = true;
+                    if (totalBits == 0) totalBits = components * 8;
+                    int perCompBits = totalBits / components;
+                    int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
 
-                        int components = is4Comp ? 4 : 3;
-                        var match = Regex.Match(fmt, @"(\d+)");
-                        int totalBits = 0;
-                        if (match.Success && int.TryParse(match.Groups[1].Value, out totalBits))
-                        {
-                        }
-                        if (totalBits == 0) totalBits = components * 8;
-                        int perCompBits = totalBits / components;
-                        int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
-
-                        string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
-                        if (info.HasAlpha)
-                            chromaFmt = chromaFmt.Replace("yuv", "yuva");
-                        fmt = chromaFmt;
-                    }
-
-                    if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
-
-                    // 更新旧的像素格式缓存
-                    _srcPixFmtCache[normalizedPath] = fmt;
-                    return fmt;
+                    string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
+                    if (info.HasAlpha)
+                        chromaFmt = chromaFmt.Replace("yuv", "yuva");
+                    fmt = chromaFmt;
                 }
 
-                // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
-                string raw = await RunProbeAsync(_ffprobePath,
-                    $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
-                string fmtFallback = raw.Trim().ToLower();
+                if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
 
-                // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
-                if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
-                    fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
-                else if (fmtFallback.Contains("yuvj"))
-                    fmtFallback = fmtFallback.Replace("yuvj", "yuv");
-                else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
-                    fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
-
-                if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
-                _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
-                return fmtFallback;
+                // 更新旧的像素格式缓存
+                _srcPixFmtCache[normalizedPath] = fmt;
+                return fmt;
             }
+
+            // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
+            string raw = await RunProbeAsync(_ffprobePath,
+                $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
+            string fmtFallback = raw.Trim().ToLower();
+
+            // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
+            if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
+                fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
+            else if (fmtFallback.Contains("yuvj"))
+                fmtFallback = fmtFallback.Replace("yuvj", "yuv");
+            else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
+                fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
+
+            if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
+            _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
+            return fmtFallback;
+        }
 
 
         private async Task<string> GetPixelFormatForFileAsync(string filePath, bool isLosslessMode, bool hasAlpha)
@@ -1775,38 +1772,62 @@ namespace AvifEncoder
             var semaphore = new SemaphoreSlim(config.MaxJobs);
             var tasks = files.Select(async file =>
                 {
-                try
-                {
-                    bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
-                    if (!acquired)
-                    {
-                        _logger.LogInfo($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
-                        // 信号量超时
-                        var failResult = new EncodeResult
-                        {
-                            Index = file.index,
-                            FileName = GetOutputFileName(file.filePath, file.index),
-                            OriginalFileName = Path.GetFileName(file.filePath),
-                            InputPath = file.filePath,                     // ★ 新增
-                            Success = false,
-                            Skipped = false,
-                            ErrorMessage = "任务信号量获取超时",
-                            TotalTime = TimeSpan.Zero
-                        };
-                        results[file.index] = failResult;
-                        MarkProcessed(failResult);
-                        return;
-                    }
                     try
                     {
-                        var r = await ProcessSingleFileAsync(file.filePath, file.index, config, isRetry);
-                        if (r != null) results[r.Index] = r;
+                        bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
+                        if (!acquired)
+                        {
+                            _logger.LogInfo($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
+                            // 信号量超时
+                            var failResult = new EncodeResult
+                            {
+                                Index = file.index,
+                                FileName = GetOutputFileName(file.filePath, file.index),
+                                OriginalFileName = Path.GetFileName(file.filePath),
+                                InputPath = file.filePath,                     // ★ 新增
+                                Success = false,
+                                Skipped = false,
+                                ErrorMessage = "任务信号量获取超时",
+                                TotalTime = TimeSpan.Zero
+                            };
+                            results[file.index] = failResult;
+                            MarkProcessed(failResult);
+                            return;
+                        }
+                        try
+                        {
+                            var r = await ProcessSingleFileAsync(file.filePath, file.index, config, isRetry);
+                            if (r != null) results[r.Index] = r;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogInfo($"文件处理异常: {file.filePath} - {ex.Message}");
+                            // 异常处理中的 failResult
+                            var failResult = new EncodeResult
+                            {
+                                Index = file.index,
+                                FileName = GetOutputFileName(file.filePath, file.index),
+                                OriginalFileName = Path.GetFileName(file.filePath),
+                                InputPath = file.filePath,
+                                Success = false,
+                                Skipped = false,
+                                ErrorMessage = $"异常: {ex.Message}",
+                                TotalTime = TimeSpan.Zero
+                            };
+                            results[file.index] = failResult;
+                            MarkProcessed(failResult);
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException)
                     {
-                        _logger.LogInfo($"文件处理异常: {file.filePath} - {ex.Message}");
-                        // 异常处理中的 failResult
-                        var failResult = new EncodeResult
+                        // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
+                        _logger.LogInfo($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
+                        // 取消操作
+                        var cancelResult = new EncodeResult
                         {
                             Index = file.index,
                             FileName = GetOutputFileName(file.filePath, file.index),
@@ -1814,198 +1835,175 @@ namespace AvifEncoder
                             InputPath = file.filePath,
                             Success = false,
                             Skipped = false,
-                            ErrorMessage = $"异常: {ex.Message}",
+                            ErrorMessage = "用户取消操作",
                             TotalTime = TimeSpan.Zero
                         };
-                        results[file.index] = failResult;
-                        MarkProcessed(failResult);
+                        results[file.index] = cancelResult;
+                        MarkProcessed(cancelResult);
                     }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
-                    _logger.LogInfo($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
-                    // 取消操作
-                    var cancelResult = new EncodeResult
-                    {
-                        Index = file.index,
-                        FileName = GetOutputFileName(file.filePath, file.index),
-                        OriginalFileName = Path.GetFileName(file.filePath),
-                        InputPath = file.filePath,
-                        Success = false,
-                        Skipped = false,
-                        ErrorMessage = "用户取消操作",
-                        TotalTime = TimeSpan.Zero
-                    };
-                    results[file.index] = cancelResult;
-                    MarkProcessed(cancelResult);
-                }
-            });
+                });
             await Task.WhenAll(tasks);
             return results.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value);
         }
 
 
-    /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标 </summary>
-    /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标（文件按顺序串行） </summary>
-    private async Task<IEnumerable<EncodeResult>> ProcessFilesSweepAsync(
-List<(string filePath, int index)> files, PresetConfig config)
-    {
-        var results = new ConcurrentBag<EncodeResult>();
-
-        // 文件级串行：依次处理每个文件
-        foreach (var file in files)
+        /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标 </summary>
+        /// <summary> 遍历模式：对每个输入文件在 MinCRF～MaxCRF 范围内生成多个 AVIF 并保存完整指标（文件按顺序串行） </summary>
+        private async Task<IEnumerable<EncodeResult>> ProcessFilesSweepAsync(
+    List<(string filePath, int index)> files, PresetConfig config)
         {
-            string inputPath = file.filePath;
-            string name = Path.GetFileName(inputPath);
+            var results = new ConcurrentBag<EncodeResult>();
 
-            // 1. 准备编码基础信息（复用缓存）
-            var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
-            if (encInfo == null)
+            // 文件级串行：依次处理每个文件
+            foreach (var file in files)
             {
-                _logger.LogInfo($"跳过 {name}：无法获取编码信息");
-                continue;
-            }
+                string inputPath = file.filePath;
+                string name = Path.GetFileName(inputPath);
 
-            // 2. 预缩放（如果需要）
-            var scaling = await HandlePreScalingAsync(inputPath, config, name);
-            string workingInput = scaling.WorkingPath;
-
-            // 3. 为当前文件创建所有 CRF 任务，用信号量控制文件内并发
-            var semaphore = new SemaphoreSlim(config.MaxJobs);
-            var crfTasks = new List<Task>();
-
-            for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
-            {
-                int capturedCrf = crf;
-                var task = Task.Run(async () =>
+                // 1. 准备编码基础信息（复用缓存）
+                var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
+                if (encInfo == null)
                 {
-                    await semaphore.WaitAsync();
-                    try
+                    _logger.LogInfo($"跳过 {name}：无法获取编码信息");
+                    continue;
+                }
+
+                // 2. 预缩放（如果需要）
+                var scaling = await HandlePreScalingAsync(inputPath, config, name);
+                string workingInput = scaling.WorkingPath;
+
+                // 3. 为当前文件创建所有 CRF 任务，用信号量控制文件内并发
+                var semaphore = new SemaphoreSlim(config.MaxJobs);
+                var crfTasks = new List<Task>();
+
+                for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
+                {
+                    int capturedCrf = crf;
+                    var task = Task.Run(async () =>
                     {
-                        var startTime = DateTime.Now;
-
-                        // 生成输出路径
-                        string baseOutput = GetOutputPath(inputPath, file.index);
-                        string dir = Path.GetDirectoryName(baseOutput)!;
-                        string baseName = Path.GetFileNameWithoutExtension(baseOutput);
-                        string outputPath = Path.Combine(dir, $"{baseName}_CRF{capturedCrf}.avif");
-
-                        // 编码（内部会等待 _ffmpegSlots）
-                        (bool ok, TimeSpan t, int retries, string error, bool fromCache,
-                         string? actualAom, string? cmd) =
-                            await EncodeToFileExAsync(workingInput, outputPath, capturedCrf,
-                                encInfo.TileCols, config.FinalCpuUsed, config,
-                                IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
-                                config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
-                                allowParamDegrade: true);
-
-                        if (!ok)
+                        await semaphore.WaitAsync();
+                        try
                         {
-                            var failResult = new EncodeResult
+                            var startTime = DateTime.Now;
+
+                            // 生成输出路径
+                            string baseOutput = GetOutputPath(inputPath, file.index);
+                            string dir = Path.GetDirectoryName(baseOutput)!;
+                            string baseName = Path.GetFileNameWithoutExtension(baseOutput);
+                            string outputPath = Path.Combine(dir, $"{baseName}_CRF{capturedCrf}.avif");
+
+                            // 编码（内部会等待 _ffmpegSlots）
+                            (bool ok, TimeSpan t, int retries, string error, bool fromCache,
+                             string? actualAom, string? cmd) =
+                                await EncodeToFileExAsync(workingInput, outputPath, capturedCrf,
+                                    encInfo.TileCols, config.FinalCpuUsed, config,
+                                    IsJpeg(workingInput), encInfo.ActualPixFmt, encInfo.IsTrulyLossless,
+                                    config.EncodeTimeoutMinutes > 0 ? config.EncodeTimeoutMinutes : 30,
+                                    allowParamDegrade: true);
+
+                            if (!ok)
+                            {
+                                var failResult = new EncodeResult
+                                {
+                                    Index = file.index * 1000 + capturedCrf,
+                                    FileName = Path.GetFileName(outputPath),
+                                    OriginalFileName = name,
+                                    InputPath = inputPath,
+                                    UsedCRF = capturedCrf,
+                                    Success = false,
+                                    ErrorMessage = error,
+                                    TotalTime = DateTime.Now - startTime,
+                                    PixelFormat = encInfo.ActualPixFmt,
+                                };
+                                MarkProcessed(failResult);
+                                results.Add(failResult);
+                                return;
+                            }
+
+                            // 质量指标计算（忽略第三个返回值 cacheKey）
+                            (double ssim, QualityMetrics? metrics, _) = await EvaluateFinalQualityAsync(
+                                workingInput, outputPath,
+                                new FinalEncodeResult
+                                {
+                                    Success = true,
+                                    Crf = capturedCrf,
+                                    ActualPixFmt = encInfo.ActualPixFmt,
+                                    EncodeTime = t,
+                                    Retries = retries,
+                                    FromCache = fromCache,
+                                    FinalCommand = cmd,
+                                    UseSafeMode = false,
+                                    ActualAom = actualAom ?? config.GetEffectiveAomParams()
+                                },
+                                encInfo,
+                                new CRFSearchResult
+                                {
+                                    Crf = capturedCrf,
+                                    ActualPixFmt = encInfo.ActualPixFmt,
+                                    SearchBasedCRF = false,
+                                    UseSafeModeFinalEncode = false,
+                                    SearchEvalCount = 0
+                                },
+                                config
+                            );
+
+                            var result = new EncodeResult
                             {
                                 Index = file.index * 1000 + capturedCrf,
                                 FileName = Path.GetFileName(outputPath),
                                 OriginalFileName = name,
                                 InputPath = inputPath,
+                                OriginalSize = _fs.FileExists(inputPath) ? _fs.GetFileLength(inputPath) : 0,
+                                OutputSize = _fs.FileExists(outputPath) ? _fs.GetFileLength(outputPath) : 0,
                                 UsedCRF = capturedCrf,
-                                Success = false,
-                                ErrorMessage = error,
-                                TotalTime = DateTime.Now - startTime,
-                                PixelFormat = encInfo.ActualPixFmt,
-                            };
-                            MarkProcessed(failResult);
-                            results.Add(failResult);
-                            return;
-                        }
-
-                        // 质量指标计算（忽略第三个返回值 cacheKey）
-                        (double ssim, QualityMetrics? metrics, _) = await EvaluateFinalQualityAsync(
-                            workingInput, outputPath,
-                            new FinalEncodeResult
-                            {
-                                Success = true,
-                                Crf = capturedCrf,
-                                ActualPixFmt = encInfo.ActualPixFmt,
+                                FinalSSIM = ssim,
                                 EncodeTime = t,
+                                SearchTime = TimeSpan.Zero,
+                                TotalTime = DateTime.Now - startTime,
                                 Retries = retries,
-                                FromCache = fromCache,
-                                FinalCommand = cmd,
-                                UseSafeMode = false,
-                                ActualAom = actualAom ?? config.GetEffectiveAomParams()
-                            },
-                            encInfo,
-                            new CRFSearchResult
-                            {
-                                Crf = capturedCrf,
-                                ActualPixFmt = encInfo.ActualPixFmt,
-                                SearchBasedCRF = false,
-                                UseSafeModeFinalEncode = false,
-                                SearchEvalCount = 0
-                            },
-                            config
-                        );
-
-                        var result = new EncodeResult
+                                Success = true,
+                                PixelFormat = encInfo.ActualPixFmt,
+                                SourcePixelFormat = encInfo.SourcePixFmt,
+                                Mode = config.AutoSource ? "自适应" : "手动",
+                                IsSafeMode = false,
+                                CacheReused = fromCache,
+                                CommandLine = cmd,
+                                FinalVMAF = metrics?.VMAF,
+                                FinalPSNR_Y = metrics?.PSNR_Y,
+                                FinalMSSSIM = metrics?.MS_SSIM,
+                                FinalMixScore = metrics != null ? ComputeMixScore(metrics) : null,
+                                FinalXPSNR_Y = metrics?.XPSNR_Y,
+                                FinalXPSNR_U = metrics?.XPSNR_U,
+                                FinalXPSNR_V = metrics?.XPSNR_V,
+                                FinalWXPSNR = metrics?.W_XPSNR,
+                                FinalSSIMULACRA2 = metrics?.SSIMULACRA2,
+                                FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
+                                FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
+                                FinalGMSD = metrics?.GMSD,
+                                SearchEvaluations = 0
+                            };
+                            MarkProcessed(result);
+                            results.Add(result);
+                        }
+                        finally
                         {
-                            Index = file.index * 1000 + capturedCrf,
-                            FileName = Path.GetFileName(outputPath),
-                            OriginalFileName = name,
-                            InputPath = inputPath,
-                            OriginalSize = _fs.FileExists(inputPath) ? _fs.GetFileLength(inputPath) : 0,
-                            OutputSize = _fs.FileExists(outputPath) ? _fs.GetFileLength(outputPath) : 0,
-                            UsedCRF = capturedCrf,
-                            FinalSSIM = ssim,
-                            EncodeTime = t,
-                            SearchTime = TimeSpan.Zero,
-                            TotalTime = DateTime.Now - startTime,
-                            Retries = retries,
-                            Success = true,
-                            PixelFormat = encInfo.ActualPixFmt,
-                            SourcePixelFormat = encInfo.SourcePixFmt,
-                            Mode = config.AutoSource ? "自适应" : "手动",
-                            IsSafeMode = false,
-                            CacheReused = fromCache,
-                            CommandLine = cmd,
-                            FinalVMAF = metrics?.VMAF,
-                            FinalPSNR_Y = metrics?.PSNR_Y,
-                            FinalMSSSIM = metrics?.MS_SSIM,
-                            FinalMixScore = metrics != null ? ComputeMixScore(metrics) : null,
-                            FinalXPSNR_Y = metrics?.XPSNR_Y,
-                            FinalXPSNR_U = metrics?.XPSNR_U,
-                            FinalXPSNR_V = metrics?.XPSNR_V,
-                            FinalWXPSNR = metrics?.W_XPSNR,
-                            FinalSSIMULACRA2 = metrics?.SSIMULACRA2,
-                            FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
-                            FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
-                            FinalGMSD = metrics?.GMSD,
-                            SearchEvaluations = 0
-                        };
-                        MarkProcessed(result);
-                        results.Add(result);
-                    }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                }, _globalCts?.Token ?? CancellationToken.None);
+                            semaphore.Release();
+                        }
+                    }, _globalCts?.Token ?? CancellationToken.None);
 
-                crfTasks.Add(task);
+                    crfTasks.Add(task);
+                }
+
+                // 4. 等待当前文件的所有 CRF 任务完成后，清理临时缩放文件，再处理下一个文件
+                await Task.WhenAll(crfTasks);
+                semaphore.Dispose();
+                if (scaling.TempFilePath != null)
+                    try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
             }
 
-            // 4. 等待当前文件的所有 CRF 任务完成后，清理临时缩放文件，再处理下一个文件
-            await Task.WhenAll(crfTasks);
-            semaphore.Dispose();
-            if (scaling.TempFilePath != null)
-                try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
+            return results.OrderBy(r => r.Index).ToList();
         }
 
-        return results.OrderBy(r => r.Index).ToList();
-    }
 
 
 
@@ -2019,9 +2017,8 @@ List<(string filePath, int index)> files, PresetConfig config)
 
 
 
-
-    private static bool IsJpeg(string path) =>
-            Path.GetExtension(path).ToLower() is ".jpg" or ".jpeg";
+        private static bool IsJpeg(string path) =>
+                Path.GetExtension(path).ToLower() is ".jpg" or ".jpeg";
 
 
         public static void ApplyBitDepth(PresetConfig cfg)
@@ -2076,14 +2073,14 @@ List<(string filePath, int index)> files, PresetConfig config)
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
-            // 计算最终质量
-               (double ssim, QualityMetrics? metrics, string evalCacheKey) = await EvaluateFinalQualityAsync(
-                workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
+                // 计算最终质量
+                (double ssim, QualityMetrics? metrics, string _) = await EvaluateFinalQualityAsync(
+                 workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
 
-            // 组装结果（第三个参数是纯文件名，用于显示）
-            return BuildResult(index, Path.GetFileName(outputPath), name,
-                                   inputPath, outputPath,
-                                   encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime);
+                // 组装结果（第三个参数是纯文件名，用于显示）
+                return BuildResult(index, Path.GetFileName(outputPath), name,
+                                       inputPath, outputPath,
+                                       encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime);
             }
             finally
             {
@@ -2115,151 +2112,151 @@ List<(string filePath, int index)> files, PresetConfig config)
         }
 
 
-            /// <summary>
-            /// 评估最终编码质量：先从缓存取，若无则计算 VMAF/XPSNR/高级指标，
-            /// 并自动清洗被尾部污染的 PNG 源文件以保证 SSIMULACRA2/Butteraugli 正常。
-            /// </summary>
-            /// <summary>
-            /// 评估最终编码质量：先从缓存取，若无则计算 VMAF/XPSNR/高级指标，
-            /// 并自动清洗被尾部污染的 PNG 源文件以保证 SSIMULACRA2/Butteraugli 正常。
-            /// </summary>
-            private async Task<(double ssim, QualityMetrics? metrics, string cacheKey)> EvaluateFinalQualityAsync(
-                string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
-                EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+        /// <summary>
+        /// 评估最终编码质量：先从缓存取，若无则计算 VMAF/XPSNR/高级指标，
+        /// 并自动清洗被尾部污染的 PNG 源文件以保证 SSIMULACRA2/Butteraugli 正常。
+        /// </summary>
+        /// <summary>
+        /// 评估最终编码质量：先从缓存取，若无则计算 VMAF/XPSNR/高级指标，
+        /// 并自动清洗被尾部污染的 PNG 源文件以保证 SSIMULACRA2/Butteraugli 正常。
+        /// </summary>
+        private async Task<(double ssim, QualityMetrics? metrics, string cacheKey)> EvaluateFinalQualityAsync(
+            string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
+            EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+        {
+            if (!encodeResult.Success)
+                return (0, null, "");
+
+            string normalizedInput = GetNormalizedPathForCache(workingInputPath);
+            string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+            int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+            string aomParams = config.GetEffectiveAomParams();
+            bool jpeg = IsJpeg(workingInputPath);
+            int tileCols = encInfo.TileCols;
+            int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
+            var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
+            string rowMtArg = GetRowMtArg(config);
+            string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
+                                              cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+
+            // ---------- 缓存命中 ----------
+            // ---------- 缓存命中 ----------
+            // ---------- 缓存命中 ----------
+            if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
             {
-                if (!encodeResult.Success)
-                    return (0, null, "");
+                _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
-                string normalizedInput = GetNormalizedPathForCache(workingInputPath);
-                string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-                int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
-                string aomParams = config.GetEffectiveAomParams();
-                bool jpeg = IsJpeg(workingInputPath);
-                int tileCols = encInfo.TileCols;
-                int cpuUsed = searchResult.UseSafeModeFinalEncode ? 0 : config.FinalCpuUsed;
-                var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
-                string rowMtArg = GetRowMtArg(config);
-                string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
-                                                  cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+                bool needUpdate = false;
 
-                // ---------- 缓存命中 ----------
-                // ---------- 缓存命中 ----------
-                // ---------- 缓存命中 ----------
-                if (_cache.TryGetMetrics(cacheKey, out QualityMetrics? cachedMetrics))
+                // 补算缺失的 XPSNR
+                if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
+                    !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
                 {
-                    _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
-
-                    bool needUpdate = false;
-
-                    // 补算缺失的 XPSNR
-                    if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
-                        !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
-                    {
-                        try
-                        {
-                            var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                            cachedMetrics.XPSNR_Y = y;
-                            cachedMetrics.XPSNR_U = u;
-                            cachedMetrics.XPSNR_V = v;
-                            cachedMetrics.W_XPSNR = weighted;
-                            needUpdate = true;
-                            _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                        }
-                        catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
-                    }
-
-                    // 补算缺失的高级指标（异步后台执行）
-                    bool advancedUpdated = false;
-                    {
-                        bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
-                        bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
-                        bool needGmsd = !cachedMetrics.GMSD.HasValue;
-
-                        if (needSsimu2 || needButter || needGmsd)
-                        {
-                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
-                                workingInputPath, outputPath, _outputDir, cacheKey,
-                                needSsimu2, needButter, needGmsd,
-                                _globalCts?.Token ?? CancellationToken.None);
-                            _advancedMetricTasks.Enqueue(bgTask);
-                            advancedUpdated = true;
-                        }
-                    }
-
-                    if (needUpdate || advancedUpdated)
-                    {
-                        _cache.SetMetrics(cacheKey, cachedMetrics);
-                        _logger.LogInfo(
-                            $"缓存指标补充: " +
-                            $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
-                            $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
-                            $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
-                            $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
-                    }
-
-                    return (cachedMetrics.SSIM, cachedMetrics, cacheKey);
-                
-            }
-
-        // ---------- 全新计算 ----------
-        QualityMetrics? metrics = null;
-                try
-                {
-                    metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
-                }
-                catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
-
-                if (metrics != null)
-                {
-                    // XPSNR
                     try
                     {
                         var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                        metrics.XPSNR_Y = y;
-                        metrics.XPSNR_U = u;
-                        metrics.XPSNR_V = v;
-                        metrics.W_XPSNR = weighted;
-                        _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
+                        cachedMetrics.XPSNR_Y = y;
+                        cachedMetrics.XPSNR_U = u;
+                        cachedMetrics.XPSNR_V = v;
+                        cachedMetrics.W_XPSNR = weighted;
+                        needUpdate = true;
+                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
                     }
-                    catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
-
-                    // 高级指标（改为异步后台执行）
-                    bool advancedUpdated = false;
-                    {
-                        bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
-                        bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
-                        bool needGmsd = !metrics.GMSD.HasValue;
-
-                        if (needSsimu2 || needButter || needGmsd)
-                        {
-                            var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
-                                workingInputPath, outputPath, _outputDir, cacheKey,
-                                needSsimu2, needButter, needGmsd,
-                                _globalCts?.Token ?? CancellationToken.None);
-                            _advancedMetricTasks.Enqueue(bgTask);
-                        }
-                    }
-
-                    _cache.SetMetrics(cacheKey, metrics);
-                    if (advancedUpdated)
-                        _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
-
-                    return (metrics.SSIM, metrics, cacheKey);
+                    catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
                 }
 
-                // 回退 SSIM 单一缓存
-                if (_cache.TryGetSSIM(cacheKey, out double cachedSsim) && cachedSsim >= 0)
-                    return (cachedSsim, null, cacheKey);
+                // 补算缺失的高级指标（异步后台执行）
+                bool advancedUpdated = false;
+                {
+                    bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
+                    bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
+                    bool needGmsd = !cachedMetrics.GMSD.HasValue;
 
-                double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
-                if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
+                    if (needSsimu2 || needButter || needGmsd)
+                    {
+                        var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
+                            workingInputPath, outputPath, _outputDir, cacheKey,
+                            needSsimu2, needButter, needGmsd,
+                            _globalCts?.Token ?? CancellationToken.None);
+                        _advancedMetricTasks.Enqueue(bgTask);
+                        advancedUpdated = true;
+                    }
+                }
 
-                return (ssim, null, cacheKey);
+                if (needUpdate || advancedUpdated)
+                {
+                    _cache.SetMetrics(cacheKey, cachedMetrics);
+                    _logger.LogInfo(
+                        $"缓存指标补充: " +
+                        $"SSIMULACRA2={cachedMetrics.SSIMULACRA2?.ToString("F4")}, " +
+                        $"Butteraugli={cachedMetrics.Butteraugli_Raw?.ToString("F4")}/{cachedMetrics.Butteraugli_3norm?.ToString("F4")}, " +
+                        $"GMSD={cachedMetrics.GMSD?.ToString("F4")}, " +
+                        $"XPSNR Y={cachedMetrics.XPSNR_Y?.ToString("F4")}, W={cachedMetrics.W_XPSNR?.ToString("F4")}");
+                }
+
+                return (cachedMetrics.SSIM, cachedMetrics, cacheKey);
+
             }
 
+            // ---------- 全新计算 ----------
+            QualityMetrics? metrics = null;
+            try
+            {
+                metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+            }
+            catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
 
-    private EncodeResult FailResult(int index, string outputFileName, string name,
-                                string inputPath, string error, DateTime fileStartTime)
+            if (metrics != null)
+            {
+                // XPSNR
+                try
+                {
+                    var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
+                    metrics.XPSNR_Y = y;
+                    metrics.XPSNR_U = u;
+                    metrics.XPSNR_V = v;
+                    metrics.W_XPSNR = weighted;
+                    _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
+                }
+                catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
+
+                // 高级指标（改为异步后台执行）
+                bool advancedUpdated = false;
+                {
+                    bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
+                    bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
+                    bool needGmsd = !metrics.GMSD.HasValue;
+
+                    if (needSsimu2 || needButter || needGmsd)
+                    {
+                        var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
+                            workingInputPath, outputPath, _outputDir, cacheKey,
+                            needSsimu2, needButter, needGmsd,
+                            _globalCts?.Token ?? CancellationToken.None);
+                        _advancedMetricTasks.Enqueue(bgTask);
+                    }
+                }
+
+                _cache.SetMetrics(cacheKey, metrics);
+                if (advancedUpdated)
+                    _logger.LogInfo($"高级指标补充: SSIMULACRA2={metrics.SSIMULACRA2?.ToString("F4")}, Butteraugli={metrics.Butteraugli_Raw?.ToString("F4")}/{metrics.Butteraugli_3norm?.ToString("F4")}, GMSD={metrics.GMSD?.ToString("F4")}");
+
+                return (metrics.SSIM, metrics, cacheKey);
+            }
+
+            // 回退 SSIM 单一缓存
+            if (_cache.TryGetSSIM(cacheKey, out double cachedSsim) && cachedSsim >= 0)
+                return (cachedSsim, null, cacheKey);
+
+            double ssim = await CalcSSIMAsync(workingInputPath, outputPath, encodeResult.ActualPixFmt);
+            if (ssim >= 0) _cache.SetSSIM(cacheKey, ssim);
+
+            return (ssim, null, cacheKey);
+        }
+
+
+        private EncodeResult FailResult(int index, string outputFileName, string name,
+                                    string inputPath, string error, DateTime fileStartTime)
         {
             var result = new EncodeResult
             {
@@ -2468,7 +2465,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 // ★ 合法性强制约束：tile 宽度不能小于 256（libaom 实现限制）
                 int maxLegalCols = GetMaxLegalTileCols(w);
 
-            if (minLegalCols > maxLegalCols)   // 图像太小，无法满足任何 tile 要求
+                if (minLegalCols > maxLegalCols)   // 图像太小，无法满足任何 tile 要求
                     tileCols = 0;
                 else
                     tileCols = Math.Clamp(tileCols, minLegalCols, maxLegalCols);
@@ -2751,7 +2748,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         {
             // 提取位深后缀和基础格式
             string depthSuffix = actualPixFmt.EndsWith("10le") ? "10le" : "";
-            string baseFmt = depthSuffix.Length > 0 ? actualPixFmt.Substring(0, actualPixFmt.Length - 4) : actualPixFmt;
+            string baseFmt = depthSuffix.Length > 0 ? actualPixFmt[..^4] : actualPixFmt;
 
             bool effectiveAlpha = hasAlpha;
             string cleanBase = effectiveAlpha ? baseFmt.Replace("a", "") : baseFmt;
@@ -2846,7 +2843,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
         /// 若启用了 SerialEncode，则强制 tile=0 且关闭 row?mt。
         /// </summary>
-        private string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
+        private static string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
                                  int crf, string aomPart, int imageWidth)
         {
             bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
@@ -2860,7 +2857,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             else
                 safeTileCols = minCols;   // minCols 已确保 tile 宽度 ≤4096，无需额外强制 ≥2
 
-        string safeRowMt;
+            string safeRowMt;
             // ===== 极限压缩模式（关闭所有并行）=====
             if (config.SerialEncode)
             {
@@ -2900,13 +2897,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             var startTime = DateTime.Now;
             int crf = searchResult.Crf;
             string actualPixFmt = searchResult.ActualPixFmt;
-            bool success = false;
-            TimeSpan encodeTime = TimeSpan.Zero;
-            int retries = 0;
-            string failReason = "";
-            bool fromCache = false;
-            string? actualAom = null;
-            string? finalCommand = null;
+            bool success;
+            TimeSpan encodeTime;
+            int retries;
+            string failReason;
+            bool fromCache;
+            string? actualAom;
+            string? finalCommand;
             bool usedSafeModeFallback = false;
 
             // 1. 尝试常规编码
@@ -3125,27 +3122,27 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
                     continue;
                 }
 
-            var result = await TryEncodeWithPixelFormatFallback(
-                    input, output, crf, tileCols, cpuUsed, cfg, jpeg, currentPixFmt, isTrueLossless,
-                    timeoutMinutes, allowParamDegrade, fileName);
+                var result = await TryEncodeWithPixelFormatFallback(
+                        input, output, crf, tileCols, cpuUsed, cfg, jpeg, currentPixFmt, isTrueLossless,
+                        timeoutMinutes, allowParamDegrade, fileName);
 
                 if (result.ok)
                     return result;
 
                 lastError = result.error ?? "未知错误";
 
-            // 在 EncodeToFileExAsync 的循环内，替换原有的致命标记逻辑：
-            // 在编码结果处理中：
-            if (result.error?.StartsWith("FATAL_NOTHING:", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                // 只有所有参数集都 Nothing 才标记
-                fatalSet.TryAdd(currentPixFmt, 0);
-                _logger.LogInfo($"致命格式 {currentPixFmt} 已记录 [{fileName}]，将不再重试");
-            }
-            // 原有的降级日志保留
+                // 在 EncodeToFileExAsync 的循环内，替换原有的致命标记逻辑：
+                // 在编码结果处理中：
+                if (result.error?.StartsWith("FATAL_NOTHING:", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    // 只有所有参数集都 Nothing 才标记
+                    fatalSet.TryAdd(currentPixFmt, 0);
+                    _logger.LogInfo($"致命格式 {currentPixFmt} 已记录 [{fileName}]，将不再重试");
+                }
+                // 原有的降级日志保留
 
-            // 仅当还有后续格式时才输出降级日志
-            if (currentPixFmt != pixFmtsToTry.Last())
+                // 仅当还有后续格式时才输出降级日志
+                if (currentPixFmt != pixFmtsToTry.Last())
                 {
                     string nextFmt = pixFmtsToTry[Array.IndexOf(pixFmtsToTry, currentPixFmt) + 1];
                     if (!fatalSet.ContainsKey(nextFmt))
@@ -3277,9 +3274,9 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                         safeTileCols = 0;
                     if (cfg.SerialEncode) safeTileCols = 0;   // ← 新属性名
 
-                string safeTilePart = safeTileCols > 0
-                        ? $"-tile-columns {safeTileCols} -tile-rows 0"
-                        : "-tile-columns 0 -tile-rows 0";
+                    string safeTilePart = safeTileCols > 0
+                            ? $"-tile-columns {safeTileCols} -tile-rows 0"
+                            : "-tile-columns 0 -tile-rows 0";
                     sets.Add(("", safeTilePart, 0, rowMt));
                 }
             }
@@ -3322,17 +3319,17 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         }
 
 
-            private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
-        string? actualAomParams, string? commandLine)>
-        ExecuteEncodingWithRetries(string input, string output, int crf, string currentPixFmt,
-                               (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-                               PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
-                               string cacheKey, string cacheFile)
+        private async Task<(bool ok, TimeSpan t, int retries, string error, bool fromCache,
+    string? actualAomParams, string? commandLine)>
+    ExecuteEncodingWithRetries(string input, string output, int crf, string currentPixFmt,
+                           (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                           PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
+                           string cacheKey, string cacheFile)
         {
             _logger.LogSearch($"  ? [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
             try
-        {
+            {
                 if (!await _ffmpegSlots.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
                     _logger.LogSearch($"? 编码信号量获取超时: {input} CRF={crf}");
@@ -3351,7 +3348,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 {
                     string ffArgs = await BuildFfmpegArgsAsync(input, output, crf, currentPixFmt, param, cfg, isTrueLossless);
                     // ... 后续编码逻辑保持不变 ...
-                var sw = Stopwatch.StartNew();
+                    var sw = Stopwatch.StartNew();
                     (bool success, string stderrLastLine) = await RunFfmpegExAsync(_ffmpegPath, ffArgs,
                         TimeSpan.FromMinutes(timeoutMinutes));
                     sw.Stop();
@@ -3405,101 +3402,101 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
-                /// <summary>
-                /// 通过 ffprobe (JSON 模式) 探测输入文件的色彩元数据。
-                /// 如果任何核心字段缺失、为 unknown/reserved，则返回 null，避免半继承。
-                /// </summary>
-                private async Task<(string primaries, string trc, string space, string? range)?>
-                GetSourceColorInfoAsync(string inputPath)
-                {
-                    var probe = await GetProbeInfoAsync(inputPath);
-                    if (probe == null) return null;
+        /// <summary>
+        /// 通过 ffprobe (JSON 模式) 探测输入文件的色彩元数据。
+        /// 如果任何核心字段缺失、为 unknown/reserved，则返回 null，避免半继承。
+        /// </summary>
+        private async Task<(string primaries, string trc, string space, string? range)?>
+        GetSourceColorInfoAsync(string inputPath)
+        {
+            var probe = await GetProbeInfoAsync(inputPath);
+            if (probe == null) return null;
 
-                    // 任何核心色彩字段缺失则返回 null
-                    if (probe.ColorPrimaries == null || probe.ColorTransfer == null || probe.ColorSpace == null)
-                        return null;
+            // 任何核心色彩字段缺失则返回 null
+            if (probe.ColorPrimaries == null || probe.ColorTransfer == null || probe.ColorSpace == null)
+                return null;
 
-                    return (probe.ColorPrimaries, probe.ColorTransfer, probe.ColorSpace, probe.ColorRange);
-                }
+            return (probe.ColorPrimaries, probe.ColorTransfer, probe.ColorSpace, probe.ColorRange);
+        }
 
 
 
-    /// <summary> 构建 ffmpeg 参数字符串 </summary>
-    /// <summary> 构建 ffmpeg 参数字符串 </summary>
-    private async Task<string> BuildFfmpegArgsAsync(string input, string output, int crf, string pixFmt,
-               (string aomParams, string tilePart, int actualCpu, string rowMt) param,
-               PresetConfig cfg, bool isTrueLossless)
+        /// <summary> 构建 ffmpeg 参数字符串 </summary>
+        /// <summary> 构建 ffmpeg 参数字符串 </summary>
+        private async Task<string> BuildFfmpegArgsAsync(string input, string output, int crf, string pixFmt,
+                   (string aomParams, string tilePart, int actualCpu, string rowMt) param,
+                   PresetConfig cfg, bool isTrueLossless)
+        {
+            string logLevel = "-loglevel info -hide_banner";
+            string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
+
+            string crfPart = isTrueLossless
+            ? cfg.Encoder switch
             {
-                string logLevel = "-loglevel info -hide_banner";
-                string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
-
-                string crfPart = isTrueLossless
-                ? cfg.Encoder switch
-                {
                 _ when EncoderUtils.IsRav1e(cfg.Encoder) => "-rav1e-params lossless=1",
                 _ when EncoderUtils.IsSvtAv1(cfg.Encoder) => "-svtav1-params lossless=1",
                 _ => "-lossless 1"
-                }
-                : $"-crf {crf}";
-
-        string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
-                string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
-                string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
-
-                // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------
-                string primaries = "bt709";
-                string trc = "iec61966-2-1";
-                // 仅当像素格式为 gbr*（planar RGB）时使用 identity matrix，
-                // 其他 YUV 格式（yuv420p, yuv444p 等）使用 bt709。
-                string space = pixFmt.StartsWith("gbr", StringComparison.OrdinalIgnoreCase)
-                                       ? "gbr"
-                                       : "bt709";
-                string rangeVal = "pc";
-
-                // ---------- 探测源文件色彩元数据 ----------
-                var srcColor = await GetSourceColorInfoAsync(input);
-                if (srcColor != null)
-                {
-                    var p = srcColor.Value.primaries;
-                    var t = srcColor.Value.trc;
-
-                    bool isHdrPq = p == "bt2020" && t == "smpte2084";   // 仅允许 PQ HDR
-
-                    if (isHdrPq)
-                    {
-                        primaries = "bt2020";
-                        trc = "smpte2084";
-                        space = "bt2020nc";          // HDR10 标准矩阵
-                    }
-                    // 其他组合保留默认 space（已按像素格式选择 bt709 或 gbr）
-
-                    // range 始终允许继承
-                    if (!string.IsNullOrWhiteSpace(srcColor.Value.range))
-                        rangeVal = srcColor.Value.range;
-                }
-
-                // range 映射
-                string rangeArg = rangeVal.ToLowerInvariant() switch
-                {
-                    "tv" or "mpeg" => "-color_range tv",
-                    _ => "-color_range pc"
-                };
-
-                string colorMeta = $"-color_primaries {primaries} -color_trc {trc} -colorspace {space}";
-
-                return $"{logLevel} -i \"{input}\" " +
-                       $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
-                       $"{crfPart} {encoderSpecific} " +
-                       $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
             }
+            : $"-crf {crf}";
 
-            private static string CsvEscape(string field)
+            string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
+            string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+            string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
+
+            // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------
+            string primaries = "bt709";
+            string trc = "iec61966-2-1";
+            // 仅当像素格式为 gbr*（planar RGB）时使用 identity matrix，
+            // 其他 YUV 格式（yuv420p, yuv444p 等）使用 bt709。
+            string space = pixFmt.StartsWith("gbr", StringComparison.OrdinalIgnoreCase)
+                                   ? "gbr"
+                                   : "bt709";
+            string rangeVal = "pc";
+
+            // ---------- 探测源文件色彩元数据 ----------
+            var srcColor = await GetSourceColorInfoAsync(input);
+            if (srcColor != null)
             {
-                if (string.IsNullOrEmpty(field)) return "";
-                if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-                    return $"\"{field.Replace("\"", "\"\"")}\"";
-                return field;
+                var p = srcColor.Value.primaries;
+                var t = srcColor.Value.trc;
+
+                bool isHdrPq = p == "bt2020" && t == "smpte2084";   // 仅允许 PQ HDR
+
+                if (isHdrPq)
+                {
+                    primaries = "bt2020";
+                    trc = "smpte2084";
+                    space = "bt2020nc";          // HDR10 标准矩阵
+                }
+                // 其他组合保留默认 space（已按像素格式选择 bt709 或 gbr）
+
+                // range 始终允许继承
+                if (!string.IsNullOrWhiteSpace(srcColor.Value.range))
+                    rangeVal = srcColor.Value.range;
             }
+
+            // range 映射
+            string rangeArg = rangeVal.ToLowerInvariant() switch
+            {
+                "tv" or "mpeg" => "-color_range tv",
+                _ => "-color_range pc"
+            };
+
+            string colorMeta = $"-color_primaries {primaries} -color_trc {trc} -colorspace {space}";
+
+            return $"{logLevel} -i \"{input}\" " +
+                   $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
+                   $"{crfPart} {encoderSpecific} " +
+                   $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
+        }
+
+        private static string CsvEscape(string field)
+        {
+            if (string.IsNullOrEmpty(field)) return "";
+            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
+                return $"\"{field.Replace("\"", "\"\"")}\"";
+            return field;
+        }
 
         private async Task<(bool success, string stderrLastLine)> RunFfmpegExAsync(string file, string args, TimeSpan timeout)
         {
@@ -3743,7 +3740,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                     return null;
                 }
 
-            try
+                try
                 {
                     string tmp = Path.Combine(_outputDir, $"_p_{Guid.NewGuid():N}.avif");
                     try
@@ -3893,863 +3890,155 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
 
 
-                /// <summary>
-                /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0?1 的分数。
-                /// </summary>
-                private static double GetSearchScore(QualityMetrics m, string metricMode)
-                {
-                    switch (metricMode?.ToLower())
-                    {
-                        case "ssim": return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
-                        case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                        case "msssim": return double.IsNaN(m.MS_SSIM) ? -1 : m.MS_SSIM;
-                        case "vmaf":
-                            return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
-                        case "mix":
-                            if (double.IsNaN(m.VMAF)) return -1;
-                            double vmafNorm = m.VMAF / 100.0;
-                            double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                            return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
-                        case "xpsnr_y": return m.XPSNR_Y.HasValue && !double.IsNaN(m.XPSNR_Y.Value) ? m.XPSNR_Y.Value : -1;
-                        case "xpsnr_u": return m.XPSNR_U.HasValue && !double.IsNaN(m.XPSNR_U.Value) ? m.XPSNR_U.Value : -1;
-                        case "xpsnr_v": return m.XPSNR_V.HasValue && !double.IsNaN(m.XPSNR_V.Value) ? m.XPSNR_V.Value : -1;
-                        case "xpsnr_w": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
-                        case "xpsnr": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
-                        case "ssimu2": return m.SSIMULACRA2.HasValue && !double.IsNaN(m.SSIMULACRA2.Value) ? m.SSIMULACRA2.Value : -1;
-                        case "butter3": return m.Butteraugli_3norm.HasValue && !double.IsNaN(m.Butteraugli_3norm.Value) ? m.Butteraugli_3norm.Value : -1;
-                        case "gmsd": return m.GMSD.HasValue && !double.IsNaN(m.GMSD.Value) ? m.GMSD.Value : -1;
-                        default: return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
-                    }
-                }
-
-    /// <summary>
-    /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W?XPSNR (6:1:1)。
-    /// 失败时各字段为 null。
-    /// </summary>
-    /// <summary>
-    /// 计算 XPSNR 各通道分（Y/U/V）及加权 W?XPSNR。
-    /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
-    /// </summary>
-    /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
-    /// <summary>
-    /// 计算 XPSNR 各通道分（Y/U/V）及加权 W?XPSNR。
-    /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
-    /// </summary>
-    private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
-            string refPath, string distPath, string pixFmt = "yuv444p")
-                {
-                    if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
-                        return (null, null, null, null);
-
-                    string CleanPath(string p)
-                    {
-                        if (p.StartsWith(@"\\?\")) p = p.Substring(4);
-                        return Path.GetFullPath(p);
-                    }
-                    string safeRef = CleanPath(refPath);
-                    string safeDist = CleanPath(distPath);
-
-                    int bitDepth = 8;
-                    try
-                    {
-                        var infoRef = await GetProbeInfoAsync(refPath);
-                        if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
-                            bitDepth = 10;
-                        var infoDist = await GetProbeInfoAsync(distPath);
-                        if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
-                            bitDepth = Math.Max(bitDepth, 10);
-                    }
-                    catch { }
-                    double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
-
-
-                    // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
-                    string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
-
-                    string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
-                        $"-lavfi \"" +
-                        $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
-                        $"scale=in_range=pc:out_range=pc," +
-                        $"format={actualPixFmt}," +
-                        $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
-                        $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
-                        $"scale=in_range=pc:out_range=pc," +
-                        $"format={actualPixFmt}," +
-                        $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
-                        $"[dist][ref]xpsnr\" -f null -";
-
-                    var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
-                        _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
-                        _globalCts?.Token ?? default);
-
-                    string combinedOutput = stdout + stderr;
-
-                    if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
-                    {
-                        _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
-                        return (null, null, null, null);
-                    }
-
-                    // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
-                    var combinedMatch = Regex.Match(combinedOutput,
-                        @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
-                        RegexOptions.IgnoreCase);
-                    double? y, u, v;
-                    if (combinedMatch.Success)
-                    {
-                        y = ParseSingleValue(combinedMatch.Groups[1].Value);
-                        u = ParseSingleValue(combinedMatch.Groups[2].Value);
-                        v = ParseSingleValue(combinedMatch.Groups[3].Value);
-                    }
-                    else
-                    {
-                        // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
-                        var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                        var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                        var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                        y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
-                        u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
-                        v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
-                    }
-
-                    // 值解析辅助方法（局部函数）
-                    static double? ParseSingleValue(string val)
-                    {
-                        if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
-                            return 100.0;   // 将 inf 映射为极高值，表示几乎无损
-                        if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
-                            return result;
-                        return null;
-                    }
-
-                    // 计算加权 W?XPSNR
-                    double? weighted = null;
-                    if (y.HasValue && u.HasValue && v.HasValue)
-                    {
-                        weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
-                    }
-                    return (y, u, v, weighted);
-            }
-
-                /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
-                /// <param name="maxVal">像素最大值，8?bit=255, 10?bit=1023</param>
-                private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
-                {
-                    double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
-                    double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
-                    double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
-                    double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
-                    return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
-                }
-
-
-
-
-
-
-
-
-
-
         /// <summary>
-        /// 使用极快的编码参数进行代理评估，返回 0?1 分数（与 getScore 一致）。
-        /// 失败返回 -1。
+        /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0?1 的分数。
         /// </summary>
-        /// <summary>
-        /// 使用极快的编码参数进行代理评估，返回 0?1 分数。
-        /// 失败返回 -1。
-        /// </summary>
-        private async Task<double> ProxyEvaluateAsync(string input, int crf,
-        int tileCols, PresetConfig cfg, bool jpeg, string pixFmt)
+        private static double GetSearchScore(QualityMetrics m, string metricMode)
         {
-            // Proxy 始终使用 yuv420p + cpu-used 6 + 最小稳定参数
-            var proxyCfg = new PresetConfig
+            switch (metricMode?.ToLower())
             {
-                Encoder = cfg.Encoder,
-                BaseCRF = crf,
-                FinalCpuUsed = 6,
-                SearchCpuUsed = 6,
-                PixelFormat = "yuv420p",
-                Lossless = false,
-                AomParams = "aq-mode=0:enable-cdef=0",
-                MaxJobs = cfg.MaxJobs,
-                BitDepth = cfg.BitDepth,
-                SerialEncode = cfg.SerialEncode   // ← 新属性名（传递极限压缩设置）
-            };
+                case "ssim": return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
+                case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                case "msssim": return double.IsNaN(m.MS_SSIM) ? -1 : m.MS_SSIM;
+                case "vmaf":
+                    return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
+                case "mix":
+                    if (double.IsNaN(m.VMAF)) return -1;
+                    double vmafNorm = m.VMAF / 100.0;
+                    double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                    return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
+                case "xpsnr_y": return m.XPSNR_Y.HasValue && !double.IsNaN(m.XPSNR_Y.Value) ? m.XPSNR_Y.Value : -1;
+                case "xpsnr_u": return m.XPSNR_U.HasValue && !double.IsNaN(m.XPSNR_U.Value) ? m.XPSNR_U.Value : -1;
+                case "xpsnr_v": return m.XPSNR_V.HasValue && !double.IsNaN(m.XPSNR_V.Value) ? m.XPSNR_V.Value : -1;
+                case "xpsnr_w": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
+                case "xpsnr": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
+                case "ssimu2": return m.SSIMULACRA2.HasValue && !double.IsNaN(m.SSIMULACRA2.Value) ? m.SSIMULACRA2.Value : -1;
+                case "butter3": return m.Butteraugli_3norm.HasValue && !double.IsNaN(m.Butteraugli_3norm.Value) ? m.Butteraugli_3norm.Value : -1;
+                case "gmsd": return m.GMSD.HasValue && !double.IsNaN(m.GMSD.Value) ? m.GMSD.Value : -1;
+                default: return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
+            }
+        }
 
-            string tmpOutput = Path.Combine(_outputDir, $"_proxy_{Guid.NewGuid():N}.avif");
+        /// <summary>
+        /// 计算 XPSNR 的三个通道分 (Y/U/V) 并返回加权 W?XPSNR (6:1:1)。
+        /// 失败时各字段为 null。
+        /// </summary>
+        /// <summary>
+        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W?XPSNR。
+        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+        /// </summary>
+        /// <param name="pixFmt">像素格式，如 yuv444p / yuv420p</param>
+        /// <summary>
+        /// 计算 XPSNR 各通道分（Y/U/V）及加权 W?XPSNR。
+        /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
+        /// </summary>
+        private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
+                string refPath, string distPath, string pixFmt = "yuv444p")
+        {
+            if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
+                return (null, null, null, null);
+
+            string CleanPath(string p)
+            {
+                if (p.StartsWith(@"\\?\")) p = p.Substring(4);
+                return Path.GetFullPath(p);
+            }
+            string safeRef = CleanPath(refPath);
+            string safeDist = CleanPath(distPath);
+
+            int bitDepth = 8;
             try
             {
-                var encResult = await EncodeToFileExAsync(input, tmpOutput, crf,
-                    tileCols, proxyCfg.FinalCpuUsed, proxyCfg, jpeg, "yuv420p",
-                    isTrueLossless: false, timeoutMinutes: cfg.SearchEncodeTimeoutMinutes,
-                    allowParamDegrade: false);
-
-                if (!encResult.ok || !_fs.FileExists(tmpOutput) || _fs.GetFileLength(tmpOutput) < 100)
-                    return -1;
-
-                QualityMetrics? m = await ComputeAllMetricsAsync(input, tmpOutput);
-                if (m == null) return -1;
-
-                return GetSearchScore(m, cfg.MetricMode ?? "vmaf");
+                var infoRef = await GetProbeInfoAsync(refPath);
+                if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
+                    bitDepth = 10;
+                var infoDist = await GetProbeInfoAsync(distPath);
+                if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
+                    bitDepth = Math.Max(bitDepth, 10);
             }
-            finally
+            catch { }
+            double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
+
+
+            // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
+            string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
+
+            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
+                $"-lavfi \"" +
+                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
+                $"scale=in_range=pc:out_range=pc," +
+                $"format={actualPixFmt}," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
+                $"[1:v]settb=AVTB,setpts=PTS-STARTPTS," +
+                $"scale=in_range=pc:out_range=pc," +
+                $"format={actualPixFmt}," +
+                $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
+                $"[dist][ref]xpsnr\" -f null -";
+
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
+                _globalCts?.Token ?? default);
+
+            string combinedOutput = stdout + stderr;
+
+            if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
             {
-                if (_fs.FileExists(tmpOutput)) try { _fs.DeleteFile(tmpOutput); } catch { }
-            }
-        }
-
-
-
-        /// <summary>
-        /// 数据驱动混合搜索：中位数初始化 + 保守 Proxy 验证 + 安全二分
-        /// 始终在用户指定范围（或全范围）内搜索，保证全局最优。
-        /// </summary>
-        /// <summary>
-        /// 混合搜索：默认仅中位数初始化 + 标准二分；可选开启保守 Proxy 验证。
-        /// 不再执行 MaxCRF 早停，评估次数精确统计。
-        /// </summary>
-        /// <summary>
-        /// 混合搜索：默认基于先验表直接划定搜索区间，使用标准二分，无需 Proxy。
-        /// 若启用 --proxy，则保留保守 Proxy 验证（沿用原有 PerformConservativeProxyPhaseAsync）。
-        /// </summary>
-        /// <summary>
-        /// 数据驱动混合搜索（默认模式）：
-        /// 1. 根据先验表获取中位数 CRF，执行一次真实评估。
-        /// 2. 若中位数达标 → 向右二分 [median, userMax]（已知下界，不重复测 median）。
-        /// 3. 若中位数不达标 → 向左二分 [userMin, median-1]（验证下界 userMin）。
-        /// 4. 若仍未找到可行解，回退到安全模式全扫描（兜底离群值）。
-        /// 若启用 --proxy，则保留保守 Proxy 验证流程。
-        /// </summary>
-        /// <summary>
-        /// 按目标 VMAF 动态返回最优哨兵偏移量（基于 400 张图片统计）
-        /// </summary>
-        private static int GetOptimalSentinelDelta(int targetVmafInt)
-        {
-            return targetVmafInt switch
-            {
-                90 => 4,                                   // 中位数 38 时最优
-                >= 91 and <= 95 => 2,                     // 分布最集中，极小偏移最优
-                96 => 3,                                   // 高离散度目标
-                _ => 3                                     // 安全默认
-            };
-        }
-
-        /// <summary>
-        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
-        /// </summary>
-        /// <summary>
-        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
-        /// </summary>
-        /// <summary>
-        /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分（可通过 --prior-search 启用）
-        /// </summary>
-        private async Task<(int crf, bool searchFailed, bool qualityInsufficient, int evalCount)> HybridSearchCRFAsync(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string? displayName = null)
-        {
-            string name = displayName ?? Path.GetFileName(input);
-            string metricMode = cfg.MetricMode ?? "vmaf";
-            double target;
-            double margin;
-            bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
-
-            // 选择 margin
-            if (cfg.XpsnrTargetValue.HasValue) margin = 0.01;
-            else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;
-            else if (cfg.Butteraugli3TargetValue.HasValue) margin = 0.01;
-            else if (cfg.GmsdTargetValue.HasValue) margin = 0.001;
-            else margin = SSIMMargin;
-
-            // 提取最终的目标值（原生值）
-            if (cfg.XpsnrTargetValue.HasValue)
-                target = cfg.XpsnrTargetValue.Value - margin;
-            else if (cfg.Ssimu2TargetValue.HasValue)
-                target = cfg.Ssimu2TargetValue.Value;
-            else if (cfg.Butteraugli3TargetValue.HasValue)
-                target = cfg.Butteraugli3TargetValue.Value + margin;
-            else if (cfg.GmsdTargetValue.HasValue)
-                target = cfg.GmsdTargetValue.Value + margin;
-            else
-                target = cfg.TargetSSIM + SSIMMargin;
-
-            // 用于控制台显示的目标值（未经反转）
-            double displayTarget;
-            if (cfg.XpsnrTargetValue.HasValue) displayTarget = cfg.XpsnrTargetValue.Value;
-            else if (cfg.Ssimu2TargetValue.HasValue) displayTarget = cfg.Ssimu2TargetValue.Value;
-            else if (cfg.Butteraugli3TargetValue.HasValue) displayTarget = cfg.Butteraugli3TargetValue.Value;
-            else if (cfg.GmsdTargetValue.HasValue) displayTarget = cfg.GmsdTargetValue.Value;
-            else displayTarget = cfg.TargetSSIM + SSIMMargin;
-            string targetDisplay = FormatScore(displayTarget, metricMode);
-            SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
-
-            using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
-            var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
-
-            Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
-
-            // ★ 对于越小越好的指标，将分数取反，使 “>= target” 仍然有效
-            if (lowerIsBetter)
-            {
-                var originalGetScore = getScore;
-                getScore = async crf =>
-                {
-                    double s = await originalGetScore(crf);
-                    return s >= 0 ? -s : s;      // 负值表示失败，不反转
-                };
-                target = -target;
+                _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
+                return (null, null, null, null);
             }
 
-            // 辅助函数：将内部反转后的分数恢复为原始值用于控制台显示
-            Func<double, double> displayScore = s => lowerIsBetter && s != -1 ? -s : s;
-
-            int totalEvalCount = 0;
-            int userMin = cfg.MinCRF;
-            int userMax = cfg.MaxCRF;
-
-            // ────────── 先验搜索未启用：直接全范围二分 ──────────
-            if (!cfg.UsePriorSearch)
+            // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
+            var combinedMatch = Regex.Match(combinedOutput,
+                @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
+                RegexOptions.IgnoreCase);
+            double? y, u, v;
+            if (combinedMatch.Success)
             {
-                SafeWriteLine($"  [{name}] [INFO] 先验搜索已关闭，使用标准二分区间 [{userMin}, {userMax}]");
-                var (directBestCrf, directEval) = await StandardBinarySearch(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    userMin, userMax, knownLoScore: null, lowerIsBetter: lowerIsBetter);
-                totalEvalCount = directEval;
-
-                if (directBestCrf >= 0)
-                {
-                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={directBestCrf}，总评估 {totalEvalCount} 次");
-                    return (directBestCrf, false, false, totalEvalCount);
-                }
-
-                if (userMin == 0)
-                {
-                    SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
-                    return (cfg.BaseCRF, true, false, totalEvalCount);
-                }
-
-                SafeWriteLine($"  [{name}] [FALLBACK] 标准二分无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
-                var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
-                if (safeOk)
-                {
-                    SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
-                    return (safeCrf, false, false, totalEvalCount);
-                }
-
-                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
-                return (cfg.BaseCRF, true, false, totalEvalCount);
-            }
-
-            // ────────── 先验搜索启用 ──────────
-            int priorMedian = (userMin + userMax) / 2;
-            if (metricMode == "vmaf")
-            {
-                double targetVmaf = target * 100.0;
-                var (median, _, _) = GetPriorFromVmaf(targetVmaf);
-                priorMedian = Math.Clamp(median, userMin, userMax);
-            }
-
-            int searchLo, searchHi;
-            double? knownLoScore = null;
-
-            // ── Proxy 模式 ──
-            if (cfg.UseProxySearch)
-            {
-                SafeWriteLine($"  [{name}] [PRIOR] 先验中位数={priorMedian}");
-
-                var (safeLo, safeHi) = await PerformConservativeProxyPhaseAsync(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, metricMode, token,
-                    priorMedian, userMin, userMax);
-
-                searchLo = (safeLo >= 0 && safeHi >= safeLo) ? Math.Max(userMin, safeLo) : userMin;
-                searchHi = (safeLo >= 0 && safeHi >= safeLo) ? Math.Min(userMax, safeHi) : userMax;
-
-                SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}]");
-
-                var (proxyCrf, proxyEval) = await StandardBinarySearch(
-                    input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                    searchLo, searchHi, knownLoScore: null, lowerIsBetter: lowerIsBetter);
-                totalEvalCount += proxyEval;
-
-                if (proxyCrf >= 0)
-                {
-                    SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={proxyCrf}，总评估 {totalEvalCount} 次");
-                    return (proxyCrf, false, false, totalEvalCount);
-                }
-
-                if (userMin == 0)
-                {
-                    SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
-                    return (cfg.BaseCRF, true, false, totalEvalCount);
-                }
-
-                SafeWriteLine($"  [{name}] [FALLBACK] Proxy 区间无解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
-                var (safeOk, safeCrf, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
-                if (safeOk)
-                {
-                    SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf}");
-                    return (safeCrf, false, false, totalEvalCount);
-                }
-
-                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
-                return (cfg.BaseCRF, true, false, totalEvalCount);
-            }
-
-            // ── 默认先验模式：中位数 + 哨兵 + 二分 ──
-            SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
-            double medianScore = await getScore(priorMedian);
-            totalEvalCount++;
-            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore) * 100:F4}" : $"分数={displayScore(medianScore):F4}";
-            SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
-
-            if (metricMode == "vmaf" && medianScore >= 0)
-            {
-                int delta = GetOptimalSentinelDelta((int)Math.Round(target * 100.0));
-                if (delta > 0)
-                {
-                    if (medianScore >= target)
-                    {
-                        int probe = Math.Min(priorMedian + delta, userMax);
-                        if (probe > priorMedian)
-                        {
-                            SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
-                            double probeScore = await getScore(probe);
-                            totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
-                            SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
-
-                            if (probeScore >= target)
-                            {
-                                searchLo = probe;
-                                searchHi = userMax;
-                                knownLoScore = probeScore;
-                            }
-                            else
-                            {
-                                searchLo = priorMedian;
-                                searchHi = probe - 1;
-                                knownLoScore = medianScore;
-                            }
-                        }
-                        else
-                        {
-                            searchLo = priorMedian;
-                            searchHi = userMax;
-                            knownLoScore = medianScore;
-                        }
-                    }
-                    else
-                    {
-                        int probe = Math.Max(priorMedian - delta, userMin);
-                        if (probe < priorMedian)
-                        {
-                            SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
-                            double probeScore = await getScore(probe);
-                            totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
-                            SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
-
-                            if (probeScore >= target)
-                            {
-                                searchLo = probe;
-                                searchHi = priorMedian - 1;
-                                knownLoScore = probeScore;
-                            }
-                            else
-                            {
-                                searchLo = userMin;
-                                searchHi = probe - 1;
-                                knownLoScore = null;
-                            }
-                        }
-                        else
-                        {
-                            searchLo = userMin;
-                            searchHi = priorMedian - 1;
-                            knownLoScore = null;
-                        }
-                    }
-                }
-                else
-                {
-                    searchLo = medianScore >= target ? priorMedian : userMin;
-                    searchHi = medianScore >= target ? userMax : priorMedian - 1;
-                    knownLoScore = medianScore >= target ? medianScore : (double?)null;
-                }
+                y = ParseSingleValue(combinedMatch.Groups[1].Value);
+                u = ParseSingleValue(combinedMatch.Groups[2].Value);
+                v = ParseSingleValue(combinedMatch.Groups[3].Value);
             }
             else
             {
-                searchLo = medianScore >= target ? priorMedian : userMin;
-                searchHi = medianScore >= target ? userMax : priorMedian - 1;
-                knownLoScore = medianScore >= target ? medianScore : (double?)null;
+                // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
+                var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
+                u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
+                v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
             }
 
-            SafeWriteLine($"  [{name}] [INFO] 二分区间: [{searchLo}, {searchHi}] {(knownLoScore.HasValue ? "(下界已知可行)" : "(需验证下界)")}");
-            if (knownLoScore.HasValue)
-                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={searchLo} ({FormatScore(displayScore(knownLoScore.Value), metricMode)})");
-
-            var (bestCrf, binEval) = await StandardBinarySearch(
-                input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                searchLo, searchHi, knownLoScore: knownLoScore, lowerIsBetter: lowerIsBetter);
-            totalEvalCount += binEval;
-
-            if (bestCrf >= 0)
+            // 值解析辅助方法（局部函数）
+            static double? ParseSingleValue(string val)
             {
-                SafeWriteLine($"  [{name}] [DONE] 搜索完成，最优 CRF={bestCrf}，总评估 {totalEvalCount} 次");
-                return (bestCrf, false, false, totalEvalCount);
+                if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
+                    return 100.0;   // 将 inf 映射为极高值，表示几乎无损
+                if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
+                    return result;
+                return null;
             }
 
-            if (userMin == 0)
+            // 计算加权 W?XPSNR
+            double? weighted = null;
+            if (y.HasValue && u.HasValue && v.HasValue)
             {
-                SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败且 MinCRF=0，跳过安全扫描，将使用 CRF=0 最终编码");
-                return (cfg.BaseCRF, true, false, totalEvalCount);
+                weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
             }
-
-            SafeWriteLine($"  [{name}] [FALLBACK] 二分未找到可行解，启动安全模式全扫描 (范围=[{userMin},{userMax}])");
-            var (safeOk2, safeCrf2, _, _) = await RunSafeModeScan(input, cfg, name, userMin, userMax);
-            if (safeOk2)
-            {
-                SafeWriteLine($"  [{name}] [FALLBACK] 安全扫描成功，CRF={safeCrf2}");
-                return (safeCrf2, false, false, totalEvalCount);
-            }
-
-            SafeWriteLine($"  [{name}] [FAIL] 所有搜索均失败，回退到 BaseCRF={cfg.BaseCRF}");
-            return (cfg.BaseCRF, true, false, totalEvalCount);
+            return (y, u, v, weighted);
         }
 
-        // 注意：FormatScore 方法保持不变（已在其他地方定义）
-
-        // 辅助格式化方法（可放在同一类中）
-        private static string FormatScore(double score, string metricMode)
+        /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
+        /// <param name="maxVal">像素最大值，8?bit=255, 10?bit=1023</param>
+        private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
         {
-            if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
-                return $"XPSNR={score:F4} dB";
-            return metricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
+            double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
+            double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
+            double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
+            double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
+            return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
         }
 
-
-
-
-
-        /// <summary>
-        /// 在 [lo, hi] 区间内执行标准右边界二分，并附带右侧单调扫描。
-        /// 返回 (最优CRF, 本阶段真实评估次数)。若下界不可行或全部失败返回 (-1, 评估次数)。
-        /// 每一步均通过控制台和日志输出。
-        /// </summary>
-        /// <summary>
-        /// 在 [lo, hi] 区间内使用标准右边界二分查找满足目标的最大 CRF。
-        /// 区间内的每一个测试点都通过 getScore 获取真实分数，评估次数精确统计。
-        /// 若没有任何点达标，返回 (-1, 评估次数)。
-        /// 每一步均输出到控制台和日志。
-        /// </summary>
-        /// <summary>
-        /// 标准右边界二分：在 [lo, hi] 区间内找到满足目标的最大 CRF。
-        /// 若提供 knownLoScore（且 >= target），则跳过 lo 的评估，直接从 lo+1 开始搜索。
-        /// 每一步均输出到控制台与日志。
-        /// 返回 (最优CRF, 本阶段评估次数)。若无任何可行点，返回 (-1, evalCount)。
-        /// </summary>
-        private static async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
-    string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
-    string name, double target, Func<int, Task<double>> getScore,
-    CancellationToken token, int lo, int hi, double? knownLoScore = null,
-    bool lowerIsBetter = false)
-        {
-            int evalCount = 0;
-            int bestCrf = -1;
-
-            // 已知下界可行：直接记录，不评估
-            if (knownLoScore.HasValue && knownLoScore.Value >= target)
-            {
-                bestCrf = lo;
-                double displayKnown = lowerIsBetter && knownLoScore.Value != -1 ? -knownLoScore.Value : knownLoScore.Value;
-                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown * 100:F4}" : $"分数={displayKnown:F4}";
-                SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
-            }
-
-            int l = bestCrf >= 0 ? bestCrf + 1 : lo;
-            int r = hi;
-
-            while (l <= r)
-            {
-                token.ThrowIfCancellationRequested();
-                int mid = (l + r) / 2;
-                SafeWriteLine($"  [{name}] [BIN] 测试 CRF={mid} (区间 {l}-{r})...");
-                double score = await getScore(mid);
-                evalCount++;
-
-                double displayMid = lowerIsBetter && score != -1 ? -score : score;
-                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid * 100:F4}" : $"分数={displayMid:F4}";
-                SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
-
-                if (score >= target)
-                {
-                    bestCrf = mid;
-                    l = mid + 1;
-                }
-                else
-                {
-                    r = mid - 1;
-                }
-            }
-
-            if (bestCrf >= 0)
-                SafeWriteLine($"  [{name}] [CORE] 二分结束，最优 CRF={bestCrf}，本阶段评估 {evalCount} 次");
-            else
-                SafeWriteLine($"  [{name}] [CORE] 二分结束，区间内无可行点，评估 {evalCount} 次");
-
-            return (bestCrf, evalCount);
-        }
-
-
-
-        /// <summary>
-        /// 保守 Proxy 阶段：评估中位数附近 3 个点（median-2, median, median+2），
-        /// 仅当分数 > target + 0.02 时才视为“明确通过”。
-        /// 返回 (safeLo, safeHi) 均钳制在 [globalMin, globalMax] 内。
-        /// 若 Proxy 全部失败或无法判断，返回 (-1, -1)。
-        /// </summary>
-        private async Task<(int safeLo, int safeHi)> PerformConservativeProxyPhaseAsync(
-            string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
-            string name, double target, string metricMode, CancellationToken token,
-            int priorMedian, int globalMin, int globalMax)
-        {
-            int median = Math.Clamp(priorMedian, globalMin, globalMax);
-            var testCrfs = new[] { median - 2, median, median + 2 }
-                .Where(c => c >= globalMin && c <= globalMax)
-                .Distinct()
-                .OrderBy(c => c)
-                .ToList();
-
-            if (testCrfs.Count == 0)
-                return (globalMin, globalMax);
-
-            bool anyPass = false;
-            int lastPass = -1;
-            double passMargin = 0.02;  // 保守余量
-
-            foreach (int crf in testCrfs)
-            {
-                token.ThrowIfCancellationRequested();
-                SafeWriteLine($"  [{name}] [PROXY] 快速验证 CRF={crf} ...");
-                double proxyScore = await ProxyEvaluateAsync(input, crf, tileCols, cfg, jpeg, pixFmt);
-                if (proxyScore < 0)
-                {
-                    SafeWriteLine($"  [{name}] [PROXY] CRF={crf} 评估失败，跳过");
-                    continue;
-                }
-
-                bool pass = proxyScore >= target + passMargin;
-                string status = pass ? "明确通过" : "保守失败";
-                string display = metricMode == "vmaf" ? $"VMAF={proxyScore * 100:F4}" : $"分数={proxyScore:F4}";
-                SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
-
-                if (pass)
-                {
-                    anyPass = true;
-                    if (crf > lastPass) lastPass = crf;
-                }
-            }
-
-            if (anyPass)
-            {
-                // 至少一个明确通过 → 下界设为最后一个通过点，上界向右扩展 6 个 CRF
-                int safeLo = lastPass;
-                int safeHi = Math.Min(globalMax, lastPass + 6);
-                return (safeLo, safeHi);
-            }
-            else
-            {
-                // 全部未明确通过 → 最优解可能在左侧，向左扩展 6
-                int safeLo = Math.Max(globalMin, median - 6);
-                int safeHi = median - 1;
-                if (safeHi < safeLo) safeHi = safeLo;
-                return (safeLo, safeHi);
-            }
-        }
-        private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
-        {
-            int consecutiveFailures = 0;
-            const int failThreshold = 2;
-            string normalizedKey = GetNormalizedPathForCache(input);
-
-            return async crf =>
-            {
-                // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
-                // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
-                if (_fatalFmts.TryGetValue(normalizedKey, out var fatalSet) && fatalSet.ContainsKey(pixFmt))
-                {
-                    _logger.LogInfo($"?? 致命格式 {pixFmt} 已禁用，跳过 CRF={crf} [{name}]");
-                    return -1;
-                }
-
-                for (int i = 0; i < 3; i++)
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    QualityMetrics? m = null;
-
-                    if (consecutiveFailures < failThreshold)
-                    {
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
-
-                        m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
-                    }
-
-                    // 仅在 yuv420p 未被标记致命时才降级尝试
-                    if (!pixFmt.StartsWith("yuv420p") && (!_fatalFmts.TryGetValue(normalizedKey, out var fs) || !fs.ContainsKey("yuv420p")))
-                    {
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
-                    }
-                    else
-                    {
-                        // 当前格式就是 yuv420p 或已被致命标记，尝试降速
-                        m = await GetOrComputeMetrics(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
-                    }
-
-                    if (i < 2)
-                        _logger.LogInfo($"真实指标重试 ({i + 1}/2): {name} CRF={crf}");
-                }
-
-                consecutiveFailures++;
-                if (consecutiveFailures >= failThreshold)
-                    _logger.LogInfo($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
-
-                return -1;
-            };
-        }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        /// <summary>
-        /// 获取图像分辨率，优先从统一 Probe 缓存获取。
-        /// </summary>
-        private async Task<(int w, int h)> GetResolutionAsync(string path)
-        {
-            // 优先从统一 Probe 缓存获取
-            var info = await GetProbeInfoAsync(path);
-            if (info != null)
-            {
-                return (info.Width, info.Height);
-            }
-
-            // 兜底：单独探测
-            string args = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{path}\"";
-            string o = await RunProbeAsync(_ffprobePath, args).WaitAsync(TimeSpan.FromSeconds(30));
-            var parts = o.Trim().Split(',');
-            if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
-            {
-                return (w, h);
-            }
-            return (0, 0);
-        }
-
-        private static string GetCsvRow(EncodeResult r)
-        {
-            string status = r.Skipped ? "跳过" : (r.Success ? "成功" : "失败");
-            string errMsg = CsvEscape(r.ErrorMessage);
-            string fmt = r.PixelFormat ?? "";
-            string srcFmt = r.SourcePixelFormat ?? "";
-            string mode = r.Mode ?? "";
-            string safe = r.IsSafeMode ? "是" : "否";
-            string command = CsvEscape(r.CommandLine ?? "");
-            string aomParams = CsvEscape(r.AomParamsUsed ?? "");
-            string cache = r.CacheReused ? "是" : "否";
-
-            string vmaf = r.FinalVMAF?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-            string psnrY = r.FinalPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-            string msssim = r.FinalMSSSIM?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
-            string mix = r.FinalMixScore?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
-
-            // 按 CsvColumnNames 顺序拼接
-            var values = new[]
-            {
-        CsvEscape(r.FileName),
-        CsvEscape(r.OriginalFileName),
-        r.OriginalSize.ToString(CultureInfo.InvariantCulture),
-        r.OutputSize.ToString(CultureInfo.InvariantCulture),
-        r.CompressionRatio.ToString("F4", CultureInfo.InvariantCulture),
-        r.UsedCRF.ToString(CultureInfo.InvariantCulture),
-        r.FinalSSIM.ToString("F4", CultureInfo.InvariantCulture),
-        vmaf,
-        psnrY,
-        msssim,
-        mix,
-        // 新增 XPSNR 四列
-        // 新增 XPSNR 四列
-        r.FinalXPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalXPSNR_U?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalXPSNR_V?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalWXPSNR?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        // ★ 新增的高级指标
-        r.FinalSSIMULACRA2?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalButteraugli_Raw?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalButteraugli_3norm?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalGMSD?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-
-        r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
-        r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
-        r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
-        r.Retries.ToString(CultureInfo.InvariantCulture),
-        CsvEscape(fmt),
-        CsvEscape(srcFmt),
-        CsvEscape(mode),
-        CsvEscape(safe),
-        aomParams,
-        command,
-        CsvEscape(cache),
-        CsvEscape(status),
-        errMsg,
-        r.SearchEvaluations.ToString(CultureInfo.InvariantCulture)   // ★ 新增
-    };
-
-            return string.Join(",", values);
-        }
-
-        private void ExportCsv(IEnumerable<EncodeResult> results)
-        {
-            string p = Path.Combine(_outputDir, "avif_stats.csv");
-            var sb = new StringBuilder();
-
-            // 表头
-            sb.AppendLine(string.Join(",", CsvColumnNames));
-
-            foreach (var r in results)
-            {
-                sb.AppendLine(GetCsvRow(r));
-            }
-
-            _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
-            SafeWriteLine($"CSV 已保存: {p}");
-        }
-
-        private static string FormatSize(long b) => b switch
-        {
-            >= 1_048_576 => $"{b / 1_048_576.0:F2} MB",
-            >= 1024 => $"{b / 1024.0:F2} KB",
-            _ => $"{b} B"
-        };
-
-        private static string FormatTimeSpan(TimeSpan t) => t switch
-        {
-            { TotalHours: >= 1 } => $"{(int)t.TotalHours}h {t.Minutes}m {t.Seconds}s",
-            { TotalMinutes: >= 1 } => $"{(int)t.TotalMinutes}m {t.Seconds}s",
-            _ => $"{t.TotalSeconds:F4}s"
-        };
     }
 
 }
