@@ -18,6 +18,12 @@ namespace AvifEncoder
         public int WindowTop { get; set; }
         public bool Maximized { get; set; }
 
+        // ===== 路径 =====
+        public string? EncodeInput { get; set; }
+        public string? EncodeOutput { get; set; }
+
+        // ===== 编码设置 =====
+
         // ===== 编码设置 =====
         public string? EncodePreset { get; set; }
         public string? EncodeEncoder { get; set; }

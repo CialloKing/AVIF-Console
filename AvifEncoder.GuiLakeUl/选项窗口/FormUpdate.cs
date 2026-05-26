@@ -19,28 +19,42 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         }
 
         /// <summary>加载时自动检查更新</summary>
-        private async void FormUpdate_Load(object sender, EventArgs e)
+        private async void FormUpdate_Load(object sender,
+    EventArgs e)
         {
-            lblStatus.Text = "正在检查更新...";
-            btnDownload.Enabled = false;
-            btnSkip.Enabled = false;
+            try
+            {
+                lblStatus.Text = "正在检查更新...";
+                btnDownload.Enabled = false;
+                btnSkip.Enabled = false;
 
-            _release = await _manager.CheckForUpdateAsync();
+                _release =
+                    await _manager.CheckForUpdateAsync();
 
-            if (_release == null || !_release.Success)
+                if (_release == null || !_release.Success)
+                {
+                    lblStatus.Text =
+                        _release?.Error ?? "当前已是最新版本";
+                    btnSkip.Text = "关闭";
+                    btnSkip.Enabled = true;
+                    return;
+                }
+
+                lblStatus.Text =
+                    $"发现新版本：v{_release.TagName}\n" +
+                    $"当前版本：v{UpdateManager.CurrentVersion}\n" +
+                    $"文件大小：{_release.FileSize
+                        / 1024.0 / 1024.0:F1} MB";
+                btnDownload.Enabled = true;
+                btnSkip.Enabled = true;
+            }
+            catch (Exception ex)
             {
                 lblStatus.Text =
-                    _release?.Error ?? "当前已是最新版本";
+                    $"检查更新失败：{ex.Message}";
                 btnSkip.Text = "关闭";
                 btnSkip.Enabled = true;
-                return;
             }
-
-            lblStatus.Text = $"发现新版本：v{_release.TagName}\n" +
-                $"当前版本：v{UpdateManager.CurrentVersion}\n" +
-                $"文件大小：{_release.FileSize / 1024.0 / 1024.0:F1} MB";
-            btnDownload.Enabled = true;
-            btnSkip.Enabled = true;
         }
 
         private async void btnDownload_Click(object sender,

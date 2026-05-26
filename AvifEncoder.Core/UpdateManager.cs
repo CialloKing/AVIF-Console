@@ -172,62 +172,77 @@ namespace AvifEncoder
         /// 返回 .new 文件路径。
         /// </summary>
         public async Task<string> DownloadAsync(
-            ReleaseInfo release,
-            IProgress<UpdateProgressEventArgs>? progress = null,
-            CancellationToken ct = default)
+    ReleaseInfo release,
+    IProgress<UpdateProgressEventArgs>? progress = null,
+    CancellationToken ct = default)
         {
-            string exePath = Environment.ProcessPath!;
+            string exePath = Environment.ProcessPath
+                ?? AppContext.BaseDirectory;
             string newPath = exePath + ".new";
 
-            using var response = await _http.GetAsync(
-                release.DownloadUrl,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
-            response.EnsureSuccessStatusCode();
-
-            long total = response.Content.Headers.ContentLength
-                ?? release.FileSize;
-
-            using var stream =
-                await response.Content.ReadAsStreamAsync(ct);
-            using var file = new FileStream(
-                newPath, FileMode.Create, FileAccess.Write,
-                FileShare.None, 8192, useAsync: true);
-
-            var buffer = new byte[8192];
-            long downloaded = 0;
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            int lastReport = -1;
-
-            int read;
-            while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+            try
             {
-                await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                downloaded += read;
+                using var response = await _http.GetAsync(
+                    release.DownloadUrl,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    ct);
+                response.EnsureSuccessStatusCode();
 
-                if (progress != null && total > 0)
+                long total = response.Content.Headers.ContentLength
+                    ?? release.FileSize;
+
+                using var stream =
+                    await response.Content.ReadAsStreamAsync(ct);
+                using var file = new FileStream(
+                    newPath, FileMode.Create, FileAccess.Write,
+                    FileShare.None, 8192, useAsync: true);
+
+                var buffer = new byte[8192];
+                long downloaded = 0;
+                var watch =
+                    System.Diagnostics.Stopwatch.StartNew();
+                int lastReport = -1;
+
+                int read;
+                while ((read =
+                    await stream.ReadAsync(buffer, ct)) > 0)
                 {
-                    int pct = (int)(downloaded * 100 / total);
-                    if (pct != lastReport)
+                    await file.WriteAsync(
+                        buffer.AsMemory(0, read), ct);
+                    downloaded += read;
+
+                    if (progress != null && total > 0)
                     {
-                        lastReport = pct;
-                        double speed = watch.Elapsed.TotalSeconds > 0
-                            ? downloaded / watch.Elapsed.TotalSeconds
-                            : 0;
-                        progress.Report(new UpdateProgressEventArgs
+                        int pct =
+                            (int)(downloaded * 100 / total);
+                        if (pct != lastReport)
                         {
-                            BytesDownloaded = downloaded,
-                            TotalBytes = total,
-                            SpeedBytesPerSec = speed
-                        });
+                            lastReport = pct;
+                            double speed =
+                                watch.Elapsed.TotalSeconds > 0
+                                ? downloaded
+                                    / watch.Elapsed.TotalSeconds
+                                : 0;
+                            progress.Report(
+                                new UpdateProgressEventArgs
+                                {
+                                    BytesDownloaded = downloaded,
+                                    TotalBytes = total,
+                                    SpeedBytesPerSec = speed
+                                });
+                        }
                     }
                 }
+
+                WriteCache(release.TagName);
+                return newPath;
             }
-
-            // 写入缓存（下载成功 → 确认该版本已检查过）
-            WriteCache(release.TagName);
-
-            return newPath;
+            catch
+            {
+                try { File.Delete(newPath); }
+                catch { }
+                throw;
+            }
         }
 
         /// <summary>
@@ -235,13 +250,16 @@ namespace AvifEncoder
         /// </summary>
         public void InstallAndRestart(string newPath)
         {
-            string exeDir =
-                Path.GetDirectoryName(Environment.ProcessPath)!;
-            string exeName = Path.GetFileName(Environment.ProcessPath)!;
+            string exePath = Environment.ProcessPath
+                            ?? AppContext.BaseDirectory;
+            string exeDir = Path.GetDirectoryName(exePath)
+                ?? AppContext.BaseDirectory;
+            string exeName = Path.GetFileName(exePath);
             string batPath = Path.Combine(exeDir, "_update.bat");
 
             File.WriteAllText(batPath, $"""
                 @echo off
+                cd /d "{exeDir}"
                 timeout /t 2 /nobreak > nul
                 del "{exeName}"
                 move /y "{exeName}.new" "{exeName}"

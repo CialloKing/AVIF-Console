@@ -783,7 +783,13 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 {
                     SetQualityRange(qMode);
                 }
-                numQualityValue.Value = cfg.EncodeQualityValue;
+                if (cfg.EncodeQualityValue <= numQualityValue.Maximum
+                    && cfg.EncodeQualityValue
+                        >= numQualityValue.Minimum)
+                {
+                    numQualityValue.Value =
+                        cfg.EncodeQualityValue;
+                }
 
                 if (cfg.EncodeChroma != null)
                 {
@@ -806,6 +812,15 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 chkPriorSearch.Checked = cfg.EncodePriorSearch;
                 chkProxy.Checked = cfg.EncodeProxy;
                 chkSweep.Checked = cfg.EncodeSweep;
+
+                if (cfg.EncodeInput != null)
+                {
+                    txtInput.Text = cfg.EncodeInput;
+                }
+                if (cfg.EncodeOutput != null)
+                {
+                    txtOutput.Text = cfg.EncodeOutput;
+                }
             }
             finally
             {
@@ -850,6 +865,9 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             cfg.EncodePriorSearch = chkPriorSearch.Checked;
             cfg.EncodeProxy = chkProxy.Checked;
             cfg.EncodeSweep = chkSweep.Checked;
+
+            cfg.EncodeInput = txtInput.Text;
+            cfg.EncodeOutput = txtOutput.Text;
         }
     }
 
