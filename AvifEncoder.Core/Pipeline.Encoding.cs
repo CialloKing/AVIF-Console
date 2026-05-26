@@ -155,7 +155,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
-        private static List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
+        internal static List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
     PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
     bool allowParamDegrade, int imageWidth)
         {

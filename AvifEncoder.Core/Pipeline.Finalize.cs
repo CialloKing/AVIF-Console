@@ -258,7 +258,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         }
 
         // 4. 构建像素格式尝试列表（从原搜索代码中提取）
-        private static List<string> BuildPixFmtAttempts(PresetConfig config, string actualPixFmt, bool hasAlpha)
+        internal static List<string> BuildPixFmtAttempts(PresetConfig config, string actualPixFmt, bool hasAlpha)
         {
             // 提取位深后缀和基础格式
             string depthSuffix = actualPixFmt.EndsWith("10le") ? "10le" : "";

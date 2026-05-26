@@ -386,7 +386,7 @@ namespace AvifEncoder
         /// <summary>
         /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0?1 的分数。
         /// </summary>
-        private static double GetSearchScore(QualityMetrics m, string metricMode)
+        internal static double GetSearchScore(QualityMetrics m, string metricMode)
         {
             switch (metricMode?.ToLower())
             {

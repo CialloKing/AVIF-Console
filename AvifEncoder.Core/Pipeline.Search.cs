@@ -419,7 +419,7 @@ namespace AvifEncoder
         /// 每一步均输出到控制台与日志。
         /// 返回 (最优CRF, 本阶段评估次数)。若无任何可行点，返回 (-1, evalCount)。
         /// </summary>
-        private static async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
+        internal static async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, Func<int, Task<double>> getScore,
     CancellationToken token, int lo, int hi, double? knownLoScore = null,
