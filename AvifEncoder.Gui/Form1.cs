@@ -555,5 +555,5 @@ namespace AvifEncoder.Gui
     }
 
 
-    
+
 }

@@ -586,48 +586,6 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             return result;
         }
 
-        // ==================== 辅助数据类 ====================
-        private class EncodingInfo
-        {
-            public string SourcePixFmt { get; set; } = "";
-            public string ActualPixFmt { get; set; } = "";
-            public string PixInfo { get; set; } = "";
-            public int Width { get; set; }
-            public int Height { get; set; }
-            public bool IsTrulyLossless { get; set; }
-            public bool IsLosslessMode { get; set; }
-            public int TileCols { get; set; }
-            public int BaseCrf { get; set; }
-
-            // ★ 新增
-            public bool HasAlpha { get; set; } = false;
-        }
-
-        private class CRFSearchResult
-        {
-            public int Crf;
-            public string ActualPixFmt = "";
-            public TimeSpan SearchTime;
-            public bool SearchBasedCRF;
-            public bool UseSafeModeFinalEncode;
-            public int SearchEvalCount;    // ★ 新增：搜索评估次数
-        }
-
-        private class FinalEncodeResult
-        {
-            public bool Success;
-            public int Crf;
-            public string ActualPixFmt = "";
-            public TimeSpan EncodeTime;
-            public int Retries;
-            public string FailReason = "";
-            public bool FromCache;
-            public string? ActualAom;
-            public string? FinalCommand;
-            public bool UseSafeMode;
-            public DateTime StartTime;
-        }
-
         // ==================== 辅助方法 ====================
 
         // 1. 跳过已存在文件
