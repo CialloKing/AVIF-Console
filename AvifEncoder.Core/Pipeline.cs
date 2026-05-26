@@ -961,7 +961,7 @@ namespace AvifEncoder
     /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
     /// 替代原先固定的 -cpu-used / -row-mt。
     /// </summary>
-    private static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
+        private static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
         {
             string enc = cfg.Encoder;
 
@@ -992,8 +992,11 @@ namespace AvifEncoder
                 return $"-speed {cpuUsed} {tilePart}";
             }
 
-            return "-preset p4";
+
+            // 硬件编码器：无统一速度参数，保留空字符串使用 ffmpeg 默认行为
+            return "";
         }
+        
 
 
 

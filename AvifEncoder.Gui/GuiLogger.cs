@@ -7,7 +7,7 @@ using AvifEncoder;
 namespace AvifEncoder.Gui
 {
 
-    [Obsolete("AvifEncoder.Gui 已降低更新频率，请使用 AvifEncoder.GuiLakeUl")]
+
     public class GuiLogger : ILogger
     {
         private readonly RichTextBox _rtb;
