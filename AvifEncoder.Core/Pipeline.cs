@@ -103,6 +103,8 @@ namespace AvifEncoder
 
     public partial class AvifPipeline : IDisposable
     {
+        #region 字段与构造
+
         private readonly string _inputDir;
         private readonly string _outputDir;
         private readonly PresetConfig _config;
@@ -596,53 +598,6 @@ namespace AvifEncoder
         ? "-tile-columns 0 -tile-rows 0"
         : $"-tile-columns {tileCols} -tile-rows 0";
 
-        private sealed class FileScopedFailTracker
-        {
-            public HashSet<int> KnownBadCrfs { get; } = new();
-            public Dictionary<int, int> CrfFailCount { get; } = new();
-            public const int HardFailThreshold = 2;
-            public const int AvoidRadius = 2;
-
-            public void Reset()
-            {
-                KnownBadCrfs.Clear();
-                CrfFailCount.Clear();
-            }
-
-            public bool IsBlacklisted(int crf)
-            {
-                for (int offset = -AvoidRadius; offset <= AvoidRadius; offset++)
-                    if (KnownBadCrfs.Contains(crf + offset))
-                        return true;
-                return false;
-            }
-
-            public void RecordFailedAttempt(int crf)
-            {
-                CrfFailCount.TryGetValue(crf, out int count);
-                count++;
-                CrfFailCount[crf] = count;
-                if (count >= HardFailThreshold)
-                    KnownBadCrfs.Add(crf);
-            }
-
-            public void ClearCrf(int crf) => CrfFailCount.Remove(crf);
-
-            public int FindSafeCrfInInterval(int center, int xMin, int xMax)
-            {
-                for (int offset = 0; offset <= xMax - xMin; offset++)
-                {
-                    int tryCrf = center + offset;
-                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
-                        return tryCrf;
-                    tryCrf = center - offset;
-                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
-                        return tryCrf;
-                }
-                return -1;
-            }
-        }
-
         /// <summary>
         /// 根据输入文件路径与索引生成输出完整路径，并保持子目录结构。
         /// </summary>
@@ -857,7 +812,9 @@ namespace AvifEncoder
             GC.SuppressFinalize(this);
         }
 
+        #endregion
 
+        #region Probe 探测
 
         private readonly ConcurrentDictionary<string, ProbeInfo> _probeCache = new();
 
@@ -1305,7 +1262,9 @@ namespace AvifEncoder
             }
         }
 
-        // ==================== 辅助方法 ====================
+        #endregion
+
+        #region 启动与编排
 
         /// <summary> 打印启动信息，包括编码器检测 </summary>
         private async Task PrintStartupInfoAsync()
@@ -1760,6 +1719,7 @@ namespace AvifEncoder
 
 
 
+        #endregion
     }
 
 }
