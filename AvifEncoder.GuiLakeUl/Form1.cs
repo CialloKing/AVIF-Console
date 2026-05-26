@@ -17,6 +17,8 @@ namespace AvifEncoder.GuiLakeUl
         private FormLog? _logPage;
         private FormHelp? _helpPage;
 
+        private FormOtherOptions? _otherOptionsPage;
+
         public Form1()
         {
             D2DHelper.GlobalTextQuality = TextQualityMode.ClearType;
@@ -140,12 +142,15 @@ namespace AvifEncoder.GuiLakeUl
             _helpPage = new FormHelp();
             _encodePage = new FormEncode();
             _logPage = new FormLog();
+            _otherOptionsPage = new FormOtherOptions();          // ★ 新增
 
             MakePanelTransparent(_encodePage.modernPanel1);
             MakePanelTransparent(_logPage.modernPanel1);
             MakePanelTransparent(_helpPage.modernPanel1);
+            MakePanelTransparent(_otherOptionsPage.modernPanel1); // ★ 新增透明处理
 
-            while (modernTabListControl1.Items.Count < 3)
+            // ★ 标签页数量改为 4
+            while (modernTabListControl1.Items.Count < 4)
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
 
             modernTabListControl1.Items[0].Text = "编码";
@@ -154,11 +159,17 @@ namespace AvifEncoder.GuiLakeUl
             modernTabListControl1.Items[1].BoundControl = _logPage;
             modernTabListControl1.Items[2].Text = "使用说明";
             modernTabListControl1.Items[2].BoundControl = _helpPage;
+            // ★ 新增第四个标签页
+            modernTabListControl1.Items[3].Text = "其他选项";
+            modernTabListControl1.Items[3].BoundControl = _otherOptionsPage;
 
             modernTabListControl1.SelectedIndex = 0;
-            _encodePage.LogPage = _logPage;
+            _encodePage.LogPage = _logPage!;
 
             await RunStartupCheckAsync();
+
+            TryLoadDefaultConfig();
+        
         }
 
         private async Task RunStartupCheckAsync()
@@ -184,5 +195,100 @@ namespace AvifEncoder.GuiLakeUl
             panel.BackColor1 = Color.Transparent;
             panel.BackgroundSource = this;
         }
+        /// <summary>
+        /// 递归为指定控件及其所有子控件设置字体
+        /// </summary>
+        /// <summary>
+        /// 递归为指定控件及其所有子控件设置字体，同时强制重绘湖景控件。
+        /// </summary>
+        public void ApplyGlobalFont(Font font)
+        {
+            if (font == null) return;
+            this.SuspendLayout();
+            try
+            {
+                SetFontRecursive(this, font, isRoot: true);
+            }
+            finally
+            {
+                // 不调用 PerformLayout，避免自动布局破坏原有位置
+                this.ResumeLayout(false);
+                // ★ 强制整个窗口重绘，确保 LakeUI 控件应用新字体
+                this.Refresh();
+            }
+        }
+        private void TryLoadDefaultConfig()
+        {
+            string configPath = Path.Combine(Environment.CurrentDirectory, "app_settings.json");
+            AppConfig? config = AppConfigHelper.LoadFromFile(configPath);
+            if (config != null && !string.IsNullOrWhiteSpace(config.FontFamily))
+            {
+                try
+                {
+                    var font = new Font(config.FontFamily, config.FontSize);
+                    ApplyGlobalFont(font);
+                }
+                catch { /* 忽略无效字体 */ }
+                // 应用窗口状态（若需要）
+                try
+                {
+                    if (config.Maximized)
+                        WindowState = FormWindowState.Maximized;
+                    else
+                    {
+                        WindowState = FormWindowState.Normal;
+                        if (config.WindowLeft >= 0 && config.WindowTop >= 0)
+                        {
+                            Left = config.WindowLeft;
+                            Top = config.WindowTop;
+                        }
+                        if (config.WindowWidth > 0 && config.WindowHeight > 0)
+                        {
+                            Width = config.WindowWidth;
+                            Height = config.WindowHeight;
+                        }
+                    }
+                }
+                catch { /* 忽略窗口状态加载失败 */ }
+            }
+        }
+
+        /// <summary>
+        /// 为 LakeUI 对话框提供统一的附着，避免窗口主题/动画异常。
+        /// </summary>
+        public void AttachDialog(Form dialog)
+        {
+            thisIsYourWindow1.Attach(dialog);
+        }
+        private void SetFontRecursive(Control parent, Font font, bool isRoot = false)
+        {
+            foreach (Control ctrl in parent.Controls)
+            {
+                ctrl.Font = font;
+                ctrl.Invalidate();
+                ctrl.Update();   // 立即重绘，确保 LakeUI 绘制新字体
+                if (ctrl.Controls.Count > 0)
+                    SetFontRecursive(ctrl, font);
+            }
+            if (isRoot)
+            {
+                foreach (var page in new Form?[] { _encodePage, _logPage, _helpPage, _otherOptionsPage })
+                {
+                    if (page != null && !page.IsDisposed)
+                    {
+                        page.SuspendLayout();
+                        try
+                        {
+                            SetFontRecursive(page, font);
+                        }
+                        finally
+                        {
+                            page.ResumeLayout(false);   // 不触发自动排列
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }

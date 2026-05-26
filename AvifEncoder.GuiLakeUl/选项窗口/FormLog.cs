@@ -92,6 +92,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             // 
             // FormLog
             // 
+            AutoSize = true;
             ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             Name = "FormLog";
