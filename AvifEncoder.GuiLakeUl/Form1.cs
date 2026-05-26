@@ -222,12 +222,40 @@ namespace AvifEncoder.GuiLakeUl
         }
         private void TryLoadDefaultConfig()
         {
-            string configPath = Path.Combine(Environment.CurrentDirectory, "app_settings.json");
-            AppConfig? config = AppConfigHelper.LoadFromFile(configPath);
+            // 优先读程序所在目录，再读工作目录，使用第一个合法 json
+            string exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
+            string workDir = Environment.CurrentDirectory;
+            string jsonName = "app_settings.json";
+
+            AppConfig? config = null;
+            string? usedPath = null;
+
+            foreach (string dir in new[] { exeDir, workDir })
+            {
+                if (dir == workDir && string.Equals(
+                    Path.GetFullPath(exeDir),
+                    Path.GetFullPath(workDir),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // 同一个目录，跳过第二次读
+                }
+
+                string candidate = Path.Combine(dir, jsonName);
+                config = AppConfigHelper.LoadFromFile(candidate);
+                if (config != null)
+                {
+                    usedPath = candidate;
+                    break;
+                }
+            }
+
             if (config == null)
             {
                 return;
             }
+
+
+
 
             // 字体（仅当配置了字体时才应用，不影响其他设置）
             if (!string.IsNullOrWhiteSpace(config.FontFamily))
