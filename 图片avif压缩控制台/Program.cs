@@ -66,16 +66,17 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-mix <0-1>       直接设置多指标加权混合评分目标
 
 
-      --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
+      --crf <整数>            手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
 
 像素格式:
   -c, --chroma <采样>          色度采样: 420, 422, 444, auto (默认: auto)
-  -b, --bit-depth <位数>       输出位深: 8 或 10
+  -b, --bit-depth <位数>       输出位深: 8, 10, auto (默认: auto)
+                              当设为 auto 时由程序根据源文件自动选择
 
 其他编码选项:
   -l, --lossless               无损模式 (有bug，不建议使用)
-  -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
+  -t, --output-template <模板>  输出文件名模板 (默认: covers-{index}.avif)
                                可用占位符: {name} 源文件主名, {index} 序号(01,02...)
                                正确示例:
                                  -m {name}.avif            按源文件名
@@ -276,9 +277,18 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                             else throw new Exception("--chroma 仅支持 420/422/444/auto");
                             break;
                         case "bit-depth":
-                            if (int.TryParse(GetValue(), out int bd) && (bd == 8 || bd == 10))
-                                opts.BitDepth = bd;
-                            else throw new Exception("--bit-depth 必须为 8 或 10");
+                            {
+                                string bdStr = GetValue();
+                                if (string.Equals(bdStr, "auto", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    opts.BitDepth = null; // 使用自动检测
+                                }
+                                else if (int.TryParse(bdStr, out int bd) && (bd == 8 || bd == 10))
+                                {
+                                    opts.BitDepth = bd;
+                                }
+                                else throw new Exception("--bit-depth 必须为 8、10 或 auto");
+                            }
                             break;
                         case "lossless": opts.Lossless = true; break;
                         case "output-template": opts.OutputTemplate = GetValue().Trim('"', '\''); break;
@@ -369,9 +379,15 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                 else throw new Exception("-c 仅支持 420/422/444/auto");
                                 break;
                             case "b":
-                                if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10))
+                                if (string.Equals(val, "auto", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    opts.BitDepth = null; // 使用自动检测
+                                }
+                                else if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10))
+                                {
                                     opts.BitDepth = bd2;
-                                else throw new Exception("-b 必须为 8 或 10");
+                                }
+                                else throw new Exception("-b 必须为 8、10 或 auto");
                                 break;
                             case "t": opts.OutputTemplate = val.Trim('"', '\''); break;
                             case "e": opts.Encoder = val; break;
