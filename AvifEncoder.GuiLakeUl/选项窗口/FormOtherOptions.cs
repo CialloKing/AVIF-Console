@@ -157,12 +157,14 @@ namespace AvifEncoder.GuiLakeUl
             btnSelectFont = new ModernButton();
             btnSaveConfig = new ModernButton();
             btnLoadConfig = new ModernButton();
+            label1 = new Label();
             modernPanel1.SuspendLayout();
             SuspendLayout();
             // 
             // modernPanel1
             // 
             modernPanel1.BackColor1 = Color.Transparent;
+            modernPanel1.Controls.Add(label1);
             modernPanel1.Controls.Add(btnSelectFont2);
             modernPanel1.Controls.Add(btnSelectFont);
             modernPanel1.Controls.Add(btnSaveConfig);
@@ -185,7 +187,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // btnSelectFont
             // 
-            btnSelectFont.Location = new Point(20, 20);
+            btnSelectFont.Location = new Point(20, 71);
             btnSelectFont.Margin = new Padding(2);
             btnSelectFont.Name = "btnSelectFont";
             btnSelectFont.Size = new Size(618, 40);
@@ -194,7 +196,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // btnSaveConfig
             // 
-            btnSaveConfig.Location = new Point(20, 80);
+            btnSaveConfig.Location = new Point(20, 124);
             btnSaveConfig.Margin = new Padding(2);
             btnSaveConfig.Name = "btnSaveConfig";
             btnSaveConfig.Size = new Size(618, 40);
@@ -203,12 +205,22 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // btnLoadConfig
             // 
-            btnLoadConfig.Location = new Point(20, 140);
+            btnLoadConfig.Location = new Point(20, 181);
             btnLoadConfig.Margin = new Padding(2);
             btnLoadConfig.Name = "btnLoadConfig";
             btnLoadConfig.Size = new Size(618, 40);
             btnLoadConfig.TabIndex = 2;
             btnLoadConfig.Text = "从文件加载配置";
+            // 
+            // label1
+            // 
+            label1.AutoSize = true;
+            label1.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            label1.Location = new Point(20, 36);
+            label1.Name = "label1";
+            label1.Size = new Size(376, 21);
+            label1.TabIndex = 4;
+            label1.Text = "该页选项大部分功能为测试版，如遇bug为正常情况";
             // 
             // FormOtherOptions
             // 
@@ -216,13 +228,15 @@ namespace AvifEncoder.GuiLakeUl
             Controls.Add(modernPanel1);
             Name = "FormOtherOptions";
             modernPanel1.ResumeLayout(false);
+            modernPanel1.PerformLayout();
             ResumeLayout(false);
         }
 
         public ModernPanel modernPanel1 = null!;
         private ModernButton btnSelectFont = null!;
         private ModernButton btnSaveConfig = null!;
-        private ModernButton btnSelectFont2;
+        private ModernButton btnSelectFont2 = null!;
+        private Label label1 = null!;
         private ModernButton btnLoadConfig = null!;
         // 设计器生成的代码区域（此处略，但应包括：modernPanel1、btnSelectFont、lblFontPreview 等控件）
     }
