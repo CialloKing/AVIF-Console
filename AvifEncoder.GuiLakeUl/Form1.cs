@@ -228,7 +228,6 @@ namespace AvifEncoder.GuiLakeUl
             string jsonName = "app_settings.json";
 
             AppConfig? config = null;
-            string? usedPath = null;
 
             foreach (string dir in new[] { exeDir, workDir })
             {
@@ -244,7 +243,6 @@ namespace AvifEncoder.GuiLakeUl
                 config = AppConfigHelper.LoadFromFile(candidate);
                 if (config != null)
                 {
-                    usedPath = candidate;
                     break;
                 }
             }

@@ -210,8 +210,20 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
         private void MarkCustom(object? sender, EventArgs e)
         {
-            if (_isApplyingPreset) return;
-            if (cmbPreset.Items[cmbPreset.SelectedIndex]?.ToString() == CustomPresetName) return;
+            if (_isApplyingPreset)
+            {
+                return;
+            }
+            if (cmbPreset.SelectedIndex < 0
+                || cmbPreset.SelectedIndex >= cmbPreset.Items.Count)
+            {
+                return;
+            }
+            if (cmbPreset.Items[cmbPreset.SelectedIndex]?.ToString()
+                == CustomPresetName)
+            {
+                return;
+            }
             SetComboBoxItem(cmbPreset, CustomPresetName);
         }
 
@@ -724,63 +736,81 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         /// </summary>
         public void ApplyConfig(AppConfig cfg)
         {
-            if (cfg.EncodePreset != null)
+            _isApplyingPreset = true;
+            try
             {
-                SetComboBoxItem(cmbPreset, cfg.EncodePreset);
+                if (cfg.EncodePreset != null)
+                {
+                    SetComboBoxItem(cmbPreset, cfg.EncodePreset);
+                }
+                if (cfg.EncodeEncoder != null)
+                {
+                    SetComboBoxItem(cmbEncoder, cfg.EncodeEncoder);
+                }
+                numJobs.Value = cfg.EncodeJobs;
+                numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
+                numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
+                if (cfg.EncodeTemplate != null)
+                {
+                    txtTemplate.Text = cfg.EncodeTemplate;
+                }
+                chkSearch.Checked = cfg.EncodeSearch;
+                if (cfg.EncodeCrfRangeMode)
+                {
+                    rbCrfRange.Checked = true;
+                    numCrfMin.Value = cfg.EncodeCrfMin;
+                    numCrfMax.Value = cfg.EncodeCrfMax;
+                }
+                else
+                {
+                    rbCrfFix.Checked = true;
+                    numCrfFix.Value = cfg.EncodeCrfFix;
+                }
+                if (cfg.EncodeMetric != null)
+                {
+                    SetComboBoxItem(cmbMetric, cfg.EncodeMetric);
+                }
+                if (cfg.EncodeQualityMode != null)
+                {
+                    SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
+                }
+
+                // 显式同步范围再赋值，避免恢复时越界
+                string? qMode =
+                    cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
+                        ?.ToString();
+                if (qMode != null)
+                {
+                    SetQualityRange(qMode);
+                }
+                numQualityValue.Value = cfg.EncodeQualityValue;
+
+                if (cfg.EncodeChroma != null)
+                {
+                    SetComboBoxItem(cmbChroma, cfg.EncodeChroma);
+                }
+                if (cfg.EncodeBitDepth != null)
+                {
+                    SetComboBoxItem(cmbBitDepth, cfg.EncodeBitDepth);
+                }
+                chkLossless.Checked = cfg.EncodeLossless;
+                chkRecursive.Checked = cfg.EncodeRecursive;
+                numMaxRes.Value = cfg.EncodeMaxRes;
+                chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
+                if (cfg.EncodeConflict >= 0
+                    && cfg.EncodeConflict < cmbConflict.Items.Count)
+                {
+                    cmbConflict.SelectedIndex = cfg.EncodeConflict;
+                }
+                chkSerialEncode.Checked = cfg.EncodeSerialEncode;
+                chkPriorSearch.Checked = cfg.EncodePriorSearch;
+                chkProxy.Checked = cfg.EncodeProxy;
+                chkSweep.Checked = cfg.EncodeSweep;
             }
-            if (cfg.EncodeEncoder != null)
+            finally
             {
-                SetComboBoxItem(cmbEncoder, cfg.EncodeEncoder);
+                _isApplyingPreset = false;
             }
-            numJobs.Value = cfg.EncodeJobs;
-            numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
-            numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
-            if (cfg.EncodeTemplate != null)
-            {
-                txtTemplate.Text = cfg.EncodeTemplate;
-            }
-            chkSearch.Checked = cfg.EncodeSearch;
-            if (cfg.EncodeCrfRangeMode)
-            {
-                rbCrfRange.Checked = true;
-                numCrfMin.Value = cfg.EncodeCrfMin;
-                numCrfMax.Value = cfg.EncodeCrfMax;
-            }
-            else
-            {
-                rbCrfFix.Checked = true;
-                numCrfFix.Value = cfg.EncodeCrfFix;
-            }
-            if (cfg.EncodeMetric != null)
-            {
-                SetComboBoxItem(cmbMetric, cfg.EncodeMetric);
-            }
-            if (cfg.EncodeQualityMode != null)
-            {
-                SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
-            }
-            numQualityValue.Value = cfg.EncodeQualityValue;
-            if (cfg.EncodeChroma != null)
-            {
-                SetComboBoxItem(cmbChroma, cfg.EncodeChroma);
-            }
-            if (cfg.EncodeBitDepth != null)
-            {
-                SetComboBoxItem(cmbBitDepth, cfg.EncodeBitDepth);
-            }
-            chkLossless.Checked = cfg.EncodeLossless;
-            chkRecursive.Checked = cfg.EncodeRecursive;
-            numMaxRes.Value = cfg.EncodeMaxRes;
-            chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
-            if (cfg.EncodeConflict >= 0
-                && cfg.EncodeConflict < cmbConflict.Items.Count)
-            {
-                cmbConflict.SelectedIndex = cfg.EncodeConflict;
-            }
-            chkSerialEncode.Checked = cfg.EncodeSerialEncode;
-            chkPriorSearch.Checked = cfg.EncodePriorSearch;
-            chkProxy.Checked = cfg.EncodeProxy;
-            chkSweep.Checked = cfg.EncodeSweep;
         }
 
         /// <summary>

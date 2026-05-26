@@ -308,7 +308,7 @@ namespace AvifEncoder
             {
                 return current.CompareTo(latest);
             }
-            return 0; // 解析失败，假设相同
+            return -1; // 解析失败（tag 不规范），保守假设有新版本
         }
     }
 }
