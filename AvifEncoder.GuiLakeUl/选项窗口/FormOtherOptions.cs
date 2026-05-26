@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 using LakeUI;
+using AvifEncoder.GuiLakeUl.选项窗口;
 
 namespace AvifEncoder.GuiLakeUl
 {
@@ -17,6 +18,7 @@ namespace AvifEncoder.GuiLakeUl
             this.btnSelectFont.Click += btnSelectFont_Click;
             this.btnSaveConfig.Click += btnSaveConfig_Click;
             this.btnLoadConfig.Click += btnLoadConfig_Click;
+            this.btnCheckUpdate.Click += btnCheckUpdate_Click;
             // 默认与主窗口字体一致
             if (Application.OpenForms["Form1"] is Form1 mainForm && mainForm.Font != null)
                 _currentFont = mainForm.Font;
@@ -172,6 +174,54 @@ namespace AvifEncoder.GuiLakeUl
             btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
         }
 
+        private async void btnCheckUpdate_Click(object? sender,
+            EventArgs e)
+        {
+            btnCheckUpdate.Enabled = false;
+            btnCheckUpdate.Text = "正在检查...";
+
+            try
+            {
+                var manager = new UpdateManager();
+                var release =
+                    await manager.CheckForUpdateAsync();
+
+                if (release == null || !release.Success)
+                {
+                    MessageBox.Show(
+                        release?.Error ?? "当前已是最新版本",
+                        "检查更新",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    using var frm = new FormUpdate(release);
+                    if (Application.OpenForms["Form1"]
+                        is Form1 mainForm)
+                    {
+                        mainForm.AttachDialog(frm);
+                    }
+                    frm.StartPosition =
+                        FormStartPosition.CenterParent;
+                    frm.ShowDialog(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"检查更新失败：{ex.Message}",
+                    "检查更新",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnCheckUpdate.Enabled = true;
+                btnCheckUpdate.Text = "检查更新";
+            }
+        }
+
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
@@ -191,6 +241,7 @@ namespace AvifEncoder.GuiLakeUl
             modernPanel1.Controls.Add(btnSelectFont);
             modernPanel1.Controls.Add(btnSaveConfig);
             modernPanel1.Controls.Add(btnLoadConfig);
+            modernPanel1.Controls.Add(btnCheckUpdate);
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
@@ -234,6 +285,17 @@ namespace AvifEncoder.GuiLakeUl
             btnLoadConfig.TabIndex = 2;
             btnLoadConfig.Text = "从文件加载配置";
             // 
+            // btnCheckUpdate
+            // 
+            btnCheckUpdate = new ModernButton();
+            btnCheckUpdate.Location = new Point(20, 300);
+            btnCheckUpdate.Margin = new Padding(2);
+            btnCheckUpdate.Name = "btnCheckUpdate";
+            btnCheckUpdate.Size = new Size(618, 40);
+            btnCheckUpdate.TabIndex = 5;
+            btnCheckUpdate.Text = "检查更新";
+            modernPanel1.Controls.Add(btnCheckUpdate);
+            // 
             // label1
             // 
             label1.AutoSize = true;
@@ -260,6 +322,7 @@ namespace AvifEncoder.GuiLakeUl
         private ModernButton btnSelectFont2 = null!;
         private Label label1 = null!;
         private ModernButton btnLoadConfig = null!;
+        private ModernButton btnCheckUpdate = null!;
         // 设计器生成的代码区域（此处略，但应包括：modernPanel1、btnSelectFont、lblFontPreview 等控件）
     }
 }

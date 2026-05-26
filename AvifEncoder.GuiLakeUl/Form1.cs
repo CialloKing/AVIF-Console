@@ -170,9 +170,6 @@ namespace AvifEncoder.GuiLakeUl
 
             TryLoadDefaultConfig();
 
-            // ★ 启动后静默检查更新
-            _ = CheckForUpdateSilentlyAsync();
-
         }
 
         private async Task RunStartupCheckAsync()
@@ -337,31 +334,6 @@ namespace AvifEncoder.GuiLakeUl
         }
 
         // ★ 静默检查更新
-        // ★ 静默检查更新
-        private async Task CheckForUpdateSilentlyAsync()
-        {
-            try
-            {
-                await Task.Delay(3000);
-
-                var manager = new UpdateManager();
-                var release = await manager.CheckForUpdateAsync();
-
-                if (release != null && release.Success)
-                {
-                    this.BeginInvoke(new Action(() =>
-                    {
-                        using var frm = new FormUpdate();
-                        frm.StartPosition = FormStartPosition.CenterParent;
-                        frm.ShowDialog(this);
-                    }));
-                }
-            }
-            catch
-            {
-            }
-        }
-
         /// <summary>
         /// 供 FormOtherOptions 保存时调用，收集编码页的控件状态。
         /// </summary>

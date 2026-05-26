@@ -70,34 +70,12 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary>每日缓存文件路径</summary>
-        private static string CacheFilePath
-        {
-            get
-            {
-                return Path.Combine(
-                    Path.GetDirectoryName(Environment.ProcessPath) ?? ".",
-                    ".update_cache");
-            }
-        }
-
         /// <summary>
         /// 检查是否有新版本。
-        /// 如果今天已经检查过且结果为无更新，直接返回 null。
         /// </summary>
         public async Task<ReleaseInfo?> CheckForUpdateAsync(
             CancellationToken ct = default)
         {
-            // 每日缓存：今天已检查过 → 跳过
-            if (TryReadCache(out string cachedDate, out string cachedTag))
-            {
-                if (cachedDate == DateTime.Today.ToString("yyyy-MM-dd")
-                    && CompareVersions(CurrentVersion, cachedTag) >= 0)
-                {
-                    return null; // 今天已确认无更新
-                }
-            }
-
             try
             {
                 string json = await _http.GetStringAsync(ApiUrl, ct);
@@ -116,8 +94,6 @@ namespace AvifEncoder
 
                 if (CompareVersions(CurrentVersion, tagName) >= 0)
                 {
-                    // 当前已是最新 → 写缓存
-                    WriteCache(tagName);
                     return null;
                 }
 
@@ -234,7 +210,6 @@ namespace AvifEncoder
                     }
                 }
 
-                WriteCache(release.TagName);
                 return newPath;
             }
             catch
@@ -279,45 +254,6 @@ namespace AvifEncoder
 
             // 退出应用
             Environment.Exit(0);
-        }
-
-        // ===== 每日缓存 =====
-
-        private static bool TryReadCache(out string date,
-            out string tag)
-        {
-            date = "";
-            tag = "";
-            try
-            {
-                if (File.Exists(CacheFilePath))
-                {
-                    string[] lines = File.ReadAllText(CacheFilePath)
-                        .Split('|');
-                    if (lines.Length >= 2)
-                    {
-                        date = lines[0];
-                        tag = lines[1];
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-            }
-            return false;
-        }
-
-        private static void WriteCache(string latestTag)
-        {
-            try
-            {
-                File.WriteAllText(CacheFilePath,
-                    $"{DateTime.Today:yyyy-MM-dd}|{latestTag}");
-            }
-            catch
-            {
-            }
         }
 
         private static int CompareVersions(Version current, string tag)
