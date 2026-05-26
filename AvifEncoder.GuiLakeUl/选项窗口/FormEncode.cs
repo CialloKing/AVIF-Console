@@ -525,6 +525,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             btnStart.Enabled = false;
             btnStop.Enabled = true;
             progressBar1.Value = 0;
+            // 任务栏进度：初始 Normal 状态，进度 0/100
+            SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, 0u, 100u);
 
             try
             {
@@ -674,6 +676,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
                 progressBar1.Value = 100;
+                // 清除任务栏进度（恢复无进度状态）
+                SysTaskBarProgress.Clear(this.Handle);
             }
         }
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
@@ -691,13 +695,18 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 LogPage?.AppendLog("正在请求取消编码...");
                 _cts.Cancel();
                 btnStop.Enabled = false;
+                // 任务栏进度设为暂停状态（可选）
+                SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
             }
         }
 
         private void UpdateProgress(int percent)
         {
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
-            progressBar1.Value = Math.Max(0, Math.Min(percent, 100));
+            int clamped = Math.Max(0, Math.Min(percent, 100));
+            progressBar1.Value = clamped;
+            // 同步任务栏进度（状态为 Normal，进度值 0~100）
+            SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
         }
 
         private void label4_Click(object sender, EventArgs e)
