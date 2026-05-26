@@ -157,10 +157,6 @@ namespace AvifEncoder
         private readonly ConcurrentDictionary<string, FileScopedFailTracker> _failTrackers = new();
 
 
-        private const int HardFailThreshold = 2;
-        private const int AvoidRadius = 2;
-
-
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
@@ -695,24 +691,6 @@ namespace AvifEncoder
                     return candidate;
             }
         }
-
-
-        private static async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name, FileScopedFailTracker tracker)
-        {
-            if (tracker.IsBlacklisted(crf))
-                return double.PositiveInfinity;
-
-            double score = await getScore(crf);
-            if (score < 0)
-            {
-                tracker.RecordFailedAttempt(crf);
-                return double.PositiveInfinity;
-            }
-
-            tracker.ClearCrf(crf);
-            return score;
-        }
-
 
         /// <summary> 外部工具（ffmpeg 等）不接受 \\?\ 长路径，需要剥离 </summary>
         private static string NormalizePathForExternalTool(string path)
@@ -1730,7 +1708,7 @@ namespace AvifEncoder
             }
 
 
-        private async Task<string> GetPixelFormatForFileAsync(string filePath, bool isLosslessMode, bool isTrulyLossless, bool hasAlpha)
+        private async Task<string> GetPixelFormatForFileAsync(string filePath, bool isLosslessMode, bool hasAlpha)
         {
             if (isLosslessMode)
             {
@@ -2442,7 +2420,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             bool isTrulyLossless = isLosslessMode;   // ★ 已修改
             string srcFmt = await GetSourcePixelFormat(inputPath);
             bool hasAlpha = await SourceHasAlpha(inputPath);
-            string actualPixFmt = await GetPixelFormatForFileAsync(inputPath, isLosslessMode, isTrulyLossless, hasAlpha);
+            string actualPixFmt = await GetPixelFormatForFileAsync(inputPath, isLosslessMode, hasAlpha);
             // ===== 补全缺失的 pixInfo、w、h =====
             string pixInfo;
             if (config.AutoSource && !isLosslessMode)
