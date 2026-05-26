@@ -146,7 +146,7 @@
             numSearchCpuUsed.ForeColor = Color.White;
             numSearchCpuUsed.HoverArrowColor = Color.Gray;
             numSearchCpuUsed.HoverButtonBackColor1 = Color.Silver;
-            numSearchCpuUsed.Location = new Point(432, 204);
+            numSearchCpuUsed.Location = new Point(432, 187);
             numSearchCpuUsed.Name = "numSearchCpuUsed";
             numSearchCpuUsed.Size = new Size(160, 32);
             numSearchCpuUsed.TabIndex = 58;
@@ -160,7 +160,7 @@
             numFinalCpuUsed.ForeColor = Color.White;
             numFinalCpuUsed.HoverArrowColor = Color.Gray;
             numFinalCpuUsed.HoverButtonBackColor1 = Color.Silver;
-            numFinalCpuUsed.Location = new Point(432, 268);
+            numFinalCpuUsed.Location = new Point(432, 247);
             numFinalCpuUsed.Name = "numFinalCpuUsed";
             numFinalCpuUsed.Size = new Size(160, 32);
             numFinalCpuUsed.TabIndex = 57;
@@ -176,7 +176,7 @@
             numMaxRes.HoverButtonBackColor1 = Color.Silver;
             numMaxRes.Increment = 100D;
             numMaxRes.LargeChange = 1000D;
-            numMaxRes.Location = new Point(432, 328);
+            numMaxRes.Location = new Point(432, 309);
             numMaxRes.Name = "numMaxRes";
             numMaxRes.Size = new Size(160, 32);
             numMaxRes.SmallChange = 100D;
@@ -191,7 +191,7 @@
             numJobs.ForeColor = Color.White;
             numJobs.HoverArrowColor = Color.Gray;
             numJobs.HoverButtonBackColor1 = Color.Silver;
-            numJobs.Location = new Point(432, 399);
+            numJobs.Location = new Point(432, 380);
             numJobs.Name = "numJobs";
             numJobs.Size = new Size(160, 32);
             numJobs.TabIndex = 55;
@@ -207,7 +207,7 @@
             numQualityValue.HoverButtonBackColor1 = Color.Silver;
             numQualityValue.Increment = 0.1D;
             numQualityValue.LargeChange = 1D;
-            numQualityValue.Location = new Point(432, 465);
+            numQualityValue.Location = new Point(432, 438);
             numQualityValue.Name = "numQualityValue";
             numQualityValue.Size = new Size(160, 32);
             numQualityValue.SmallChange = 0.1D;
@@ -261,7 +261,7 @@
             // 
             label11.AutoSize = true;
             label11.ForeColor = Color.WhiteSmoke;
-            label11.Location = new Point(37, 309);
+            label11.Location = new Point(37, 290);
             label11.Name = "label11";
             label11.Size = new Size(92, 17);
             label11.TabIndex = 48;
@@ -275,7 +275,7 @@
             cmbConflict.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbConflict.ForeColor = Color.Gainsboro;
             cmbConflict.HoverBackColor1 = Color.Silver;
-            cmbConflict.Location = new Point(37, 328);
+            cmbConflict.Location = new Point(37, 309);
             cmbConflict.Margin = new Padding(2, 2, 2, 2);
             cmbConflict.Name = "cmbConflict";
             cmbConflict.Size = new Size(160, 32);
@@ -297,7 +297,7 @@
             // 
             label10.AutoSize = true;
             label10.ForeColor = Color.WhiteSmoke;
-            label10.Location = new Point(432, 309);
+            label10.Location = new Point(432, 290);
             label10.Name = "label10";
             label10.Size = new Size(168, 17);
             label10.TabIndex = 45;
@@ -329,7 +329,7 @@
             // 
             label9.AutoSize = true;
             label9.ForeColor = Color.WhiteSmoke;
-            label9.Location = new Point(37, 445);
+            label9.Location = new Point(37, 419);
             label9.Name = "label9";
             label9.Size = new Size(32, 17);
             label9.TabIndex = 41;
@@ -343,7 +343,7 @@
             cmbBitDepth.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbBitDepth.ForeColor = Color.Gainsboro;
             cmbBitDepth.HoverBackColor1 = Color.Silver;
-            cmbBitDepth.Location = new Point(37, 464);
+            cmbBitDepth.Location = new Point(37, 438);
             cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
             cmbBitDepth.Name = "cmbBitDepth";
             cmbBitDepth.Size = new Size(160, 32);
@@ -354,7 +354,7 @@
             // 
             label8.AutoSize = true;
             label8.ForeColor = Color.WhiteSmoke;
-            label8.Location = new Point(37, 380);
+            label8.Location = new Point(37, 359);
             label8.Name = "label8";
             label8.Size = new Size(56, 17);
             label8.TabIndex = 39;
@@ -368,7 +368,7 @@
             cmbChroma.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbChroma.ForeColor = Color.Gainsboro;
             cmbChroma.HoverBackColor1 = Color.Silver;
-            cmbChroma.Location = new Point(37, 399);
+            cmbChroma.Location = new Point(37, 380);
             cmbChroma.Margin = new Padding(2, 2, 2, 2);
             cmbChroma.Name = "cmbChroma";
             cmbChroma.Size = new Size(160, 32);
@@ -379,7 +379,7 @@
             // 
             label7.AutoSize = true;
             label7.ForeColor = Color.WhiteSmoke;
-            label7.Location = new Point(230, 445);
+            label7.Location = new Point(230, 419);
             label7.Name = "label7";
             label7.Size = new Size(56, 17);
             label7.TabIndex = 36;
@@ -394,7 +394,7 @@
             cmbQualityMode.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbQualityMode.ForeColor = Color.Gainsboro;
             cmbQualityMode.HoverBackColor1 = Color.Silver;
-            cmbQualityMode.Location = new Point(230, 464);
+            cmbQualityMode.Location = new Point(230, 438);
             cmbQualityMode.Margin = new Padding(2, 2, 2, 2);
             cmbQualityMode.Name = "cmbQualityMode";
             cmbQualityMode.Size = new Size(160, 32);
@@ -405,7 +405,7 @@
             // 
             label6.AutoSize = true;
             label6.ForeColor = Color.WhiteSmoke;
-            label6.Location = new Point(230, 380);
+            label6.Location = new Point(230, 363);
             label6.Name = "label6";
             label6.Size = new Size(56, 17);
             label6.TabIndex = 34;
@@ -421,7 +421,7 @@
             cmbMetric.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbMetric.ForeColor = Color.Gainsboro;
             cmbMetric.HoverBackColor1 = Color.Silver;
-            cmbMetric.Location = new Point(230, 399);
+            cmbMetric.Location = new Point(230, 380);
             cmbMetric.Margin = new Padding(2, 2, 2, 2);
             cmbMetric.Name = "cmbMetric";
             cmbMetric.SelectionColor = Color.Transparent;
@@ -440,7 +440,7 @@
             grpCrfMode.Controls.Add(rbCrfRange);
             grpCrfMode.Controls.Add(label4);
             grpCrfMode.ForeColor = Color.WhiteSmoke;
-            grpCrfMode.Location = new Point(230, 185);
+            grpCrfMode.Location = new Point(230, 166);
             grpCrfMode.Name = "grpCrfMode";
             grpCrfMode.Size = new Size(162, 187);
             grpCrfMode.TabIndex = 32;
@@ -479,7 +479,7 @@
             numCrfFix.ForeColor = Color.White;
             numCrfFix.HoverArrowColor = Color.Gray;
             numCrfFix.HoverButtonBackColor1 = Color.Silver;
-            numCrfFix.Location = new Point(6, 49);
+            numCrfFix.Location = new Point(6, 52);
             numCrfFix.Name = "numCrfFix";
             numCrfFix.Size = new Size(114, 32);
             numCrfFix.TabIndex = 53;
@@ -490,7 +490,7 @@
             rbCrfFix.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfFix.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
             rbCrfFix.ForeColor = Color.WhiteSmoke;
-            rbCrfFix.Location = new Point(6, 22);
+            rbCrfFix.Location = new Point(6, 21);
             rbCrfFix.Name = "rbCrfFix";
             rbCrfFix.Size = new Size(81, 23);
             rbCrfFix.TabIndex = 25;
@@ -512,7 +512,7 @@
             rbCrfRange.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfRange.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
             rbCrfRange.ForeColor = Color.WhiteSmoke;
-            rbCrfRange.Location = new Point(6, 92);
+            rbCrfRange.Location = new Point(6, 90);
             rbCrfRange.Name = "rbCrfRange";
             rbCrfRange.Size = new Size(150, 23);
             rbCrfRange.TabIndex = 26;
@@ -556,7 +556,7 @@
             // 
             label3.AutoSize = true;
             label3.ForeColor = Color.Gainsboro;
-            label3.Location = new Point(432, 249);
+            label3.Location = new Point(432, 228);
             label3.Name = "label3";
             label3.Size = new Size(80, 17);
             label3.TabIndex = 21;
@@ -566,7 +566,7 @@
             // 
             label2.AutoSize = true;
             label2.ForeColor = Color.WhiteSmoke;
-            label2.Location = new Point(432, 187);
+            label2.Location = new Point(432, 166);
             label2.Name = "label2";
             label2.Size = new Size(56, 17);
             label2.TabIndex = 19;
@@ -576,7 +576,7 @@
             // 
             label1.AutoSize = true;
             label1.ForeColor = Color.WhiteSmoke;
-            label1.Location = new Point(432, 380);
+            label1.Location = new Point(432, 363);
             label1.Name = "label1";
             label1.Size = new Size(110, 17);
             label1.TabIndex = 17;
@@ -590,7 +590,7 @@
             btnStop.BorderRadius = 10;
             btnStop.ForeColor = Color.WhiteSmoke;
             btnStop.HoverBackColor1 = Color.DarkGray;
-            btnStop.Location = new Point(230, 516);
+            btnStop.Location = new Point(230, 489);
             btnStop.Margin = new Padding(2);
             btnStop.Name = "btnStop";
             btnStop.PressedBackColor1 = Color.White;
@@ -614,7 +614,7 @@
             // 
             lblQuality.AutoSize = true;
             lblQuality.ForeColor = Color.WhiteSmoke;
-            lblQuality.Location = new Point(432, 445);
+            lblQuality.Location = new Point(432, 419);
             lblQuality.Name = "lblQuality";
             lblQuality.Size = new Size(80, 17);
             lblQuality.TabIndex = 12;
@@ -629,7 +629,7 @@
             cmbEncoder.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbEncoder.ForeColor = Color.WhiteSmoke;
             cmbEncoder.HoverBackColor1 = Color.Silver;
-            cmbEncoder.Location = new Point(37, 268);
+            cmbEncoder.Location = new Point(37, 247);
             cmbEncoder.Margin = new Padding(2, 2, 2, 2);
             cmbEncoder.Name = "cmbEncoder";
             cmbEncoder.Size = new Size(160, 32);
@@ -640,7 +640,7 @@
             // 
             lblEncoder.AutoSize = true;
             lblEncoder.ForeColor = Color.WhiteSmoke;
-            lblEncoder.Location = new Point(37, 249);
+            lblEncoder.Location = new Point(37, 228);
             lblEncoder.Name = "lblEncoder";
             lblEncoder.Size = new Size(44, 17);
             lblEncoder.TabIndex = 10;
@@ -654,7 +654,7 @@
             cmbPreset.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbPreset.ForeColor = Color.Gainsboro;
             cmbPreset.HoverBackColor1 = Color.Silver;
-            cmbPreset.Location = new Point(37, 204);
+            cmbPreset.Location = new Point(37, 187);
             cmbPreset.Margin = new Padding(2, 2, 2, 2);
             cmbPreset.Name = "cmbPreset";
             cmbPreset.Size = new Size(160, 32);
@@ -665,7 +665,7 @@
             // 
             lblPreset.AutoSize = true;
             lblPreset.ForeColor = Color.WhiteSmoke;
-            lblPreset.Location = new Point(37, 185);
+            lblPreset.Location = new Point(37, 166);
             lblPreset.Name = "lblPreset";
             lblPreset.Size = new Size(56, 17);
             lblPreset.TabIndex = 8;
@@ -676,7 +676,7 @@
             progressBar1.BorderColor = Color.Gainsboro;
             progressBar1.DisabledOverlayColor = Color.White;
             progressBar1.FillColor = Color.FromArgb(0, 120, 215);
-            progressBar1.Location = new Point(37, 564);
+            progressBar1.Location = new Point(37, 528);
             progressBar1.Margin = new Padding(2, 2, 2, 2);
             progressBar1.Name = "progressBar1";
             progressBar1.Size = new Size(771, 20);
@@ -736,7 +736,7 @@
             btnStart.BorderRadius = 10;
             btnStart.ForeColor = Color.WhiteSmoke;
             btnStart.HoverBackColor1 = Color.DarkGray;
-            btnStart.Location = new Point(37, 516);
+            btnStart.Location = new Point(37, 489);
             btnStart.Margin = new Padding(2);
             btnStart.Name = "btnStart";
             btnStart.PressedBackColor1 = Color.White;

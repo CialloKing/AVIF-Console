@@ -24,8 +24,22 @@ namespace AvifEncoder.GuiLakeUl
 
 
 
-
         private void btnSelectFont_Click(object? sender, EventArgs e)
+        {
+            using var fontDlg = new FontDialog();
+            // 可选：将当前已选字体预置到对话框中
+            if (_currentFont != null)
+                fontDlg.Font = _currentFont;
+            if (fontDlg.ShowDialog(this) == DialogResult.OK)
+            {
+                Font selectedFont = fontDlg.Font;
+                _currentFont = selectedFont;
+                btnSelectFont.Font = selectedFont;
+                btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
+                ApplyFontToApp(selectedFont);
+            }
+        }
+        private void btnSelectFont_Click2(object? sender, EventArgs e)
         {
             using var fontDlg = new ModernFontDialog();
             // 必须附着到主窗口的窗口管理器，否则可能导致 UI 卡死或异常退出
@@ -139,6 +153,7 @@ namespace AvifEncoder.GuiLakeUl
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
+            btnSelectFont2 = new ModernButton();
             btnSelectFont = new ModernButton();
             btnSaveConfig = new ModernButton();
             btnLoadConfig = new ModernButton();
@@ -148,14 +163,25 @@ namespace AvifEncoder.GuiLakeUl
             // modernPanel1
             // 
             modernPanel1.BackColor1 = Color.Transparent;
+            modernPanel1.Controls.Add(btnSelectFont2);
             modernPanel1.Controls.Add(btnSelectFont);
             modernPanel1.Controls.Add(btnSaveConfig);
             modernPanel1.Controls.Add(btnLoadConfig);
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.Size = new Size(649, 436);
+            modernPanel1.Size = new Size(931, 589);
             modernPanel1.TabIndex = 0;
+            // 
+            // btnSelectFont2
+            // 
+            btnSelectFont2.Location = new Point(20, 243);
+            btnSelectFont2.Margin = new Padding(2);
+            btnSelectFont2.Name = "btnSelectFont2";
+            btnSelectFont2.Size = new Size(120, 35);
+            btnSelectFont2.TabIndex = 3;
+            btnSelectFont2.Text = "切换字体2";
+            btnSelectFont2.Click += btnSelectFont_Click2;
             // 
             // btnSelectFont
             // 
@@ -186,7 +212,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // FormOtherOptions
             // 
-            ClientSize = new Size(649, 436);
+            ClientSize = new Size(931, 589);
             Controls.Add(modernPanel1);
             Name = "FormOtherOptions";
             modernPanel1.ResumeLayout(false);
@@ -196,6 +222,7 @@ namespace AvifEncoder.GuiLakeUl
         public ModernPanel modernPanel1 = null!;
         private ModernButton btnSelectFont = null!;
         private ModernButton btnSaveConfig = null!;
+        private ModernButton btnSelectFont2;
         private ModernButton btnLoadConfig = null!;
         // 设计器生成的代码区域（此处略，但应包括：modernPanel1、btnSelectFont、lblFontPreview 等控件）
     }
