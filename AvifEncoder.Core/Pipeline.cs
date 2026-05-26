@@ -697,7 +697,7 @@ namespace AvifEncoder
         }
 
 
-        private async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name, FileScopedFailTracker tracker)
+        private static async Task<double> EvaluateCrfSafe(int crf, Func<int, Task<double>> getScore, string name, FileScopedFailTracker tracker)
         {
             if (tracker.IsBlacklisted(crf))
                 return double.PositiveInfinity;
@@ -873,12 +873,13 @@ namespace AvifEncoder
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            FinalCleanup();               // ★ 新增：保证临时文件被清理
+            FinalCleanup();
             _globalCts?.Cancel();
             _globalCts?.Dispose();
-            _globalCts = null;              // ← 新增：防止已释放对象被引用
+            _globalCts = null;
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
+            GC.SuppressFinalize(this);
         }
 
 
@@ -960,7 +961,7 @@ namespace AvifEncoder
     /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
     /// 替代原先固定的 -cpu-used / -row-mt。
     /// </summary>
-    private string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
+    private static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
         {
             string enc = cfg.Encoder;
 
@@ -1687,7 +1688,9 @@ namespace AvifEncoder
                         int components = is4Comp ? 4 : 3;
                         var match = Regex.Match(fmt, @"(\d+)");
                         int totalBits = 0;
-                        if (match.Success) int.TryParse(match.Groups[1].Value, out totalBits);
+                        if (match.Success && int.TryParse(match.Groups[1].Value, out totalBits))
+                        {
+                        }
                         if (totalBits == 0) totalBits = components * 8;
                         int perCompBits = totalBits / components;
                         int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
@@ -3100,7 +3103,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// <summary>
         /// 生成用于编码缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
-        private string GetEncodeCacheKey(
+        private static string GetEncodeCacheKey(
             string normalizedPath, int crf, string pixFmt,
             string tilePart, int actualCpu, bool isTrueLossless,
             string aomParams, bool jpeg, int bitDepth,
@@ -3238,7 +3241,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
-        private List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
+        private static List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
     PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
     bool allowParamDegrade, int imageWidth)
         {
@@ -3912,7 +3915,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 /// <summary>
                 /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0?1 的分数。
                 /// </summary>
-                private double GetSearchScore(QualityMetrics m, string metricMode)
+                private static double GetSearchScore(QualityMetrics m, string metricMode)
                 {
                     switch (metricMode?.ToLower())
                     {
@@ -4463,7 +4466,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
         /// 每一步均输出到控制台与日志。
         /// 返回 (最优CRF, 本阶段评估次数)。若无任何可行点，返回 (-1, evalCount)。
         /// </summary>
-        private async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
+        private static async Task<(int bestCrf, int evalCount)> StandardBinarySearch(
     string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg,
     string name, double target, Func<int, Task<double>> getScore,
     CancellationToken token, int lo, int hi, double? knownLoScore = null,
