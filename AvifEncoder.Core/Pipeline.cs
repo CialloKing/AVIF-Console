@@ -483,15 +483,6 @@ namespace AvifEncoder
 
 
 
-        /// <summary> 每次开始新的搜索时重置失败跟踪状态 </summary>
-
-        private static string GetRowMtArg(PresetConfig cfg)
-        {
-            if (!EncoderUtils.IsLibAom(cfg.Encoder))
-                return "";
-            return cfg.SerialEncode ? "-row-mt 0" : "-row-mt 1";
-        }
-
         /// <summary>
         /// 根据图像宽度和最小 tile 宽度限制，计算最大合法的 tile-columns 值（log2 列数）。
         /// 例如：宽度 ≤ 255 → 0；256~511 → 0；512~1023 → 1；1024~2047 → 2；以此类推。
@@ -808,46 +799,6 @@ namespace AvifEncoder
                 return !string.IsNullOrWhiteSpace(val) && val != "unknown" && val != "reserved" ? val : null;
             }
             return null;
-        }
-
-        /// <summary>
-        /// 根据编码器名称返回专用的命令行参数片段（速度控制、分块等），
-        /// 替代原先固定的 -cpu-used / -row-mt。
-        /// </summary>
-        private static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
-        {
-            string enc = cfg.Encoder;
-
-            if (EncoderUtils.IsLibAom(enc))
-            {
-                return $"-cpu-used {cpuUsed} {tilePart} {rowMt}";
-            }
-
-            if (EncoderUtils.IsSvtAv1(enc))
-            {
-                // SVT-AV1 的 preset 范围 0-13，0 最快、13 最慢
-                // cpuUsed 语义统一为“数值越大越快，0 最慢”，因此反转
-                int maxSvtPreset = 13;
-                int svtPreset = Math.Clamp(maxSvtPreset - cpuUsed, 0, maxSvtPreset);
-                if (cfg.Lossless)
-                {
-                    return $"-preset {svtPreset} {tilePart}";
-                }
-                else
-                {
-                    string svtParams = "tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8";
-                    return $"-preset {svtPreset} -svtav1-params \"{svtParams}\" {tilePart}";
-                }
-            }
-
-            if (EncoderUtils.IsRav1e(enc))
-            {
-                return $"-speed {cpuUsed} {tilePart}";
-            }
-
-
-            // 硬件编码器：无统一速度参数，保留空字符串使用 ffmpeg 默认行为
-            return "";
         }
 
 
