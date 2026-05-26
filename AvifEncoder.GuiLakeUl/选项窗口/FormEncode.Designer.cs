@@ -709,7 +709,7 @@
             txtOutput.Name = "txtOutput";
             txtOutput.Size = new Size(652, 32);
             txtOutput.TabIndex = 5;
-            txtOutput.WaterText = "输出路径";
+            txtOutput.WaterText = "输出路径，支持拖入文件夹";
             // 
             // btnBrowseInput
             // 
@@ -755,7 +755,7 @@
             txtInput.Name = "txtInput";
             txtInput.Size = new Size(652, 32);
             txtInput.TabIndex = 0;
-            txtInput.WaterText = "输入路径";
+            txtInput.WaterText = "输入路径，支持拖入文件夹";
             // 
             // FormEncode
             // 

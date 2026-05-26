@@ -554,8 +554,6 @@ namespace AvifEncoder.Gui
         private void numSearchCpuUsed_ValueChanged(object sender, EventArgs e) { }
     }
 
-    /// <summary>
-    /// CompositeLogger 保留在此文件（无冲突），GuiLogger 已移至独立文件。
-    /// </summary>
+
     
 }
