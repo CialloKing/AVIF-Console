@@ -548,7 +548,9 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 LogPage?.AppendLog($"发现图片: {files.Count} 张");
 
                 var config = new PresetConfig();
-                config.Encoder = cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString() ?? "libaom-av1";
+                config.Encoder = cmbEncoder.SelectedIndex >= 0
+                            ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString() ?? "libaom-av1"
+                            : "libaom-av1";
 
                 int jobs = (int)numJobs.Value;
                 if (jobs > 0) { config.MaxJobs = jobs; config.UserSpecifiedMaxJobs = true; }
@@ -656,14 +658,11 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 {
                     try
                     {
-                        await Task.Run(() =>
-                        {
-                            using var pipeline = new AvifPipeline(
-                                inputDir, outputDir, config,
-                                logger: logger,
-                                progress: progress);
-                            pipeline.RunAsync().Wait();
-                        }, _cts.Token);
+                        using var pipeline = new AvifPipeline(
+                            inputDir, outputDir, config,
+                            logger: logger,
+                            progress: progress);
+                        await pipeline.RunAsync();
                     }
                     catch (OperationCanceledException)
                     {
