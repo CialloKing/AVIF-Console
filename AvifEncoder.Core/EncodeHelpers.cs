@@ -56,35 +56,10 @@ namespace AvifEncoder
         {
             var encoder = Av1EncoderFactory.Get(cfg.Encoder);
             string speedArg = encoder.BuildSpeedArg(cpuUsed);
-            string tunePart = "";
+            string tunePart = cfg.Lossless ? "" : encoder.BuildFullTuneArg(cfg.MetricMode);
 
-            if (!cfg.Lossless)
-            {
-                string tune = encoder.BuildTuneArg(cfg.MetricMode);
-                if (tune.Length > 0)
-                {
-                    if (encoder is SvtAv1Encoder)
-                    {
-                        tunePart = $"-svtav1-params \"tune={tune}:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"";
-                    }
-                    else if (encoder is Rav1eEncoder)
-                    {
-                        tunePart = $"--tune {tune}";
-                    }
-                    else if (encoder is LibAomEncoder)
-                    {
-                        tunePart = $"-aom-params {tune}";
-                    }
-                }
-                else if (encoder is SvtAv1Encoder)
-                {
-                    tunePart = "-svtav1-params \"tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"";
-                }
-            }
-
-            if (tunePart.Length > 0)
-                return $"{speedArg} {tunePart} {tilePart} {rowMt}";
-            return $"{speedArg} {tilePart} {rowMt}";
+            return string.Join(" ", new[] { speedArg, tunePart, tilePart, rowMt }
+                .Where(s => s.Length > 0));
         }
 
         /// <summary>是否为 JPEG 文件</summary>

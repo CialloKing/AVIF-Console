@@ -13,6 +13,7 @@ namespace AvifEncoder
         string BuildSpeedArg(int cpuUsed);
         string BuildLosslessArg();
         string BuildTuneArg(string? metricMode);
+        string BuildFullTuneArg(string? metricMode);
     }
 
     internal sealed class LibAomEncoder : IAv1Encoder
@@ -45,6 +46,12 @@ namespace AvifEncoder
                 _ => ""
             };
         }
+
+        public string BuildFullTuneArg(string? metricMode)
+        {
+            string tune = BuildTuneArg(metricMode);
+            return tune.Length > 0 ? $"-aom-params {tune}" : "";
+        }
     }
 
     internal sealed class SvtAv1Encoder : IAv1Encoder
@@ -71,14 +78,19 @@ namespace AvifEncoder
 
         public string BuildTuneArg(string? metricMode)
         {
-            string tune = metricMode switch
+            return metricMode switch
             {
                 "ssim" or "msssim" => "2",
                 "psnr" => "1",
                 "vmaf" or "xpsnr" or "ssimu2" or "butter3" or "gmsd" => "3",
                 _ => "3"
             };
-            return tune;
+        }
+
+        public string BuildFullTuneArg(string? metricMode)
+        {
+            string tune = BuildTuneArg(metricMode);
+            return $"-svtav1-params \"tune={tune}:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"";
         }
     }
 
@@ -110,6 +122,12 @@ namespace AvifEncoder
                 "ssim" or "vmaf" or "butter3" => "psychovisual",
                 _ => ""
             };
+        }
+
+        public string BuildFullTuneArg(string? metricMode)
+        {
+            string tune = BuildTuneArg(metricMode);
+            return tune.Length > 0 ? $"--tune {tune}" : "";
         }
     }
 
@@ -156,6 +174,11 @@ namespace AvifEncoder
         }
 
         public string BuildTuneArg(string? metricMode)
+        {
+            return "";
+        }
+
+        public string BuildFullTuneArg(string? metricMode)
         {
             return "";
         }
