@@ -225,17 +225,19 @@ namespace AvifEncoder.GuiLakeUl
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
+            label1 = new Label();
             btnSelectFont2 = new ModernButton();
             btnSelectFont = new ModernButton();
             btnSaveConfig = new ModernButton();
             btnLoadConfig = new ModernButton();
-            label1 = new Label();
+            btnCheckUpdate = new ModernButton();
             modernPanel1.SuspendLayout();
             SuspendLayout();
             // 
             // modernPanel1
             // 
-            modernPanel1.BackColor1 = Color.Transparent;
+            modernPanel1.BackColor1 = Color.Black;
+            modernPanel1.BorderColor = Color.Transparent;
             modernPanel1.Controls.Add(label1);
             modernPanel1.Controls.Add(btnSelectFont2);
             modernPanel1.Controls.Add(btnSelectFont);
@@ -245,70 +247,85 @@ namespace AvifEncoder.GuiLakeUl
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.Size = new Size(931, 589);
+            modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
-            // 
-            // btnSelectFont2
-            // 
-            btnSelectFont2.Location = new Point(20, 243);
-            btnSelectFont2.Margin = new Padding(2);
-            btnSelectFont2.Name = "btnSelectFont2";
-            btnSelectFont2.Size = new Size(120, 35);
-            btnSelectFont2.TabIndex = 3;
-            btnSelectFont2.Text = "切换字体2";
-            btnSelectFont2.Click += btnSelectFont_Click2;
-            // 
-            // btnSelectFont
-            // 
-            btnSelectFont.Location = new Point(20, 71);
-            btnSelectFont.Margin = new Padding(2);
-            btnSelectFont.Name = "btnSelectFont";
-            btnSelectFont.Size = new Size(618, 40);
-            btnSelectFont.TabIndex = 0;
-            btnSelectFont.Text = "切换字体";
-            // 
-            // btnSaveConfig
-            // 
-            btnSaveConfig.Location = new Point(20, 124);
-            btnSaveConfig.Margin = new Padding(2);
-            btnSaveConfig.Name = "btnSaveConfig";
-            btnSaveConfig.Size = new Size(618, 40);
-            btnSaveConfig.TabIndex = 1;
-            btnSaveConfig.Text = "保存配置到文件";
-            // 
-            // btnLoadConfig
-            // 
-            btnLoadConfig.Location = new Point(20, 181);
-            btnLoadConfig.Margin = new Padding(2);
-            btnLoadConfig.Name = "btnLoadConfig";
-            btnLoadConfig.Size = new Size(618, 40);
-            btnLoadConfig.TabIndex = 2;
-            btnLoadConfig.Text = "从文件加载配置";
-            // 
-            // btnCheckUpdate
-            // 
-            btnCheckUpdate = new ModernButton();
-            btnCheckUpdate.Location = new Point(20, 300);
-            btnCheckUpdate.Margin = new Padding(2);
-            btnCheckUpdate.Name = "btnCheckUpdate";
-            btnCheckUpdate.Size = new Size(618, 40);
-            btnCheckUpdate.TabIndex = 5;
-            btnCheckUpdate.Text = "检查更新";
-            modernPanel1.Controls.Add(btnCheckUpdate);
             // 
             // label1
             // 
             label1.AutoSize = true;
             label1.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            label1.ForeColor = SystemColors.Highlight;
             label1.Location = new Point(20, 36);
             label1.Name = "label1";
             label1.Size = new Size(376, 21);
             label1.TabIndex = 4;
             label1.Text = "该页选项大部分功能为测试版，如遇bug为正常情况";
             // 
+            // btnSelectFont2
+            // 
+            btnSelectFont2.BackColor1 = Color.Transparent;
+            btnSelectFont2.ForeColor = Color.WhiteSmoke;
+            btnSelectFont2.HoverBackColor1 = Color.Silver;
+            btnSelectFont2.Location = new Point(20, 131);
+            btnSelectFont2.Margin = new Padding(2);
+            btnSelectFont2.Name = "btnSelectFont2";
+            btnSelectFont2.Size = new Size(416, 40);
+            btnSelectFont2.TabIndex = 3;
+            btnSelectFont2.Text = "切换字体2";
+            btnSelectFont2.Click += btnSelectFont_Click2;
+            // 
+            // btnSelectFont
+            // 
+            btnSelectFont.BackColor1 = Color.Transparent;
+            btnSelectFont.ForeColor = Color.WhiteSmoke;
+            btnSelectFont.HoverBackColor1 = Color.Silver;
+            btnSelectFont.Location = new Point(20, 71);
+            btnSelectFont.Margin = new Padding(2);
+            btnSelectFont.Name = "btnSelectFont";
+            btnSelectFont.Size = new Size(416, 40);
+            btnSelectFont.TabIndex = 0;
+            btnSelectFont.Text = "切换字体";
+            // 
+            // btnSaveConfig
+            // 
+            btnSaveConfig.BackColor1 = Color.Transparent;
+            btnSaveConfig.ForeColor = Color.WhiteSmoke;
+            btnSaveConfig.HoverBackColor1 = Color.Silver;
+            btnSaveConfig.Location = new Point(20, 187);
+            btnSaveConfig.Margin = new Padding(2);
+            btnSaveConfig.Name = "btnSaveConfig";
+            btnSaveConfig.Size = new Size(416, 40);
+            btnSaveConfig.TabIndex = 1;
+            btnSaveConfig.Text = "保存配置到文件";
+            // 
+            // btnLoadConfig
+            // 
+            btnLoadConfig.BackColor1 = Color.Transparent;
+            btnLoadConfig.ForeColor = Color.WhiteSmoke;
+            btnLoadConfig.HoverBackColor1 = Color.Silver;
+            btnLoadConfig.Location = new Point(20, 249);
+            btnLoadConfig.Margin = new Padding(2);
+            btnLoadConfig.Name = "btnLoadConfig";
+            btnLoadConfig.Size = new Size(416, 40);
+            btnLoadConfig.TabIndex = 2;
+            btnLoadConfig.Text = "从文件加载配置";
+            // 
+            // btnCheckUpdate
+            // 
+            btnCheckUpdate.BackColor1 = Color.Transparent;
+            btnCheckUpdate.ForeColor = Color.WhiteSmoke;
+            btnCheckUpdate.HoverBackColor1 = Color.Silver;
+            btnCheckUpdate.Location = new Point(20, 313);
+            btnCheckUpdate.Margin = new Padding(2);
+            btnCheckUpdate.Name = "btnCheckUpdate";
+            btnCheckUpdate.Size = new Size(416, 40);
+            btnCheckUpdate.TabIndex = 5;
+            btnCheckUpdate.Text = "检查更新";
+            // 
             // FormOtherOptions
             // 
-            ClientSize = new Size(931, 589);
+            BackColor = Color.Black;
+            ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             Name = "FormOtherOptions";
             modernPanel1.ResumeLayout(false);

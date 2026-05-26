@@ -28,26 +28,6 @@ namespace AvifEncoder
     ILogger? logger = null,
     string? tempDir = null)
         {
-            // 尝试读取缓存（仅当 ffmpeg 路径未变时有效）
-            string ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? "";
-            string cacheFile = Path.Combine(
-                Path.GetTempPath(), "AvifEncoder_env.json");
-            if (File.Exists(cacheFile))
-            {
-                try
-                {
-                    string cached = File.ReadAllText(cacheFile);
-                    var old = System.Text.Json.JsonSerializer
-                        .Deserialize<EnvironmentCheckResult>(cached);
-                    if (old != null && old.FfmpegAvailable)
-                    {
-                        logger?.LogInfo("使用缓存的环境检测结果（跳过重复检测）");
-                        return old;
-                    }
-                }
-                catch { }
-            }
-
             var result = new EnvironmentCheckResult();
             string workDir = tempDir ?? Path.Combine(
                 Path.GetTempPath(), "AvifEncoder_check");
@@ -142,17 +122,6 @@ namespace AvifEncoder
                 if (Directory.Exists(workDir) && !Directory.EnumerateFileSystemEntries(workDir).Any())
                     try { Directory.Delete(workDir); } catch { }
             }
-            // 写入缓存
-            try
-            {
-                string json = System.Text.Json.JsonSerializer
-                    .Serialize(result);
-                File.WriteAllText(
-                    Path.Combine(Path.GetTempPath(),
-                        "AvifEncoder_env.json"), json);
-            }
-            catch { }
-
             return result;
         }
 
