@@ -107,6 +107,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             cmbEncoder.Items.AddRange(new string[] { "libaom-av1", "libsvtav1", "librav1e",
                                                       "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" });
             SetComboBoxItem(cmbEncoder, "libaom-av1");
+            UpdateCpuUsedLimits();   // 添加此行，使初始上限与编码器匹配
 
             numJobs.Minimum = 0; numJobs.Maximum = 128; numJobs.Value = 0;
 
@@ -134,7 +135,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                                                           "SSIMULACRA2", "Butteraugli 3-norm", "GMSD","Mix" });
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
-            numQualityValue.Value = 0.95m; numQualityValue.DecimalPlaces = 4;
+            numQualityValue.Value = 0.95; numQualityValue.DecimalPlaces = 4;
             numQualityValue.Enabled = false;
 
             cmbChroma.Items.Clear();
@@ -180,7 +181,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
         private void AttachCustomMarkEvents()
         {
-            cmbEncoder.SelectedIndexChanged += MarkCustom;
+            cmbEncoder.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); UpdateCpuUsedLimits(); };
             numJobs.ValueChanged += MarkCustom;
             numSearchCpuUsed.ValueChanged += MarkCustom;
             numFinalCpuUsed.ValueChanged += MarkCustom;
@@ -223,31 +224,38 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             {
                 case "VMAF":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 100;
-                    numQualityValue.DecimalPlaces = 1;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.1;
                     break;
                 case "PSNR-Y":
                     numQualityValue.Minimum = 30; numQualityValue.Maximum = 50;
-                    numQualityValue.DecimalPlaces = 1;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.1;
                     break;
                 case "XPSNR":
                     numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
-                    numQualityValue.DecimalPlaces = 1;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.1;
                     break;
                 case "SSIMULACRA2":
                     numQualityValue.Minimum = -100; numQualityValue.Maximum = 100;
-                    numQualityValue.DecimalPlaces = 2;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 1;
                     break;
                 case "Butteraugli 3-norm":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 50;
-                    numQualityValue.DecimalPlaces = 4;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.01;
                     break;
                 case "GMSD":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
-                    numQualityValue.DecimalPlaces = 4;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.001;
                     break;
-                default: // SSIM, MS-SSIM, Mix, 无 等
+                default:
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
-                    numQualityValue.DecimalPlaces = 4;
+                    numQualityValue.DecimalPlaces = 15;
+                    numQualityValue.Increment = 0.001;
                     break;
             }
             numQualityValue.Enabled = mode != "无";
@@ -309,12 +317,13 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                         "psnr" => cfg.TargetSSIM * 20 + 30,
                         _ => cfg.TargetSSIM
                     };
-                    // 安全赋值
-                    if ((decimal)rawVal > numQualityValue.Maximum)
-                        numQualityValue.Maximum = (decimal)rawVal;
-                    if ((decimal)rawVal < numQualityValue.Minimum)
-                        numQualityValue.Minimum = (decimal)rawVal;
-                    numQualityValue.Value = (decimal)rawVal;
+                    // 安全调整控件范围（Maximum / Minimum 为 double 类型）
+                    // 安全赋值（均为 double 类型）
+                    if (rawVal > numQualityValue.Maximum)
+                        numQualityValue.Maximum = rawVal;
+                    if (rawVal < numQualityValue.Minimum)
+                        numQualityValue.Minimum = rawVal;
+                    numQualityValue.Value = rawVal;
                 }
 
                 chkLossless.Checked = cfg.Lossless;
@@ -355,8 +364,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 case "XPSNR": numQualityValue.Value = 45; break;
                 case "SSIMULACRA2": numQualityValue.Value = 90; break;
                 case "Butteraugli 3-norm": numQualityValue.Value = 1; break;
-                case "GMSD": numQualityValue.Value = 0.2m; break;
-                default: numQualityValue.Value = 0.95m; break;
+                case "GMSD": numQualityValue.Value = 0.2; break;
+                default: numQualityValue.Value = 0.95; break;
             }
 
             string metric = mode.ToLower() switch
@@ -416,6 +425,26 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                     rbCrfRange.Checked = true;
                 }
             }
+        }
+
+        private void UpdateCpuUsedLimits()
+        {
+            string? encoder = cmbEncoder.SelectedItem?.ToString();
+            int maxCpu = encoder switch
+            {
+                "libsvtav1" => 13,
+                "librav1e" => 10,
+                "libaom-av1" => 8,
+                _ => 8 // 硬件编码器等默认仍为 8，后续可针对性禁用控件
+            };
+            numSearchCpuUsed.Maximum = maxCpu;
+            numFinalCpuUsed.Maximum = maxCpu;
+
+            // 当前值若超出新上限则强制拉回
+            if (numSearchCpuUsed.Value > maxCpu)
+                numSearchCpuUsed.Value = maxCpu;
+            if (numFinalCpuUsed.Value > maxCpu)
+                numFinalCpuUsed.Value = maxCpu;
         }
 
         private void ChkSweep_CheckedChanged(object? sender, EventArgs e)
@@ -669,6 +698,16 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         {
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
             progressBar1.Value = Math.Max(0, Math.Min(percent, 100));
+        }
+
+        private void label4_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label5_Click(object sender, EventArgs e)
+        {
+
         }
     }
 

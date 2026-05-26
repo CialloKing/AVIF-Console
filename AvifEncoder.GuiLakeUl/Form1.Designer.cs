@@ -51,7 +51,8 @@
             // 
             // thisIsYourWindow1
             // 
-            thisIsYourWindow1.BackdropBlurRadius = 5;
+            thisIsYourWindow1.BackdropBlurPasses = 1;
+            thisIsYourWindow1.BackdropBlurRadius = 2;
             thisIsYourWindow1.BackdropImage = (Image)resources.GetObject("thisIsYourWindow1.BackdropImage");
             thisIsYourWindow1.BackdropMaxParallelism = 16;
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;

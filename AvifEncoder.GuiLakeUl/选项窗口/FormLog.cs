@@ -79,12 +79,13 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             txtLog.BorderColor = Color.Transparent;
             txtLog.BorderColorFocus = Color.Transparent;
             txtLog.Dock = DockStyle.Fill;
-            txtLog.ForeColor = Color.WhiteSmoke;
+            txtLog.ForeColor = Color.White;
             txtLog.Location = new Point(1, 1);
             txtLog.Margin = new Padding(2);
             txtLog.MultiLine = true;
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
+            txtLog.SelectionColor = Color.Gray;
             txtLog.Size = new Size(1111, 678);
             txtLog.TabIndex = 0;
             txtLog.WordWrap = false;

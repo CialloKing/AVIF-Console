@@ -29,6 +29,11 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            numSearchCpuUsed = new LakeUI.ModernNumericUpDown();
+            numFinalCpuUsed = new LakeUI.ModernNumericUpDown();
+            numMaxRes = new LakeUI.ModernNumericUpDown();
+            numJobs = new LakeUI.ModernNumericUpDown();
+            numQualityValue = new LakeUI.ModernNumericUpDown();
             chkSweep = new LakeUI.ModernCheckBox();
             chkProxy = new LakeUI.ModernCheckBox();
             chkPriorSearch = new LakeUI.ModernCheckBox();
@@ -37,34 +42,29 @@
             cmbConflict = new LakeUI.ModernComboBox();
             chkOutputFullRes = new LakeUI.ModernCheckBox();
             label10 = new Label();
-            numMaxRes = new NumericUpDown();
             chkRecursive = new LakeUI.ModernCheckBox();
             chkLossless = new LakeUI.ModernCheckBox();
             label9 = new Label();
             cmbBitDepth = new LakeUI.ModernComboBox();
             label8 = new Label();
             cmbChroma = new LakeUI.ModernComboBox();
-            numQualityValue = new NumericUpDown();
             label7 = new Label();
             cmbQualityMode = new LakeUI.ModernComboBox();
             label6 = new Label();
             cmbMetric = new LakeUI.ModernComboBox();
             grpCrfMode = new GroupBox();
+            numCrfMax = new LakeUI.ModernNumericUpDown();
+            numCrfMin = new LakeUI.ModernNumericUpDown();
+            numCrfFix = new LakeUI.ModernNumericUpDown();
             rbCrfFix = new LakeUI.ModernCheckBox();
-            numCrfMax = new NumericUpDown();
             label5 = new Label();
-            numCrfMin = new NumericUpDown();
-            numCrfFix = new NumericUpDown();
-            label4 = new Label();
             rbCrfRange = new LakeUI.ModernCheckBox();
+            label4 = new Label();
             modernButton1 = new LakeUI.ModernButton();
             txtTemplate = new LakeUI.ModernTextBox();
             label3 = new Label();
-            numFinalCpuUsed = new NumericUpDown();
             label2 = new Label();
-            numSearchCpuUsed = new NumericUpDown();
             label1 = new Label();
-            numJobs = new NumericUpDown();
             btnStop = new LakeUI.ModernButton();
             chkSearch = new LakeUI.ModernCheckBox();
             lblQuality = new Label();
@@ -79,15 +79,7 @@
             btnStart = new LakeUI.ModernButton();
             txtInput = new LakeUI.ModernTextBox();
             modernPanel1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numMaxRes).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numQualityValue).BeginInit();
             grpCrfMode.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numCrfMax).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numCrfMin).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numCrfFix).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numFinalCpuUsed).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numJobs).BeginInit();
             SuspendLayout();
             // 
             // modernPanel1
@@ -96,6 +88,11 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(numSearchCpuUsed);
+            modernPanel1.Controls.Add(numFinalCpuUsed);
+            modernPanel1.Controls.Add(numMaxRes);
+            modernPanel1.Controls.Add(numJobs);
+            modernPanel1.Controls.Add(numQualityValue);
             modernPanel1.Controls.Add(chkSweep);
             modernPanel1.Controls.Add(chkProxy);
             modernPanel1.Controls.Add(chkPriorSearch);
@@ -104,14 +101,12 @@
             modernPanel1.Controls.Add(cmbConflict);
             modernPanel1.Controls.Add(chkOutputFullRes);
             modernPanel1.Controls.Add(label10);
-            modernPanel1.Controls.Add(numMaxRes);
             modernPanel1.Controls.Add(chkRecursive);
             modernPanel1.Controls.Add(chkLossless);
             modernPanel1.Controls.Add(label9);
             modernPanel1.Controls.Add(cmbBitDepth);
             modernPanel1.Controls.Add(label8);
             modernPanel1.Controls.Add(cmbChroma);
-            modernPanel1.Controls.Add(numQualityValue);
             modernPanel1.Controls.Add(label7);
             modernPanel1.Controls.Add(cmbQualityMode);
             modernPanel1.Controls.Add(label6);
@@ -120,11 +115,8 @@
             modernPanel1.Controls.Add(modernButton1);
             modernPanel1.Controls.Add(txtTemplate);
             modernPanel1.Controls.Add(label3);
-            modernPanel1.Controls.Add(numFinalCpuUsed);
             modernPanel1.Controls.Add(label2);
-            modernPanel1.Controls.Add(numSearchCpuUsed);
             modernPanel1.Controls.Add(label1);
-            modernPanel1.Controls.Add(numJobs);
             modernPanel1.Controls.Add(btnStop);
             modernPanel1.Controls.Add(chkSearch);
             modernPanel1.Controls.Add(lblQuality);
@@ -145,12 +137,88 @@
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
             // 
+            // numSearchCpuUsed
+            // 
+            numSearchCpuUsed.AllowDrop = true;
+            numSearchCpuUsed.BackColor1 = Color.Transparent;
+            numSearchCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
+            numSearchCpuUsed.DecimalPlaces = 15;
+            numSearchCpuUsed.ForeColor = Color.White;
+            numSearchCpuUsed.HoverArrowColor = Color.Gray;
+            numSearchCpuUsed.HoverButtonBackColor1 = Color.Silver;
+            numSearchCpuUsed.Location = new Point(432, 204);
+            numSearchCpuUsed.Name = "numSearchCpuUsed";
+            numSearchCpuUsed.Size = new Size(160, 32);
+            numSearchCpuUsed.TabIndex = 58;
+            // 
+            // numFinalCpuUsed
+            // 
+            numFinalCpuUsed.AllowDrop = true;
+            numFinalCpuUsed.BackColor1 = Color.Transparent;
+            numFinalCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
+            numFinalCpuUsed.DecimalPlaces = 15;
+            numFinalCpuUsed.ForeColor = Color.White;
+            numFinalCpuUsed.HoverArrowColor = Color.Gray;
+            numFinalCpuUsed.HoverButtonBackColor1 = Color.Silver;
+            numFinalCpuUsed.Location = new Point(432, 268);
+            numFinalCpuUsed.Name = "numFinalCpuUsed";
+            numFinalCpuUsed.Size = new Size(160, 32);
+            numFinalCpuUsed.TabIndex = 57;
+            // 
+            // numMaxRes
+            // 
+            numMaxRes.AllowDrop = true;
+            numMaxRes.BackColor1 = Color.Transparent;
+            numMaxRes.CaretColor = Color.FromArgb(220, 220, 220);
+            numMaxRes.DecimalPlaces = 15;
+            numMaxRes.ForeColor = Color.White;
+            numMaxRes.HoverArrowColor = Color.Gray;
+            numMaxRes.HoverButtonBackColor1 = Color.Silver;
+            numMaxRes.Increment = 100D;
+            numMaxRes.LargeChange = 1000D;
+            numMaxRes.Location = new Point(432, 328);
+            numMaxRes.Name = "numMaxRes";
+            numMaxRes.Size = new Size(160, 32);
+            numMaxRes.SmallChange = 100D;
+            numMaxRes.TabIndex = 56;
+            // 
+            // numJobs
+            // 
+            numJobs.AllowDrop = true;
+            numJobs.BackColor1 = Color.Transparent;
+            numJobs.CaretColor = Color.FromArgb(220, 220, 220);
+            numJobs.DecimalPlaces = 15;
+            numJobs.ForeColor = Color.White;
+            numJobs.HoverArrowColor = Color.Gray;
+            numJobs.HoverButtonBackColor1 = Color.Silver;
+            numJobs.Location = new Point(432, 399);
+            numJobs.Name = "numJobs";
+            numJobs.Size = new Size(160, 32);
+            numJobs.TabIndex = 55;
+            // 
+            // numQualityValue
+            // 
+            numQualityValue.AllowDrop = true;
+            numQualityValue.BackColor1 = Color.Transparent;
+            numQualityValue.CaretColor = Color.FromArgb(220, 220, 220);
+            numQualityValue.DecimalPlaces = 15;
+            numQualityValue.ForeColor = Color.White;
+            numQualityValue.HoverArrowColor = Color.Gray;
+            numQualityValue.HoverButtonBackColor1 = Color.Silver;
+            numQualityValue.Increment = 0.1D;
+            numQualityValue.LargeChange = 1D;
+            numQualityValue.Location = new Point(432, 465);
+            numQualityValue.Name = "numQualityValue";
+            numQualityValue.Size = new Size(160, 32);
+            numQualityValue.SmallChange = 0.1D;
+            numQualityValue.TabIndex = 54;
+            // 
             // chkSweep
             // 
             chkSweep.AnimationFPS = 0;
             chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSweep.ForeColor = Color.WhiteSmoke;
-            chkSweep.Location = new Point(625, 395);
+            chkSweep.Location = new Point(639, 301);
             chkSweep.Name = "chkSweep";
             chkSweep.Size = new Size(150, 21);
             chkSweep.TabIndex = 52;
@@ -161,7 +229,7 @@
             chkProxy.AnimationFPS = 0;
             chkProxy.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkProxy.ForeColor = Color.WhiteSmoke;
-            chkProxy.Location = new Point(625, 249);
+            chkProxy.Location = new Point(639, 247);
             chkProxy.Name = "chkProxy";
             chkProxy.Size = new Size(150, 24);
             chkProxy.TabIndex = 51;
@@ -172,7 +240,7 @@
             chkPriorSearch.AnimationFPS = 0;
             chkPriorSearch.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkPriorSearch.ForeColor = Color.WhiteSmoke;
-            chkPriorSearch.Location = new Point(625, 218);
+            chkPriorSearch.Location = new Point(639, 217);
             chkPriorSearch.Name = "chkPriorSearch";
             chkPriorSearch.Size = new Size(150, 24);
             chkPriorSearch.TabIndex = 50;
@@ -183,7 +251,7 @@
             chkSerialEncode.AnimationFPS = 0;
             chkSerialEncode.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSerialEncode.ForeColor = Color.WhiteSmoke;
-            chkSerialEncode.Location = new Point(625, 279);
+            chkSerialEncode.Location = new Point(639, 386);
             chkSerialEncode.Name = "chkSerialEncode";
             chkSerialEncode.Size = new Size(150, 25);
             chkSerialEncode.TabIndex = 49;
@@ -219,7 +287,7 @@
             chkOutputFullRes.AnimationFPS = 0;
             chkOutputFullRes.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkOutputFullRes.ForeColor = Color.WhiteSmoke;
-            chkOutputFullRes.Location = new Point(625, 341);
+            chkOutputFullRes.Location = new Point(639, 359);
             chkOutputFullRes.Name = "chkOutputFullRes";
             chkOutputFullRes.Size = new Size(150, 21);
             chkOutputFullRes.TabIndex = 46;
@@ -229,25 +297,18 @@
             // 
             label10.AutoSize = true;
             label10.ForeColor = Color.WhiteSmoke;
-            label10.Location = new Point(432, 299);
+            label10.Location = new Point(432, 309);
             label10.Name = "label10";
             label10.Size = new Size(168, 17);
             label10.TabIndex = 45;
             label10.Text = "预缩放最大分辨率（0=禁用）";
-            // 
-            // numMaxRes
-            // 
-            numMaxRes.Location = new Point(432, 319);
-            numMaxRes.Name = "numMaxRes";
-            numMaxRes.Size = new Size(120, 23);
-            numMaxRes.TabIndex = 44;
             // 
             // chkRecursive
             // 
             chkRecursive.AnimationFPS = 0;
             chkRecursive.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkRecursive.ForeColor = Color.WhiteSmoke;
-            chkRecursive.Location = new Point(625, 310);
+            chkRecursive.Location = new Point(639, 328);
             chkRecursive.Name = "chkRecursive";
             chkRecursive.Size = new Size(150, 25);
             chkRecursive.TabIndex = 43;
@@ -258,7 +319,7 @@
             chkLossless.AnimationFPS = 0;
             chkLossless.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkLossless.ForeColor = Color.WhiteSmoke;
-            chkLossless.Location = new Point(625, 368);
+            chkLossless.Location = new Point(639, 415);
             chkLossless.Name = "chkLossless";
             chkLossless.Size = new Size(150, 21);
             chkLossless.TabIndex = 42;
@@ -313,16 +374,6 @@
             cmbChroma.Size = new Size(160, 32);
             cmbChroma.TabIndex = 38;
             cmbChroma.Text = "选择色度采样";
-            // 
-            // numQualityValue
-            // 
-            numQualityValue.DecimalPlaces = 8;
-            numQualityValue.Location = new Point(432, 464);
-            numQualityValue.Maximum = new decimal(new int[] { 276447232, 23283, 0, 0 });
-            numQualityValue.Minimum = new decimal(new int[] { 276447232, 23283, 0, int.MinValue });
-            numQualityValue.Name = "numQualityValue";
-            numQualityValue.Size = new Size(120, 23);
-            numQualityValue.TabIndex = 37;
             // 
             // label7
             // 
@@ -381,20 +432,57 @@
             // 
             // grpCrfMode
             // 
-            grpCrfMode.Controls.Add(rbCrfFix);
             grpCrfMode.Controls.Add(numCrfMax);
-            grpCrfMode.Controls.Add(label5);
             grpCrfMode.Controls.Add(numCrfMin);
             grpCrfMode.Controls.Add(numCrfFix);
-            grpCrfMode.Controls.Add(label4);
+            grpCrfMode.Controls.Add(rbCrfFix);
+            grpCrfMode.Controls.Add(label5);
             grpCrfMode.Controls.Add(rbCrfRange);
+            grpCrfMode.Controls.Add(label4);
             grpCrfMode.ForeColor = Color.WhiteSmoke;
-            grpCrfMode.Location = new Point(230, 187);
+            grpCrfMode.Location = new Point(230, 185);
             grpCrfMode.Name = "grpCrfMode";
-            grpCrfMode.Size = new Size(162, 175);
+            grpCrfMode.Size = new Size(162, 187);
             grpCrfMode.TabIndex = 32;
             grpCrfMode.TabStop = false;
             grpCrfMode.Text = "CRF搜索模式";
+            // 
+            // numCrfMax
+            // 
+            numCrfMax.BackColor1 = Color.Transparent;
+            numCrfMax.CaretColor = Color.FromArgb(220, 220, 220);
+            numCrfMax.ForeColor = Color.White;
+            numCrfMax.HoverArrowColor = Color.Gray;
+            numCrfMax.HoverButtonBackColor1 = Color.Silver;
+            numCrfMax.Location = new Point(90, 143);
+            numCrfMax.Name = "numCrfMax";
+            numCrfMax.Size = new Size(66, 32);
+            numCrfMax.TabIndex = 54;
+            // 
+            // numCrfMin
+            // 
+            numCrfMin.BackColor1 = Color.Transparent;
+            numCrfMin.CaretColor = Color.FromArgb(220, 220, 220);
+            numCrfMin.ForeColor = Color.White;
+            numCrfMin.HoverArrowColor = Color.Gray;
+            numCrfMin.HoverButtonBackColor1 = Color.Silver;
+            numCrfMin.Location = new Point(6, 143);
+            numCrfMin.Name = "numCrfMin";
+            numCrfMin.Size = new Size(66, 32);
+            numCrfMin.TabIndex = 53;
+            // 
+            // numCrfFix
+            // 
+            numCrfFix.AllowDrop = true;
+            numCrfFix.BackColor1 = Color.Transparent;
+            numCrfFix.CaretColor = Color.FromArgb(220, 220, 220);
+            numCrfFix.ForeColor = Color.White;
+            numCrfFix.HoverArrowColor = Color.Gray;
+            numCrfFix.HoverButtonBackColor1 = Color.Silver;
+            numCrfFix.Location = new Point(6, 49);
+            numCrfFix.Name = "numCrfFix";
+            numCrfFix.Size = new Size(114, 32);
+            numCrfFix.TabIndex = 53;
             // 
             // rbCrfFix
             // 
@@ -402,67 +490,44 @@
             rbCrfFix.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfFix.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
             rbCrfFix.ForeColor = Color.WhiteSmoke;
-            rbCrfFix.Location = new Point(6, 31);
+            rbCrfFix.Location = new Point(6, 22);
             rbCrfFix.Name = "rbCrfFix";
             rbCrfFix.Size = new Size(81, 23);
             rbCrfFix.TabIndex = 25;
             rbCrfFix.Text = "固定 CRF";
             // 
-            // numCrfMax
-            // 
-            numCrfMax.Location = new Point(90, 142);
-            numCrfMax.Maximum = new decimal(new int[] { 63, 0, 0, 0 });
-            numCrfMax.Name = "numCrfMax";
-            numCrfMax.Size = new Size(60, 23);
-            numCrfMax.TabIndex = 29;
-            numCrfMax.Value = new decimal(new int[] { 63, 0, 0, 0 });
-            // 
             // label5
             // 
             label5.AutoSize = true;
             label5.ForeColor = Color.WhiteSmoke;
-            label5.Location = new Point(90, 122);
+            label5.Location = new Point(90, 124);
             label5.Name = "label5";
             label5.Size = new Size(56, 17);
             label5.TabIndex = 31;
             label5.Text = "范围上限";
-            // 
-            // numCrfMin
-            // 
-            numCrfMin.Location = new Point(6, 142);
-            numCrfMin.Maximum = new decimal(new int[] { 63, 0, 0, 0 });
-            numCrfMin.Name = "numCrfMin";
-            numCrfMin.Size = new Size(60, 23);
-            numCrfMin.TabIndex = 28;
-            // 
-            // numCrfFix
-            // 
-            numCrfFix.Location = new Point(6, 60);
-            numCrfFix.Maximum = new decimal(new int[] { 63, 0, 0, 0 });
-            numCrfFix.Name = "numCrfFix";
-            numCrfFix.Size = new Size(85, 23);
-            numCrfFix.TabIndex = 27;
-            // 
-            // label4
-            // 
-            label4.AutoSize = true;
-            label4.ForeColor = Color.WhiteSmoke;
-            label4.Location = new Point(6, 122);
-            label4.Name = "label4";
-            label4.Size = new Size(56, 17);
-            label4.TabIndex = 30;
-            label4.Text = "范围下限";
+            label5.Click += label5_Click;
             // 
             // rbCrfRange
             // 
             rbCrfRange.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             rbCrfRange.CheckMode = LakeUI.ModernCheckBox.CheckModeEnum.RadioButton;
             rbCrfRange.ForeColor = Color.WhiteSmoke;
-            rbCrfRange.Location = new Point(6, 96);
+            rbCrfRange.Location = new Point(6, 92);
             rbCrfRange.Name = "rbCrfRange";
             rbCrfRange.Size = new Size(150, 23);
             rbCrfRange.TabIndex = 26;
             rbCrfRange.Text = "CRF 范围";
+            // 
+            // label4
+            // 
+            label4.AutoSize = true;
+            label4.ForeColor = Color.WhiteSmoke;
+            label4.Location = new Point(6, 124);
+            label4.Name = "label4";
+            label4.Size = new Size(56, 17);
+            label4.TabIndex = 30;
+            label4.Text = "范围下限";
+            label4.Click += label4_Click;
             // 
             // modernButton1
             // 
@@ -491,18 +556,11 @@
             // 
             label3.AutoSize = true;
             label3.ForeColor = Color.Gainsboro;
-            label3.Location = new Point(432, 245);
+            label3.Location = new Point(432, 249);
             label3.Name = "label3";
             label3.Size = new Size(80, 17);
             label3.TabIndex = 21;
             label3.Text = "最终编码速度";
-            // 
-            // numFinalCpuUsed
-            // 
-            numFinalCpuUsed.Location = new Point(432, 265);
-            numFinalCpuUsed.Name = "numFinalCpuUsed";
-            numFinalCpuUsed.Size = new Size(120, 23);
-            numFinalCpuUsed.TabIndex = 20;
             // 
             // label2
             // 
@@ -514,13 +572,6 @@
             label2.TabIndex = 19;
             label2.Text = "搜索速度";
             // 
-            // numSearchCpuUsed
-            // 
-            numSearchCpuUsed.Location = new Point(432, 207);
-            numSearchCpuUsed.Name = "numSearchCpuUsed";
-            numSearchCpuUsed.Size = new Size(120, 23);
-            numSearchCpuUsed.TabIndex = 18;
-            // 
             // label1
             // 
             label1.AutoSize = true;
@@ -530,13 +581,6 @@
             label1.Size = new Size(110, 17);
             label1.TabIndex = 17;
             label1.Text = "并行ffmpeg任务数";
-            // 
-            // numJobs
-            // 
-            numJobs.Location = new Point(432, 399);
-            numJobs.Name = "numJobs";
-            numJobs.Size = new Size(120, 23);
-            numJobs.TabIndex = 16;
             // 
             // btnStop
             // 
@@ -560,7 +604,7 @@
             chkSearch.AnimationFPS = 0;
             chkSearch.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSearch.ForeColor = Color.WhiteSmoke;
-            chkSearch.Location = new Point(625, 187);
+            chkSearch.Location = new Point(639, 187);
             chkSearch.Name = "chkSearch";
             chkSearch.Size = new Size(150, 24);
             chkSearch.TabIndex = 14;
@@ -725,16 +769,8 @@
             Text = "FormEncode";
             modernPanel1.ResumeLayout(false);
             modernPanel1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numMaxRes).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numQualityValue).EndInit();
             grpCrfMode.ResumeLayout(false);
             grpCrfMode.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numCrfMax).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numCrfMin).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numCrfFix).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numFinalCpuUsed).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numSearchCpuUsed).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numJobs).EndInit();
             ResumeLayout(false);
         }
 
@@ -754,19 +790,13 @@
         private Label lblQuality;
         private LakeUI.ModernCheckBox chkSearch;
         private LakeUI.ModernButton btnStop;
-        private NumericUpDown numJobs;
         private Label label1;
-        private NumericUpDown numSearchCpuUsed;
         private Label label2;
-        private NumericUpDown numFinalCpuUsed;
         private Label label3;
         private LakeUI.ModernTextBox txtTemplate;
         private LakeUI.ModernButton modernButton1;
         private LakeUI.ModernCheckBox rbCrfFix;
         private LakeUI.ModernCheckBox rbCrfRange;
-        private NumericUpDown numCrfFix;
-        private NumericUpDown numCrfMin;
-        private NumericUpDown numCrfMax;
         private Label label4;
         private Label label5;
         private GroupBox grpCrfMode;
@@ -774,14 +804,12 @@
         private Label label6;
         private LakeUI.ModernComboBox cmbQualityMode;
         private Label label7;
-        private NumericUpDown numQualityValue;
         private LakeUI.ModernComboBox cmbChroma;
         private Label label8;
         private LakeUI.ModernComboBox cmbBitDepth;
         private Label label9;
         private LakeUI.ModernCheckBox chkLossless;
         private LakeUI.ModernCheckBox chkRecursive;
-        private NumericUpDown numMaxRes;
         private Label label10;
         private LakeUI.ModernCheckBox chkOutputFullRes;
         private LakeUI.ModernComboBox cmbConflict;
@@ -790,5 +818,13 @@
         private LakeUI.ModernCheckBox chkPriorSearch;
         private LakeUI.ModernCheckBox chkProxy;
         private LakeUI.ModernCheckBox chkSweep;
+        private LakeUI.ModernNumericUpDown numCrfFix;
+        private LakeUI.ModernNumericUpDown numCrfMin;
+        private LakeUI.ModernNumericUpDown numCrfMax;
+        private LakeUI.ModernNumericUpDown numQualityValue;
+        private LakeUI.ModernNumericUpDown numJobs;
+        private LakeUI.ModernNumericUpDown numMaxRes;
+        private LakeUI.ModernNumericUpDown numFinalCpuUsed;
+        private LakeUI.ModernNumericUpDown numSearchCpuUsed;
     }
 }

@@ -54,7 +54,7 @@
             txtHelp.BorderColorFocus = Color.Transparent;
             txtHelp.Dock = DockStyle.Fill;
             txtHelp.Font = new Font("Cascadia Code", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            txtHelp.ForeColor = Color.WhiteSmoke;
+            txtHelp.ForeColor = Color.White;
             txtHelp.LinkDetection = true;
             txtHelp.Location = new Point(1, 1);
             txtHelp.Margin = new Padding(2);
@@ -62,6 +62,7 @@
             txtHelp.MultiLine = true;
             txtHelp.Name = "txtHelp";
             txtHelp.ReadOnly = true;
+            txtHelp.SelectionColor = Color.Gray;
             txtHelp.Size = new Size(1111, 678);
             txtHelp.TabIndex = 0;
             txtHelp.Text = "modernTextBox1";

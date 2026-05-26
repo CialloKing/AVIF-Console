@@ -36,9 +36,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   AvifEncoder -i <目录> -o <目录> [选项]
 
 支持的输入格式:
-    """".jpg"""", """".jpeg"""", """".png"""", """".webp"""",
-    """".bmp"""", """".tif"""", """".tiff"""", """".gif"""",
-    """".jp2"""", """".j2k"""", """".jpx""""
+    "".jpg"", "".jpeg"", "".png"", "".webp"",
+    "".bmp"", "".tif"", "".tiff"", "".gif"",
+    "".jp2"", "".j2k"", "".jpx""
+注:测试环节只测试了jpg/png/webp，其他格式理论上支持但可能存在兼容性问题
 
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
@@ -50,6 +51,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 质量控制:
   -s, --search                 启用 CRF 搜索 (默认启用)
       --no-search              禁用 CRF 搜索
+
       --metric <模式>           质量评价模式: vmaf, ssim, psnr, msssim, mix, XPSNR, ssimu2, butter3, gmsd (默认 vmaf)
                                设置目标分数自动切换模式
       --target-vmaf <0-100>    直接设置 VMAF 目标
@@ -62,17 +64,18 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-gmsd <值>       直接设置 GMSD 目标（越小越好，通常取 0~1）
       --target-mix <0-1>       直接设置多指标加权混合评分目标
 
-      --crf <整数>             手动指定固定 CRF (1-50，同时禁用搜索)
+
+      --crf <整数>            手动指定固定 CRF (1-50，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
 
 像素格式:
   -c, --chroma <采样>          色度采样: 420, 422, 444, auto (默认: auto)
-  -b, --bit-depth <位数>       输出位深: 8 或 10
+  -b, --bit-depth <位数>       输出位深: 8, 10, auto (默认: auto)
+                              当设为 auto 时由程序根据源文件自动选择
 
 其他编码选项:
-  -l, --lossless               无损模式 (不同版本ffmpeg相关的支持不同，谨慎使用)
-
-  -t, --output-template <模板> 输出文件名模板 (默认: covers-{index}.avif)
+  -l, --lossless               无损模式 (有bug，不建议使用)
+  -t, --output-template <模板>  输出文件名模板 (默认: covers-{index}.avif)
                                可用占位符: {name} 源文件主名, {index} 序号(01,02...)
                                正确示例:
                                  -m {name}.avif            按源文件名
@@ -80,7 +83,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                  -m {name}_{index}.avif   源名+序号
                                错误示例:
                                  -m ""{name}.avif""        （引号会被当成文件名的一部分）
-
   -r, --recursive              递归处理子目录
 
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程）
@@ -93,7 +95,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                libsvtav1 -preset 0-13 (0最慢)，
                                librav1e --speed 0-10 (0最慢)
                                最终编码仍使用预设或自定义速度
-
       --final-cpu-used <0-13>  最终编码阶段编码器速度（覆盖预设，默认使用预设值）
                                数值含义同 --search-cpu-used，但仅影响最终输出文件的编码。
                                如果不指定，最终编码将使用预设的高质量速度（通常较慢）。
@@ -109,6 +110,10 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --proxy                  启用保守代理搜索（需配合 --prior-search），快速评估中位数附近点来缩小区间
       --output-full-res        最终输出保留原始分辨率 (搜索和指标使用缩放后图像)
 
+      --sweep                 遍历模式：对每张图片在 MinCRF～MaxCRF 范围内逐个编码并保存所有结果。
+                              文件名自动附加 _CRF数字，CSV 包含完整统计数据
+                              使用此选项可用于生成 RD 曲线数据，或分析不同 CRF 设置下的质量/文件大小关系
+
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
       --timeout-safe <分钟>    安全模式全扫描超时 (默认 180)
@@ -119,16 +124,23 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 通用选项:
   -v, --verbose                详细输出
   -q, --quiet                  安静模式，仅输出错误
-  -D, --dry-run                仅打印配置，不实际编码
-  -y, --overwrite              覆盖已存在的输出文件（默认自动重命名）
+  -D, --dry-run                仅打印配置，不实际编码，用于验证命令行是否正确，或查看程序将如何执行
+  -y, --overwrite              覆盖已存在的输出文件（默认行为是自动添加 _1 等后缀）
   -n, --no-clobber             已存在的文件，直接跳过
   -V, --version                显示版本信息
   -h, --help                   显示此帮助信息
 
 示例:
+  # 基础用法
   AvifEncoder -i ./图片 -o ./输出
+
+  # 最佳预设 + 目标 VMAF 95
   AvifEncoder --preset best --target-vmaf 95
+
+  # 使用 420 色度、8bit、固定 CRF 30、不搜索
   AvifEncoder -c 420 -b 8 --crf 30 --no-search
+
+  # 自定义搜索范围与超时
   AvifEncoder --crf 10:45 --target-ssim 0.98 --timeout-search 120
 
 
