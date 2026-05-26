@@ -365,6 +365,7 @@
             cmbMetric.BackColor1 = Color.Transparent;
             cmbMetric.CaretColor = Color.FromArgb(220, 220, 220);
             cmbMetric.DropDownAnimationFPS = 0;
+            cmbMetric.DropDownBackColor = Color.Transparent;
             cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbMetric.DropDownScrollBarHoverColor = Color.FromArgb(200, 200, 200);
             cmbMetric.ForeColor = Color.Gainsboro;
@@ -372,9 +373,11 @@
             cmbMetric.Location = new Point(230, 399);
             cmbMetric.Margin = new Padding(2, 2, 2, 2);
             cmbMetric.Name = "cmbMetric";
+            cmbMetric.SelectionColor = Color.Transparent;
             cmbMetric.Size = new Size(160, 32);
             cmbMetric.TabIndex = 33;
             cmbMetric.Text = "搜索度量";
+            cmbMetric.ToolTipBackColor = Color.Transparent;
             // 
             // grpCrfMode
             // 

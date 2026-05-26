@@ -1693,81 +1693,24 @@ namespace AvifEncoder
 
         public static PresetConfig CreateFromPreset(CliPreset preset)
         {
-            int jobs = Math.Max(2, (int)Math.Sqrt(Environment.ProcessorCount));
             return preset switch
             {
-                CliPreset.Fast => new PresetConfig
-                {
-                    BaseCRF = 38,
-                    TargetSSIM = 0.91,
-                    FinalCpuUsed = 2,
-                    SearchCpuUsed = 4,
-                    UseCRFSearch = false,
-                    PixelFormat = "yuv420p10le",   // 保持原始格式，ApplyBitDepth 会根据 BitDepth 修正
-                    MaxJobs = jobs,
-                    BitDepth = 8
-                },
-                CliPreset.Balanced => new PresetConfig
-                {
-                    BaseCRF = 36,
-                    TargetSSIM = 0.97,
-                    FinalCpuUsed = 2,
-                    SearchCpuUsed = 2,
-                    UseCRFSearch = false,
-                    PixelFormat = "yuv420p10le",
-                    MaxJobs = jobs,
-                    BitDepth = 8
-                },
-                CliPreset.Best => new PresetConfig
-                {
-                    BaseCRF = 34,
-                    TargetSSIM = 0.97,
-                    FinalCpuUsed = 0,
-                    SearchCpuUsed = 2,
-                    UseCRFSearch = true,
-                    PixelFormat = "yuv444p10le",
-                    MaxJobs = jobs,
-                    BitDepth = 8
-                },
-                CliPreset.Extreme => new PresetConfig
-                {
-                    BaseCRF = 35,
-                    TargetSSIM = 0.99,
-                    FinalCpuUsed = 0,
-                    SearchCpuUsed = 0,
-                    UseCRFSearch = true,
-                    PixelFormat = "yuv444p10le",
-                    MaxJobs = jobs,
-                    BitDepth = 10,
-                    AomParams = "aq-mode=3:deltaq-mode=0:enable-chroma-deltaq=1:sharpness=0:" +
-                "enable-qm=1:enable-restoration=1:enable-cdef=1:" +
-                "enable-global-motion=1:enable-warped-motion=1:" +
-                "enable-obmc=1:enable-ref-frame-mvs=1:enable-tx64=1:enable-dist-wtd-comp=1"
-                },
+                CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91 },
+                CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.97 },
+                CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.97 },
+                CliPreset.Extreme => new PresetConfig { BaseCRF = 35, TargetSSIM = 0.99 },
                 _ => throw new ArgumentOutOfRangeException(nameof(preset))
             };
         }
 
-        private static string Sha256(string text)
-        {
-            using var sha = SHA256.Create();
-            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
-            return Convert.ToHexString(hash)[..16];
-        }
-
-        private async Task<bool> IsTrulyLosslessSource(string filePath)
-        {
-            string ext = Path.GetExtension(filePath).ToLower();
-            if (ext == ".png") return true;          // PNG 默认视为真无损源
-            if (ext == ".webp")
+            private static string Sha256(string text)
             {
-                // 修复：通过 is_lossless 字段准确判断 WebP 是否无损
-                string args = $"-v error -select_streams v:0 -show_entries stream=is_lossless -of csv=p=0 \"{filePath}\"";
-                string output = await RunProbeAsync(_ffprobePath, args);
-                return output.Trim() == "1";         // ffprobe 返回 "1" 表示无损
+                using var sha = SHA256.Create();
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
+                return Convert.ToHexString(hash)[..16];
             }
-            return false;
-        }
+
+
 
         /// <summary>
         /// 根据模板生成输出文件名（不含路径）
