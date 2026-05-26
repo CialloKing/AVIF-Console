@@ -50,28 +50,40 @@ namespace AvifEncoder
         /// <summary>CRF 值钳制</summary>
         public static int ClampCrf(int value) => Math.Clamp(value, 0, 63);
 
-        /// <summary>编码器特定参数构建</summary>
+        /// <summary>编码器特定参数构建（使用 IAv1Encoder 接口）</summary>
         public static string BuildEncoderSpecificArgs(PresetConfig cfg, int cpuUsed, string tilePart, string rowMt)
         {
-            string enc = cfg.Encoder;
+            var encoder = Av1EncoderFactory.Get(cfg.Encoder);
+            string speedArg = encoder.BuildSpeedArg(cpuUsed);
+            string tunePart = "";
 
-            if (EncoderUtils.IsLibAom(enc))
-                return $"-cpu-used {cpuUsed} {tilePart} {rowMt}";
-
-            if (EncoderUtils.IsSvtAv1(enc))
+            if (!cfg.Lossless)
             {
-                int maxSvtPreset = 13;
-                int svtPreset = Math.Clamp(maxSvtPreset - cpuUsed, 0, maxSvtPreset);
-                if (cfg.Lossless)
-                    return $"-preset {svtPreset} {tilePart}";
-                string svtParams = "tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8";
-                return $"-preset {svtPreset} -svtav1-params \"{svtParams}\" {tilePart}";
+                string tune = encoder.BuildTuneArg(cfg.MetricMode);
+                if (tune.Length > 0)
+                {
+                    if (encoder is SvtAv1Encoder)
+                    {
+                        tunePart = $"-svtav1-params \"tune={tune}:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"";
+                    }
+                    else if (encoder is Rav1eEncoder)
+                    {
+                        tunePart = $"--tune {tune}";
+                    }
+                    else if (encoder is LibAomEncoder)
+                    {
+                        tunePart = $"-aom-params {tune}";
+                    }
+                }
+                else if (encoder is SvtAv1Encoder)
+                {
+                    tunePart = "-svtav1-params \"tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"";
+                }
             }
 
-            if (EncoderUtils.IsRav1e(enc))
-                return $"-speed {cpuUsed} {tilePart}";
-
-            return "";
+            if (tunePart.Length > 0)
+                return $"{speedArg} {tunePart} {tilePart} {rowMt}";
+            return $"{speedArg} {tilePart} {rowMt}";
         }
 
         /// <summary>是否为 JPEG 文件</summary>

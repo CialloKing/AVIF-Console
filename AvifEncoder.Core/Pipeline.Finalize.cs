@@ -360,7 +360,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         private static string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
                                  int crf, string aomPart, int imageWidth)
         {
-            bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
+            bool useStillPic = Av1EncoderFactory.Get(config.Encoder).SupportsStillPicture;
             string stillPic = useStillPic ? "-still-picture 1" : "";
 
             int minCols = GetMinLegalTileCols(imageWidth);
@@ -461,7 +461,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     string encoderDesc = config.Encoder.StartsWith("libsvtav1") ? "preset 0" :
                                          config.Encoder.StartsWith("libaom-av1") ? "cpu-used 0" :
                                          config.Encoder.StartsWith("librav1e") ? "speed 0" : "hardware";
-                    bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
+                    bool useStillPic = Av1EncoderFactory.Get(config.Encoder).SupportsStillPicture;
                     string stillDesc = useStillPic ? ", still-picture" : "";
                     actualAom = $"safe (yuv420p, {encoderDesc}{stillDesc}, full-range)";
                     finalCommand = safeArgs;
@@ -506,7 +506,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                                  config.Encoder.StartsWith("libaom-av1", StringComparison.OrdinalIgnoreCase) ? "cpu-used 0" :
                                  config.Encoder.StartsWith("librav1e", StringComparison.OrdinalIgnoreCase) ? "speed 0" :
                                  "hardware";
-            bool useStillPic = EncoderSupportsStillPicture(config.Encoder);
+            bool useStillPic = Av1EncoderFactory.Get(config.Encoder).SupportsStillPicture;
             string stillDesc = useStillPic ? ", still-picture" : "";
             string safeDesc = $"safe (yuv420p, {encoderDesc}{stillDesc}, full-range)";
 

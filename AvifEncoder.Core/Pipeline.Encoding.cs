@@ -366,16 +366,15 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string logLevel = "-loglevel info -hide_banner";
             string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
 
-            string crfPart = isTrueLossless
-            ? cfg.Encoder switch
-            {
-                _ when EncoderUtils.IsRav1e(cfg.Encoder) => "-rav1e-params lossless=1",
-                _ when EncoderUtils.IsSvtAv1(cfg.Encoder) => "-svtav1-params lossless=1",
-                _ => "-lossless 1"
-            }
-            : $"-crf {crf}";
+            var encoder = Av1EncoderFactory.Get(cfg.Encoder);
 
-            string stillPic = EncoderSupportsStillPicture(cfg.Encoder) ? "-still-picture 1" : "";
+            string crfPart = isTrueLossless
+                ? encoder.BuildLosslessArg()
+                : $"-crf {crf}";
+
+            string stillPic = encoder.SupportsStillPicture
+                ? "-still-picture 1 -aom-params enable-keyframe-filtering=0:lag-in-frames=0"
+                : "";
             string encoderSpecific = BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
             string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 

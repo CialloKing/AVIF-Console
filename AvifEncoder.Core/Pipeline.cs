@@ -661,8 +661,6 @@ namespace AvifEncoder
         }
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
-        private static bool EncoderSupportsStillPicture(string encoderName) => EncoderUtils.SupportsStillPicture(encoderName);
-
         /// <summary>
         /// 等比缩放图片，使长边不超过 maxDim，输出为 PNG 临时文件。
         /// 保留 Alpha 通道（如果源文件有透明信息）。
