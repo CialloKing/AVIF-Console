@@ -16,8 +16,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             if (txtHelp != null)
             {
                 txtHelp.Text = GetHelpText();
-                
-                
+
+
                 //txtHelp.Select(0, 0);  // 激活文本选择
             }
         }

@@ -35,8 +35,8 @@ namespace AvifEncoder
 
 
 
-    // ★ 新增多指标字段
-    public double? FinalVMAF { get; set; }
+        // ★ 新增多指标字段
+        public double? FinalVMAF { get; set; }
         public double? FinalPSNR_Y { get; set; }
         public double? FinalMSSSIM { get; set; }
         public double? FinalMixScore { get; set; }
