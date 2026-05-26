@@ -217,7 +217,7 @@ namespace AvifEncoder
             if (metricMode == "vmaf")
             {
                 double targetVmaf = target * 100.0;
-                var (median, _, _) = GetPriorFromVmaf(targetVmaf);
+                var (median, _, _) = VmafPriorHelper.GetPriorFromVmaf(targetVmaf);
                 priorMedian = Math.Clamp(median, userMin, userMax);
             }
 
