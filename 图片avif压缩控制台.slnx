@@ -7,6 +7,7 @@
   </Folder>
   <Project Path="../LakeUI/LakeUI.Demo/LakeUI.Demo.vbproj" />
   <Project Path="../LakeUI/LakeUI/LakeUI.vbproj" />
+  <Project Path="AvifEncoder.Core.Tests/AvifEncoder.Core.Tests.csproj" />
   <Project Path="AvifEncoder.Core/AvifEncoder.Core.csproj" Id="310a1526-81bf-4b75-b5ba-5c5c8ff3fef3" />
   <Project Path="AvifEncoder.Gui/AvifEncoder.Gui.csproj" Id="ba305720-51bd-4cdd-be37-aebfd520fc1d" />
   <Project Path="AvifEncoder.GuiLakeUl/AvifEncoder.GuiLakeUl.csproj" Id="2c039148-8bc2-4e65-94b2-2bab3209e795" />

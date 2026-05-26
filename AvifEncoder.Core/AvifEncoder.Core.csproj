@@ -6,4 +6,8 @@
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AvifEncoder.Core.Tests" />
+  </ItemGroup>
+
 </Project>
