@@ -334,29 +334,73 @@ namespace AvifEncoder
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
-                // 无损验证：解码后逐像素比对原图，失败即视为编码失败
+                // 无损验证：全量逐像素比对，失败即视为编码失败并生成诊断报告
                 if (config.Lossless && encodeResult.Success)
                 {
-                    bool verified = await VerifyLosslessAsync(
-                        workingInputPath, outputPath, name);
-                    if (!verified)
+                    var verReport = await VerifyLosslessAsync(
+                        workingInputPath, outputPath, name, encInfo.Width);
+                    if (verReport != null)
                     {
-                        _logger.LogInfo(
-                            $"✘ 无损验证失败：编码结果与原图像素不一致 ({name})");
-                        SafeWriteLine(
-                            $" [FAIL] [{name}] 无损验证失败，" +
-                            "编码结果与原图不完全一致，已标记为失败");
+                        // 填充完整诊断信息
+                        verReport.SourceFile = inputPath;
+                        verReport.PixelFormat = encInfo.ActualPixFmt;
+                        verReport.BitDepth = config.BitDepth;
+                        verReport.Width = encInfo.Width;
+                        verReport.Height = encInfo.Height;
+                        verReport.Encoder = config.Encoder;
+                        verReport.EncodeCommand = encodeResult.FinalCommand ?? "";
+                        verReport.Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-                        // 删除不满足无损的输出文件
+                        // 获取编码器版本
+                        var (ffVer, encVers) = await GetEncoderVersionsAsync(_ffmpegPath);
+                        if (encVers.TryGetValue(config.Encoder, out var encVer))
+                        {
+                            verReport.EncoderVersion = encVer;
+                        }
+                        else
+                        {
+                            verReport.EncoderVersion = ffVer;
+                        }
+
+                        // 移动失败输出到隔离目录
+                        string failedOutputName = Path.GetFileName(outputPath);
+                        string failedDest = Path.Combine(_failedVerificationDir, failedOutputName);
+                        verReport.FailedOutput = failedDest;
+
                         if (_fs.FileExists(outputPath))
                         {
+                            try
+                            {
+                                _fs.CopyFile(outputPath, failedDest, true);
+                            }
+                            catch { }
                             try { _fs.DeleteFile(outputPath); } catch { }
                         }
+
+                        _logger.LogInfo(
+                            $"✘ 无损验证失败：{verReport.ToSummary()} ({name})");
+                        SafeWriteLine(
+                            $" [FAIL] [{name}] 无损验证失败，" +
+                            $"{verReport.FailureType}，" +
+                            $"已保存到 {_failedVerificationDir}");
+
+                        // 写入 CSV 和 JSON
+                        AppendFailedVerificationCsv(verReport);
+                        await WriteVerificationReportJsonAsync(verReport);
+
+                        // 生成 diff heatmap（后台执行，不阻塞失败返回）
+                        string diffPngPath = Path.Combine(
+                            _failedVerificationDir,
+                            Path.GetFileNameWithoutExtension(failedOutputName) + ".diff.png");
+                        _ = GenerateDiffHeatmapPngAsync(
+                            workingInputPath,
+                            _fs.FileExists(failedDest) ? failedDest : outputPath,
+                            diffPngPath);
 
                         return FailResult(index,
                             Path.GetFileName(outputPath), name,
                             inputPath,
-                            "无损验证失败：解码后像素与原图不一致",
+                            $"无损验证失败：{verReport.FailureType}",
                             fileStartTime);
                     }
                 }
@@ -544,11 +588,11 @@ namespace AvifEncoder
 
 
         /// <summary>
-        /// 无损验证：将 AVIF 解码为 raw rgba，与原图逐字节比对。
-        /// 返回 true 表示完全一致（bit-exact）。
+        /// 无损验证：将 AVIF 解码为 raw rgba，与原图全量逐字节比对。
+        /// 返回 null 表示完全一致（bit-exact），否则返回详细失败报告。
         /// </summary>
-        private async Task<bool> VerifyLosslessAsync(
-            string refPath, string avifPath, string name)
+        private async Task<FailedVerificationInfo?> VerifyLosslessAsync(
+            string refPath, string avifPath, string name, int width)
         {
             try
             {
@@ -560,7 +604,10 @@ namespace AvifEncoder
                 if (!refOk || refRaw.Length == 0)
                 {
                     _logger.LogInfo($"无损验证：无法解码原图 ({name})");
-                    return false;
+                    return new FailedVerificationInfo
+                    {
+                        FailureType = VerificationFailureType.SizeMismatch
+                    };
                 }
 
                 string avifArgs =
@@ -571,7 +618,10 @@ namespace AvifEncoder
                 if (!avifOk || avifRaw.Length == 0)
                 {
                     _logger.LogInfo($"无损验证：无法解码 AVIF ({name})");
-                    return false;
+                    return new FailedVerificationInfo
+                    {
+                        FailureType = VerificationFailureType.SizeMismatch
+                    };
                 }
 
                 if (refRaw.Length != avifRaw.Length)
@@ -579,33 +629,119 @@ namespace AvifEncoder
                     _logger.LogInfo(
                         $"无损验证：像素数据长度不同 " +
                         $"ref={refRaw.Length} avif={avifRaw.Length} ({name})");
-                    return false;
+                    return new FailedVerificationInfo
+                    {
+                        FailureType = VerificationFailureType.SizeMismatch,
+                        MismatchCount = Math.Abs(refRaw.Length - avifRaw.Length)
+                    };
                 }
+
+                // 全量扫描：统计 mismatch 数量、最大偏差、通道分别计数
+                int mismatchCount = 0;
+                int maxDelta = 0;
+                int rCount = 0, gCount = 0, bCount = 0, aCount = 0;
+                int firstMismatchX = -1, firstMismatchY = -1;
+                int firstRefVal = 0, firstOutVal = 0;
+                int firstChannelIdx = 0;
+                bool firstFound = false;
 
                 for (int i = 0; i < refRaw.Length; i++)
                 {
-                    if (refRaw[i] != avifRaw[i])
+                    byte refB = refRaw[i];
+                    byte avifB = avifRaw[i];
+                    if (refB != avifB)
                     {
-                        int pixel = i / 4;
-                        int channelIdx = i % 4;
-                        string channel = channelIdx switch
+                        mismatchCount++;
+                        int delta = Math.Abs(refB - avifB);
+                        if (delta > maxDelta)
                         {
-                            0 => "R", 1 => "G", 2 => "B", _ => "A"
-                        };
-                        _logger.LogInfo(
-                            $"无损验证：像素不一致，首个差异在字节 {i} " +
-                            $"(像素#{pixel} 通道{channel})，" +
-                            $"ref=0x{refRaw[i]:X2} avif=0x{avifRaw[i]:X2} ({name})");
-                        return false;
+                            maxDelta = delta;
+                        }
+
+                        int channelIdx = i % 4;
+                        switch (channelIdx)
+                        {
+                            case 0: rCount++; break;
+                            case 1: gCount++; break;
+                            case 2: bCount++; break;
+                            case 3: aCount++; break;
+                        }
+
+                        if (!firstFound)
+                        {
+                            firstFound = true;
+                            int pixel = i / 4;
+                            firstMismatchX = width > 0 ? pixel % width : pixel;
+                            firstMismatchY = width > 0 ? pixel / width : 0;
+                            firstRefVal = refB;
+                            firstOutVal = avifB;
+                            firstChannelIdx = channelIdx;
+                        }
                     }
                 }
 
-                return true;
+                if (mismatchCount == 0)
+                {
+                    return null;   // 通过
+                }
+
+                // 失败分类
+                VerificationFailureType failureType;
+                int totalPixels = refRaw.Length / 4;
+                if (rCount + gCount + bCount == 0 && aCount > 0)
+                {
+                    failureType = VerificationFailureType.AlphaMismatch;
+                }
+                else if (rCount + gCount + bCount > 0 && aCount == 0)
+                {
+                    failureType = VerificationFailureType.ChromaMismatch;
+                }
+                else if (mismatchCount > totalPixels / 2)
+                {
+                    failureType = VerificationFailureType.MassiveMismatch;
+                }
+                else
+                {
+                    failureType = VerificationFailureType.PixelMismatch;
+                }
+
+                string firstChannel = firstChannelIdx switch
+                {
+                    0 => "R", 1 => "G", 2 => "B", _ => "A"
+                };
+
+                _logger.LogInfo(
+                    $"✘ 无损验证失败 ({name})：" +
+                    $"FailureType={failureType} " +
+                    $"Mismatches={mismatchCount} MaxDelta={maxDelta} " +
+                    $"FirstAt=({firstMismatchX},{firstMismatchY}) " +
+                    $"Channel={firstChannel} " +
+                    $"ref=0x{firstRefVal:X2} out=0x{firstOutVal:X2} " +
+                    $"Breakdown=[R:{rCount} G:{gCount} B:{bCount} A:{aCount}]");
+
+                return new FailedVerificationInfo
+                {
+                    FailureType = failureType,
+                    MismatchCount = mismatchCount,
+                    MaxDelta = maxDelta,
+                    FirstMismatchX = firstMismatchX,
+                    FirstMismatchY = firstMismatchY,
+                    FirstMismatchChannel = firstChannel,
+                    RefValue = firstRefVal,
+                    OutValue = firstOutVal,
+                    RMismatches = rCount,
+                    GMismatches = gCount,
+                    BMismatches = bCount,
+                    AMismatches = aCount
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogInfo($"无损验证异常: {ex.Message} ({name})");
-                return false;
+                return new FailedVerificationInfo
+                {
+                    FailureType = VerificationFailureType.MassiveMismatch
+                };
             }
         }
 
@@ -655,6 +791,86 @@ namespace AvifEncoder
             catch
             {
                 return (false, Array.Empty<byte>());
+            }
+        }
+
+        /// <summary> 生成差异热力图：解码原图与 AVIF，计算 abs(diff)，输出为增强可见性的 PNG </summary>
+        private async Task<string?> GenerateDiffHeatmapPngAsync(
+            string refPath, string avifPath, string diffOutputPath)
+        {
+            try
+            {
+                // 解码原图为 raw RGBA
+                string refArgs =
+                    $"-v error -i \"{refPath}\" -f rawvideo " +
+                    $"-pix_fmt rgba -";
+                var (refOk, refRaw) = await RunFfmpegToMemoryAsync(
+                    refArgs, TimeSpan.FromMinutes(2));
+                if (!refOk || refRaw.Length == 0)
+                {
+                    return null;
+                }
+
+                // 解码 AVIF 为 raw RGBA
+                string avifArgs =
+                    $"-v error -i \"{avifPath}\" -f rawvideo " +
+                    $"-pix_fmt rgba -";
+                var (avifOk, avifRaw) = await RunFfmpegToMemoryAsync(
+                    avifArgs, TimeSpan.FromMinutes(2));
+                if (!avifOk || avifRaw.Length == 0)
+                {
+                    return null;
+                }
+
+                int minLen = Math.Min(refRaw.Length, avifRaw.Length);
+                int pixelCount = minLen / 4;
+
+                // 创建差异缓冲区：每像素 RGBA，差异值放大 4 倍以增强可见性
+                byte[] diffRgba = new byte[pixelCount * 4];
+                for (int i = 0; i < minLen; i++)
+                {
+                    int delta = Math.Abs(refRaw[i] - avifRaw[i]);
+                    // 放大 4 倍使微小差异可见，上限 255
+                    byte enhanced = (byte)Math.Min(delta * 4, 255);
+                    diffRgba[i] = enhanced;
+                }
+
+                // 获取图像宽高用于 ffmpeg raw 编码
+                var (w, h) = await GetResolutionAsync(refPath);
+                if (w <= 0 || h <= 0)
+                {
+                    return null;
+                }
+
+                // 写临时 raw 文件
+                string tempRaw = Path.Combine(
+                    Path.GetDirectoryName(diffOutputPath) ?? ".",
+                    $"_diff_raw_{Guid.NewGuid():N}.rgba");
+                await _fs.WriteAllBytesAsync(tempRaw, diffRgba);
+
+                try
+                {
+                    string args =
+                        $"-y -loglevel error " +
+                        $"-f rawvideo -pix_fmt rgba -s {w}x{h} " +
+                        $"-i \"{tempRaw}\" " +
+                        $"-frames:v 1 \"{diffOutputPath}\"";
+                    var (ok, _) = await RunFfmpegExAsync(
+                        _ffmpegPath, args, TimeSpan.FromMinutes(1));
+                    return ok ? diffOutputPath : null;
+                }
+                finally
+                {
+                    if (_fs.FileExists(tempRaw))
+                    {
+                        try { _fs.DeleteFile(tempRaw); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInfo($"Diff heatmap 生成异常: {ex.Message}");
+                return null;
             }
         }
 

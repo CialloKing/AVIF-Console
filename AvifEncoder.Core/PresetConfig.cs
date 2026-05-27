@@ -224,6 +224,7 @@ namespace AvifEncoder
             // ★ 新增：字节数组读写（用于 PNG 清洗）
             Task<byte[]> ReadAllBytesAsync(string path);
             Task WriteAllBytesAsync(string path, byte[] bytes);
+            Task WriteAllTextAsync(string path, string contents);
         }
 
         public class RealFileSystem : IFileSystem
@@ -248,6 +249,8 @@ namespace AvifEncoder
 
             public async Task WriteAllBytesAsync(string path, byte[] bytes) =>
                 await File.WriteAllBytesAsync(path, bytes);
+            public async Task WriteAllTextAsync(string path, string contents) =>
+                await File.WriteAllTextAsync(path, contents, Encoding.UTF8);
         }
 
         public static PresetConfig CreateFromPreset(CliPreset preset)

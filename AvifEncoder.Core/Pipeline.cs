@@ -163,6 +163,11 @@ namespace AvifEncoder
         private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
         private readonly SemaphoreSlim _advancedMetricSemaphore;
 
+        // 无损验证报告相关
+        private readonly object _failedCsvLock = new();
+        private string _failedCsvPath = "";
+        private string _failedVerificationDir = "";
+
 
 
 
@@ -648,6 +653,14 @@ namespace AvifEncoder
             _guiProgress = progress;       // ★ 改为 _guiProgress
 
             _advancedMetricSemaphore = new SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2));
+
+            // 初始化无损验证失败隔离目录
+            _failedVerificationDir = Path.Combine(_outputDir, "_failed_verification");
+            if (!_fs.DirectoryExists(_failedVerificationDir))
+            {
+                _fs.CreateDirectory(_failedVerificationDir);
+            }
+            _failedCsvPath = Path.Combine(_failedVerificationDir, "failed_verification.csv");
 
         }
 
@@ -1536,6 +1549,136 @@ namespace AvifEncoder
                 // 正确生成 yuva / yuv 格式
                 return hasAlpha ? $"yuva{chroma}p{depthSuffix}" : $"yuv{chroma}p{depthSuffix}";
             }
+        }
+
+        // ========== 无损验证报告 ==========
+
+        /// <summary> 追加一条失败记录到 _failed_verification/failed_verification.csv（线程安全） </summary>
+        private void AppendFailedVerificationCsv(FailedVerificationInfo info)
+        {
+            lock (_failedCsvLock)
+            {
+                bool writeHeader = !_fs.FileExists(_failedCsvPath);
+                if (writeHeader)
+                {
+                    string header =
+                        "SourceFile,FailedOutput,Encoder,EncoderVersion," +
+                        "PixelFormat,BitDepth,Width,Height," +
+                        "FailureType,MismatchCount,MaxDelta," +
+                        "FirstMismatchX,FirstMismatchY,FirstMismatchChannel," +
+                        "RefValue,OutValue," +
+                        "RMismatches,GMismatches,BMismatches,AMismatches," +
+                        "EncodeCommand,Timestamp";
+                    _fs.WriteAllText(_failedCsvPath, header + "\n", System.Text.Encoding.UTF8);
+                }
+
+                string csvEscape(string? s) =>
+                    "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+
+                string line = string.Join(",",
+                    csvEscape(info.SourceFile),
+                    csvEscape(info.FailedOutput),
+                    csvEscape(info.Encoder),
+                    csvEscape(info.EncoderVersion),
+                    csvEscape(info.PixelFormat),
+                    info.BitDepth,
+                    info.Width,
+                    info.Height,
+                    info.FailureType,
+                    info.MismatchCount,
+                    info.MaxDelta,
+                    info.FirstMismatchX,
+                    info.FirstMismatchY,
+                    info.FirstMismatchChannel,
+                    info.RefValue,
+                    info.OutValue,
+                    info.RMismatches,
+                    info.GMismatches,
+                    info.BMismatches,
+                    info.AMismatches,
+                    csvEscape(info.EncodeCommand),
+                    info.Timestamp
+                );
+                _fs.AppendAllText(_failedCsvPath, line + "\n");
+            }
+        }
+
+        /// <summary> 写入单文件 JSON 验证报告 </summary>
+        private async Task WriteVerificationReportJsonAsync(FailedVerificationInfo info)
+        {
+            string jsonPath = Path.Combine(
+                _failedVerificationDir,
+                Path.GetFileNameWithoutExtension(info.FailedOutput) + ".report.json");
+            string json = System.Text.Json.JsonSerializer.Serialize(
+                info, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+            await _fs.WriteAllTextAsync(jsonPath, json);
+        }
+
+        /// <summary>
+        /// 检测 ffmpeg 及编码器库版本。
+        /// 返回 (ffmpegVersion, encoderVersions) 其中 encoderVersions 的 key 为编码器名。
+        /// </summary>
+        private static async Task<(string ffmpegVersion, Dictionary<string, string> encoderVersions)>
+    GetEncoderVersionsAsync(string ffmpegPath)
+        {
+            string ffmpegVersion = "";
+            var encoderVersions = new Dictionary<string, string>();
+
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(ffmpegPath, "-version")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+                string stdout = await process.StandardOutput.ReadToEndAsync();
+                string stderr = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                string output = stdout + stderr;
+
+                // 提取 ffmpeg 版本（第一行）
+                var ffmpegMatch = System.Text.RegularExpressions.Regex.Match(
+                    output, @"^ffmpeg\s+version\s+([^\s]+)");
+                if (ffmpegMatch.Success)
+                {
+                    ffmpegVersion = ffmpegMatch.Groups[1].Value;
+                }
+
+                // 提取各编码器库版本
+                var libPatterns = new (string key, string pattern)[]
+                {
+                    ("libaom-av1", @"libaom-av1\s+([^\s]+)"),
+                    ("libsvtav1",  @"libsvtav1\s+([^\s]+)"),
+                    ("librav1e",   @"librav1e\s+([^\s]+)"),
+                };
+
+                foreach (var (key, pattern) in libPatterns)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        output, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success)
+                    {
+                        encoderVersions[key] = m.Groups[1].Value;
+                    }
+                }
+            }
+            catch
+            {
+                // 静默失败，版本信息非关键路径
+            }
+
+            return (ffmpegVersion, encoderVersions);
         }
 
 

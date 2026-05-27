@@ -14,12 +14,19 @@ namespace AvifEncoder
         public string Note { get; set; } = "不可用";
     }
 
+    public class EncoderVersionInfo
+    {
+        public string FfmpegVersion { get; set; } = "";
+        public Dictionary<string, string> EncoderVersions { get; set; } = new();
+    }
+
     public class EnvironmentCheckResult
     {
         public bool FfmpegAvailable { get; set; }
         public List<EncoderStatus> Encoders { get; set; } = new();
         public bool Ssimulacra2Available { get; set; }
         public bool ButteraugliAvailable { get; set; }
+        public EncoderVersionInfo VersionInfo { get; set; } = new();
     }
 
     public static class AvifEnvironmentChecker
@@ -45,6 +52,15 @@ namespace AvifEncoder
 
                 if (!result.FfmpegAvailable)
                     return result;
+
+                // 1.5 获取 ffmpeg 及编码器库版本
+                Log("\n正在检测 ffmpeg 及编码器库版本...");
+                result.VersionInfo = await GetEncoderVersionInfoAsync(ffmpeg!);
+                Log($"  ffmpeg: {result.VersionInfo.FfmpegVersion}");
+                foreach (var kv in result.VersionInfo.EncoderVersions)
+                {
+                    Log($"  {kv.Key}: {kv.Value}");
+                }
 
                 // 2. 获取编码器列表
                 Log("\n正在检测可用的 AV1 编码器...");
@@ -224,6 +240,84 @@ namespace AvifEncoder
             if (stderr.Contains("Invalid argument")) return "参数无效";
             if (stderr.Contains("Unknown error")) return "未知错误";
             return "不可用";
+        }
+
+        /// <summary> 获取 ffmpeg 及编码器库版本信息 </summary>
+        public static async Task<EncoderVersionInfo> GetEncoderVersionInfoAsync(string ffmpegPath)
+        {
+            var info = new EncoderVersionInfo();
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(ffmpegPath, "-version")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+                string stdout = await process.StandardOutput.ReadToEndAsync();
+                string stderr = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                string output = stdout + stderr;
+
+                // 提取 ffmpeg 版本（第一行）
+                var ffmpegMatch = System.Text.RegularExpressions.Regex.Match(
+                    output, @"^ffmpeg\s+version\s+([^\s]+)");
+                if (ffmpegMatch.Success)
+                {
+                    info.FfmpegVersion = ffmpegMatch.Groups[1].Value;
+                }
+
+                // 提取各编码器库版本（-version 输出中的 configuration/lib 信息）
+                // 常见格式: libaom-av1 3.9.1 / libsvtav1 2.3.0 / librav1e 0.7.1
+                var libPatterns = new (string key, string pattern)[]
+                {
+                    ("libaom-av1", @"libaom[^\s]*\s+([\d\.]+)"),
+                    ("libsvtav1",  @"svtav1[^\s]*\s+([\d\.]+)"),
+                    ("librav1e",   @"rav1e[^\s]*\s+([\d\.]+)"),
+                };
+
+                foreach (var (key, pattern) in libPatterns)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        output, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success)
+                    {
+                        info.EncoderVersions[key] = m.Groups[1].Value;
+                    }
+                }
+
+                // 若以上未匹配到，尝试从 --enable-lib 行中提取
+                if (info.EncoderVersions.Count == 0)
+                {
+                    var configLine = System.Text.RegularExpressions.Regex.Match(
+                        output, @"configuration:\s*(.+)");
+                    if (configLine.Success)
+                    {
+                        string config = configLine.Groups[1].Value;
+                        foreach (var (key, _) in libPatterns)
+                        {
+                            var m2 = System.Text.RegularExpressions.Regex.Match(
+                                config, $@"{key.Replace("-", @"[^\s]*")}[^\s]*\s+([\d\.]+)",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            if (m2.Success)
+                            {
+                                info.EncoderVersions[key] = m2.Groups[1].Value;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 静默失败，版本信息非关键路径
+            }
+            return info;
         }
 
         public static byte[] CreateTestBmp()
