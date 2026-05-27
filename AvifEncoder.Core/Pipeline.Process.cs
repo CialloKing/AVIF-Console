@@ -297,8 +297,15 @@ namespace AvifEncoder
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
-            string outputPath = GetOutputPath(inputPath, index);   // ★ 使用新方法保持子目录结构
+            string outputPath = GetOutputPath(inputPath, index);
             var fileStartTime = DateTime.Now;
+
+            // ---- 无损模式强约束：禁止缩放、固定 tile=0 ----
+            if (config.Lossless)
+            {
+                config.MaxResolution = 0;
+                _logger.LogInfo($"无损模式：已强制禁用预缩放 ({name})");
+            }
 
             // ---- 预缩放 ----
             var scaling = await HandlePreScalingAsync(inputPath, config, name);

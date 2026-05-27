@@ -104,6 +104,13 @@ namespace AvifEncoder
                     StringComparison.OrdinalIgnoreCase) ? "scd" :
                     currentName.Contains("-fdd",
                     StringComparison.OrdinalIgnoreCase) ? "fdd" : "";
+
+                // 改名后无法从文件名判断变体 → 检测运行时环境
+                if (currentVariant.Length == 0)
+                {
+                    currentVariant = HasNet10Runtime() ? "fdd" : "scd";
+                }
+
                 string downloadUrl = "";
                 long fileSize = 0;
                 string firstExeUrl = "";
@@ -303,6 +310,37 @@ namespace AvifEncoder
 
             // 退出应用
             Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// 检测系统是否安装了 .NET 10 运行时。
+        /// 改名后无法从文件名判断 fdd/scd 时，靠此方法决定下载哪个变体。
+        /// </summary>
+        private static bool HasNet10Runtime()
+        {
+            try
+            {
+                using var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "dotnet",
+                        Arguments = "--list-runtimes",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit(5000);
+                return output.Contains("Microsoft.NETCore.App 10.");
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static int CompareVersions(Version current, string tag)
