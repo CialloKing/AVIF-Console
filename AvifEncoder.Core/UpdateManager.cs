@@ -97,11 +97,20 @@ namespace AvifEncoder
                     return null;
                 }
 
-                // 找到与当前进程同名的 .exe 资源
+                // 按进程名 + 变体（fdd/scd）匹配 .exe 资源
                 string currentName =
                     Path.GetFileName(Environment.ProcessPath) ?? "";
+                string currentVariant = currentName.Contains("-scd",
+                    StringComparison.OrdinalIgnoreCase) ? "scd" :
+                    currentName.Contains("-fdd",
+                    StringComparison.OrdinalIgnoreCase) ? "fdd" : "";
                 string downloadUrl = "";
                 long fileSize = 0;
+                string firstExeUrl = "";
+                long firstExeSize = 0;
+                string sameVariantUrl = "";
+                long sameVariantSize = 0;
+
                 var assets = root.GetProperty("assets");
                 foreach (var asset in assets.EnumerateArray())
                 {
@@ -113,25 +122,48 @@ namespace AvifEncoder
                         continue;
                     }
 
+                    string assetUrl =
+                        asset.GetProperty(
+                            "browser_download_url").GetString() ?? "";
+                    long assetSize = asset.GetProperty("size").GetInt64();
+
+                    // 第 1 优先：精确同名
                     if (string.Equals(name, currentName,
                         StringComparison.OrdinalIgnoreCase))
                     {
-                        downloadUrl =
-                            asset.GetProperty(
-                                "browser_download_url").GetString() ?? "";
-                        fileSize = asset.GetProperty("size").GetInt64();
+                        downloadUrl = assetUrl;
+                        fileSize = assetSize;
                         break;
                     }
 
-                    // 兜底：记录第一个遇到的 .exe
-                    if (downloadUrl.Length == 0)
+                    // 记录第一个 .exe（兜底）
+                    if (firstExeUrl.Length == 0)
                     {
-                        downloadUrl =
-                            asset.GetProperty(
-                                "browser_download_url").GetString() ?? "";
-                        fileSize = asset.GetProperty("size").GetInt64();
+                        firstExeUrl = assetUrl;
+                        firstExeSize = assetSize;
+                    }
+
+                    // 第 2 优先：同变体（同为 scd 或同为 fdd）
+                    if (currentVariant.Length > 0 &&
+                        name.Contains($"-{currentVariant}",
+                        StringComparison.OrdinalIgnoreCase) &&
+                        sameVariantUrl.Length == 0)
+                    {
+                        sameVariantUrl = assetUrl;
+                        sameVariantSize = assetSize;
                     }
                 }
+
+                // 优先级：精确同名 > 同变体 > 第一个 .exe
+                if (downloadUrl.Length == 0)
+                {
+                    downloadUrl = sameVariantUrl.Length > 0
+                        ? sameVariantUrl : firstExeUrl;
+                    fileSize = sameVariantUrl.Length > 0
+                        ? sameVariantSize : firstExeSize;
+                }
+
+
 
                 if (string.IsNullOrEmpty(downloadUrl))
                 {
