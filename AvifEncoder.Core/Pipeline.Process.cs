@@ -334,19 +334,30 @@ namespace AvifEncoder
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
-                // 无损验证：解码后逐像素比对原图
+                // 无损验证：解码后逐像素比对原图，失败即视为编码失败
                 if (config.Lossless && encodeResult.Success)
                 {
                     bool verified = await VerifyLosslessAsync(
                         workingInputPath, outputPath, name);
-                    _logger.LogInfo(verified
-                        ? $"✔ 无损验证通过 ({name})"
-                        : $"⚠ 无损验证失败：解码像素与原图不一致 ({name})");
                     if (!verified)
                     {
+                        _logger.LogInfo(
+                            $"✘ 无损验证失败：编码结果与原图像素不一致 ({name})");
                         SafeWriteLine(
-                            $" [WARN] [{name}] 无损验证失败，" +
-                            "编码结果可能与原图不完全一致");
+                            $" [FAIL] [{name}] 无损验证失败，" +
+                            "编码结果与原图不完全一致，已标记为失败");
+
+                        // 删除不满足无损的输出文件
+                        if (_fs.FileExists(outputPath))
+                        {
+                            try { _fs.DeleteFile(outputPath); } catch { }
+                        }
+
+                        return FailResult(index,
+                            Path.GetFileName(outputPath), name,
+                            inputPath,
+                            "无损验证失败：解码后像素与原图不一致",
+                            fileStartTime);
                     }
                 }
 
@@ -575,8 +586,15 @@ namespace AvifEncoder
                 {
                     if (refRaw[i] != avifRaw[i])
                     {
+                        int pixel = i / 4;
+                        int channelIdx = i % 4;
+                        string channel = channelIdx switch
+                        {
+                            0 => "R", 1 => "G", 2 => "B", _ => "A"
+                        };
                         _logger.LogInfo(
-                            $"无损验证：像素不一致，首个差异在字节 {i}，" +
+                            $"无损验证：像素不一致，首个差异在字节 {i} " +
+                            $"(像素#{pixel} 通道{channel})，" +
                             $"ref=0x{refRaw[i]:X2} avif=0x{avifRaw[i]:X2} ({name})");
                         return false;
                     }
