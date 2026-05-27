@@ -27,7 +27,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         /// </summary>
         private static string GetHelpText()
         {
-            return "===== 命令行帮助文本 =====\n"
+            return HelpText.GuiGuide
+                + "\n\n===== 命令行帮助文本 =====\n"
                 + HelpText.CliHelp
                 + HelpText.GuiControlTable;
         }
