@@ -97,7 +97,9 @@ namespace AvifEncoder
                     return null;
                 }
 
-                // 找到 .exe 资源
+                // 找到与当前进程同名的 .exe 资源
+                string currentName =
+                    Path.GetFileName(Environment.ProcessPath) ?? "";
                 string downloadUrl = "";
                 long fileSize = 0;
                 var assets = root.GetProperty("assets");
@@ -105,7 +107,13 @@ namespace AvifEncoder
                 {
                     string name =
                         asset.GetProperty("name").GetString() ?? "";
-                    if (name.EndsWith(".exe",
+                    if (!name.EndsWith(".exe",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(name, currentName,
                         StringComparison.OrdinalIgnoreCase))
                     {
                         downloadUrl =
@@ -113,6 +121,15 @@ namespace AvifEncoder
                                 "browser_download_url").GetString() ?? "";
                         fileSize = asset.GetProperty("size").GetInt64();
                         break;
+                    }
+
+                    // 兜底：记录第一个遇到的 .exe
+                    if (downloadUrl.Length == 0)
+                    {
+                        downloadUrl =
+                            asset.GetProperty(
+                                "browser_download_url").GetString() ?? "";
+                        fileSize = asset.GetProperty("size").GetInt64();
                     }
                 }
 
