@@ -84,13 +84,13 @@ namespace AvifEncoder
             while (i < args.Length)
             {
                 string arg = args[i];
-                if (arg == "--") { i++; break; }
+                if (arg == "--") { break; }
                 if (arg.StartsWith("--"))
                 {
-                    string key = arg.Substring(2);
+                    string key = arg[2..];
                     string? value = null;
                     int eq = key.IndexOf('=');
-                    if (eq >= 0) { value = key.Substring(eq + 1); key = key.Substring(0, eq); }
+                    if (eq >= 0) { value = key[(eq + 1)..]; key = key[..eq]; }
                     string GetValue() => value ?? (++i < args.Length ? args[i] : throw new Exception($"选项 --{key} 缺少值"));
                     switch (key)
                     {
@@ -221,7 +221,7 @@ namespace AvifEncoder
                         default:
                             if (key.StartsWith("timeout-"))
                             {
-                                string type = key.Substring("timeout-".Length);
+                                string type = key["timeout-".Length..];
                                 if (!int.TryParse(GetValue(), out int val) || val <= 0)
                                     throw new Exception($"--{key} 需要正整数");
                                 switch (type)
@@ -243,7 +243,7 @@ namespace AvifEncoder
                 }
                 if (arg.StartsWith('-') && arg.Length > 1 && !char.IsDigit(arg[1]))
                 {
-                    string flags = arg.Substring(1);
+                    string flags = arg[1..];
                     if (flags == "i" || flags == "o" || flags == "p" || flags == "c" || flags == "b" ||
                         flags == "t" || flags == "e" || flags == "j")
                     {
@@ -502,7 +502,7 @@ namespace AvifEncoder
 
         private static string[] ParseCommandLineInteractive(string line)
         {
-            var args = new List<string>();
+            List<string> args = [];
             bool inQuotes = false;
             var current = new StringBuilder();
             for (int i = 0; i < line.Length; i++)
