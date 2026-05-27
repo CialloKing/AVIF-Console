@@ -334,6 +334,22 @@ namespace AvifEncoder
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
+                // 无损验证：解码后逐像素比对原图
+                if (config.Lossless && encodeResult.Success)
+                {
+                    bool verified = await VerifyLosslessAsync(
+                        workingInputPath, outputPath, name);
+                    _logger.LogInfo(verified
+                        ? $"✔ 无损验证通过 ({name})"
+                        : $"⚠ 无损验证失败：解码像素与原图不一致 ({name})");
+                    if (!verified)
+                    {
+                        SafeWriteLine(
+                            $" [WARN] [{name}] 无损验证失败，" +
+                            "编码结果可能与原图不完全一致");
+                    }
+                }
+
                 // 计算最终质量
                 (double ssim, QualityMetrics? metrics, string _) = await EvaluateFinalQualityAsync(
                  workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
@@ -515,6 +531,114 @@ namespace AvifEncoder
             return (ssim, null, cacheKey);
         }
 
+
+        /// <summary>
+        /// 无损验证：将 AVIF 解码为 raw rgba，与原图逐字节比对。
+        /// 返回 true 表示完全一致（bit-exact）。
+        /// </summary>
+        private async Task<bool> VerifyLosslessAsync(
+            string refPath, string avifPath, string name)
+        {
+            try
+            {
+                string refArgs =
+                    $"-v error -i \"{refPath}\" -f rawvideo " +
+                    $"-pix_fmt rgba -";
+                var (refOk, refRaw) = await RunFfmpegToMemoryAsync(
+                    refArgs, TimeSpan.FromMinutes(2));
+                if (!refOk || refRaw.Length == 0)
+                {
+                    _logger.LogInfo($"无损验证：无法解码原图 ({name})");
+                    return false;
+                }
+
+                string avifArgs =
+                    $"-v error -i \"{avifPath}\" -f rawvideo " +
+                    $"-pix_fmt rgba -";
+                var (avifOk, avifRaw) = await RunFfmpegToMemoryAsync(
+                    avifArgs, TimeSpan.FromMinutes(2));
+                if (!avifOk || avifRaw.Length == 0)
+                {
+                    _logger.LogInfo($"无损验证：无法解码 AVIF ({name})");
+                    return false;
+                }
+
+                if (refRaw.Length != avifRaw.Length)
+                {
+                    _logger.LogInfo(
+                        $"无损验证：像素数据长度不同 " +
+                        $"ref={refRaw.Length} avif={avifRaw.Length} ({name})");
+                    return false;
+                }
+
+                for (int i = 0; i < refRaw.Length; i++)
+                {
+                    if (refRaw[i] != avifRaw[i])
+                    {
+                        _logger.LogInfo(
+                            $"无损验证：像素不一致，首个差异在字节 {i}，" +
+                            $"ref=0x{refRaw[i]:X2} avif=0x{avifRaw[i]:X2} ({name})");
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInfo($"无损验证异常: {ex.Message} ({name})");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 运行 ffmpeg 并将 stdout 输出读入内存字节数组。
+        /// </summary>
+        private async Task<(bool ok, byte[] data)> RunFfmpegToMemoryAsync(
+            string args, TimeSpan timeout)
+        {
+            try
+            {
+                using var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = _ffmpegPath,
+                        Arguments = args,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+
+                using var ms = new System.IO.MemoryStream();
+                var copyTask = process.StandardOutput.BaseStream
+                    .CopyToAsync(ms);
+                var stderrTask = process.StandardError
+                    .ReadToEndAsync();
+
+                using var cts = new CancellationTokenSource(timeout);
+                await Task.WhenAny(
+                    Task.WhenAll(copyTask,
+                        process.WaitForExitAsync(cts.Token)),
+                    Task.Delay(timeout));
+
+                if (!process.HasExited)
+                {
+                    try { process.Kill(); } catch { }
+                    return (false, Array.Empty<byte>());
+                }
+
+                await copyTask;
+                return (process.ExitCode == 0, ms.ToArray());
+            }
+            catch
+            {
+                return (false, Array.Empty<byte>());
+            }
+        }
 
         private EncodeResult FailResult(int index, string outputFileName, string name,
                                     string inputPath, string error, DateTime fileStartTime)
