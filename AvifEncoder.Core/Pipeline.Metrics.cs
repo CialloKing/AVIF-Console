@@ -386,15 +386,19 @@ namespace AvifEncoder
         /// <summary>
         /// 根据当前配置的度量模式从 QualityMetrics 中提取一个 0?1 的分数。
         /// </summary>
+        /// <summary>
+        /// 从 QualityMetrics 提取原生指标值（不做归一化）。
+        /// 失败返回 -1。
+        /// </summary>
         internal static double GetSearchScore(QualityMetrics m, string metricMode)
         {
             switch (metricMode?.ToLower())
             {
                 case "ssim": return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
-                case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
+                case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : m.PSNR_Y;
                 case "msssim": return double.IsNaN(m.MS_SSIM) ? -1 : m.MS_SSIM;
                 case "vmaf":
-                    return double.IsNaN(m.VMAF) ? -1 : m.VMAF / 100.0;
+                    return double.IsNaN(m.VMAF) ? -1 : m.VMAF;
                 case "mix":
                     if (double.IsNaN(m.VMAF)) return -1;
                     double vmafNorm = m.VMAF / 100.0;

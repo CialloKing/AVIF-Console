@@ -14,19 +14,19 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
-        public void GetSearchScore_Vmaf_NormalizesTo01()
+        public void GetSearchScore_Vmaf_ReturnsRawValue()
         {
             var m = new QualityMetrics { VMAF = 95.0 };
             double score = AvifPipeline.GetSearchScore(m, "vmaf");
-            Assert.AreEqual(0.95, score, 0.001);
+            Assert.AreEqual(95.0, score, 0.01);
         }
 
         [TestMethod]
-        public void GetSearchScore_Psnr_ConvertsCorrectly()
+        public void GetSearchScore_Psnr_ReturnsRawValue()
         {
             var m = new QualityMetrics { PSNR_Y = 40 };
             double score = AvifPipeline.GetSearchScore(m, "psnr");
-            Assert.AreEqual(0.5, score, 0.01);
+            Assert.AreEqual(40.0, score, 0.01);
         }
 
         [TestMethod]

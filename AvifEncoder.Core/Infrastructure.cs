@@ -109,16 +109,12 @@ namespace AvifEncoder
                     return $"{line} [SKIP] 跳过 {r.FileName} | {r.OriginalFileName}";
                 if (r.Success)
                 {
-                    string qualityStr = $"VMAF={r.FinalVMAF?.ToString("F4") ?? "N/A"}  PSNR-Y={r.FinalPSNR_Y?.ToString("F4") ?? "N/A"}dB  SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM?.ToString("F4") ?? "N/A"}";
-                    if (r.FinalWXPSNR.HasValue)
-                        qualityStr += $"  W‑XPSNR={r.FinalWXPSNR.Value:F2} dB";
-                    // ★ 添加高级指标
-                    if (r.FinalSSIMULACRA2.HasValue)
-                        qualityStr += $"  SSIMU2={r.FinalSSIMULACRA2.Value:F4}";
-                    if (r.FinalButteraugli_3norm.HasValue)
-                        qualityStr += $"  Butter3={r.FinalButteraugli_3norm.Value:F4}";
-                    if (r.FinalGMSD.HasValue)
-                        qualityStr += $"  GMSD={r.FinalGMSD.Value:F4}";
+                    string qualityStr =
+                        $"VMAF={r.FinalVMAF:F4}  PSNR-Y={r.FinalPSNR_Y:F4}dB  " +
+                        $"SSIM={r.FinalSSIM:F4}  MS-SSIM={r.FinalMSSSIM:F4}  " +
+                        $"Mix={r.FinalMixScore:F4}  XPSNR-Y={r.FinalXPSNR_Y:F2}  " +
+                        $"W-XPSNR={r.FinalWXPSNR:F2} dB  SSIMU2={r.FinalSSIMULACRA2:F4}  " +
+                        $"Butter3={r.FinalButteraugli_3norm:F4}  GMSD={r.FinalGMSD:F4}";
                     return $"{line} [OK] {r.FileName} | {r.OriginalFileName} | CRF:{r.UsedCRF} | " +
                            $"{FormatSizeLocal(r.OriginalSize)} -> {FormatSizeLocal(r.OutputSize)} | " +
                            $"{r.CompressionRatio:P1} | {qualityStr} | 总耗时:{r.TotalTime.TotalSeconds:F4}s | 剩余 {eta}";

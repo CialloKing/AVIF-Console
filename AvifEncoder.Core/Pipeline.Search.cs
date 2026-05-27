@@ -125,14 +125,19 @@ namespace AvifEncoder
             double margin;
             bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
 
-            // 选择 margin
+            // 选择 margin（原生值尺度）
             if (cfg.XpsnrTargetValue.HasValue) margin = 0.01;
             else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;
             else if (cfg.Butteraugli3TargetValue.HasValue) margin = 0.01;
             else if (cfg.GmsdTargetValue.HasValue) margin = 0.001;
-            else margin = SSIMMargin;
+            else margin = metricMode switch
+            {
+                "vmaf" => 0.05,
+                "psnr" => 0.01,
+                _ => SSIMMargin
+            };
 
-            // 提取最终的目标值（原生值）
+            // 提取最终的目标值（全部使用原生值）
             if (cfg.XpsnrTargetValue.HasValue)
                 target = cfg.XpsnrTargetValue.Value - margin;
             else if (cfg.Ssimu2TargetValue.HasValue)
@@ -142,15 +147,15 @@ namespace AvifEncoder
             else if (cfg.GmsdTargetValue.HasValue)
                 target = cfg.GmsdTargetValue.Value + margin;
             else
-                target = cfg.TargetSSIM + SSIMMargin;
+                target = TargetToRaw(cfg.TargetSSIM, metricMode) + margin;
 
-            // 用于控制台显示的目标值（未经反转）
+            // 用于控制台显示的目标值
             double displayTarget;
             if (cfg.XpsnrTargetValue.HasValue) displayTarget = cfg.XpsnrTargetValue.Value;
             else if (cfg.Ssimu2TargetValue.HasValue) displayTarget = cfg.Ssimu2TargetValue.Value;
             else if (cfg.Butteraugli3TargetValue.HasValue) displayTarget = cfg.Butteraugli3TargetValue.Value;
             else if (cfg.GmsdTargetValue.HasValue) displayTarget = cfg.GmsdTargetValue.Value;
-            else displayTarget = cfg.TargetSSIM + SSIMMargin;
+            else displayTarget = TargetToRaw(cfg.TargetSSIM, metricMode);
             string targetDisplay = FormatScore(displayTarget, metricMode);
             SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
@@ -270,7 +275,7 @@ namespace AvifEncoder
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
             totalEvalCount++;
-            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore) * 100:F4}" : $"分数={displayScore(medianScore):F4}";
+            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore) :F4}" : $"分数={displayScore(medianScore):F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
             if (metricMode == "vmaf" && medianScore >= 0)
@@ -286,7 +291,7 @@ namespace AvifEncoder
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) :F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -317,7 +322,7 @@ namespace AvifEncoder
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) * 100:F4}" : $"分数={displayScore(probeScore):F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) :F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -391,11 +396,24 @@ namespace AvifEncoder
         // 注意：FormatScore 方法保持不变（已在其他地方定义）
 
         // 辅助格式化方法（可放在同一类中）
+        /// <summary>
+        /// 将内部 TargetSSIM (0-1) 反算为各指标的原生目标值。
+        /// </summary>
+        private static double TargetToRaw(double targetSSIM, string metricMode)
+        {
+            return metricMode?.ToLower() switch
+            {
+                "vmaf" => targetSSIM * 100.0,
+                "psnr" => targetSSIM * 20.0 + 30,
+                _ => targetSSIM   // SSIM/MS-SSIM/mix 本身已是 0-1，无需转换
+            };
+        }
+
         private static string FormatScore(double score, string metricMode)
         {
             if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
                 return $"XPSNR={score:F4} dB";
-            return metricMode == "vmaf" ? $"VMAF={score * 100:F4}" : $"分数={score:F4}";
+            return metricMode == "vmaf" ? $"VMAF={score:F4}" : $"分数={score:F4}";
         }
 
 
@@ -433,7 +451,7 @@ namespace AvifEncoder
             {
                 bestCrf = lo;
                 double displayKnown = lowerIsBetter && knownLoScore.Value != -1 ? -knownLoScore.Value : knownLoScore.Value;
-                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown * 100:F4}" : $"分数={displayKnown:F4}";
+                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown :F4}" : $"分数={displayKnown:F4}";
                 SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
             }
 
@@ -449,7 +467,7 @@ namespace AvifEncoder
                 evalCount++;
 
                 double displayMid = lowerIsBetter && score != -1 ? -score : score;
-                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid * 100:F4}" : $"分数={displayMid:F4}";
+                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid :F4}" : $"分数={displayMid:F4}";
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
                 if (score >= target)
@@ -511,7 +529,7 @@ namespace AvifEncoder
 
                 bool pass = proxyScore >= target + passMargin;
                 string status = pass ? "明确通过" : "保守失败";
-                string display = metricMode == "vmaf" ? $"VMAF={proxyScore * 100:F4}" : $"分数={proxyScore:F4}";
+                string display = metricMode == "vmaf" ? $"VMAF={proxyScore :F4}" : $"分数={proxyScore:F4}";
                 SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
 
                 if (pass)
