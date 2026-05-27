@@ -52,9 +52,8 @@
             // thisIsYourWindow1
             // 
             thisIsYourWindow1.BackdropBlurPasses = 1;
-            thisIsYourWindow1.BackdropBlurRadius = 2;
+            thisIsYourWindow1.BackdropBlurRadius = 3;
             thisIsYourWindow1.BackdropImage = (Image)resources.GetObject("thisIsYourWindow1.BackdropImage");
-            thisIsYourWindow1.BackdropMaxParallelism = 16;
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;
             thisIsYourWindow1.CaptionButtonGlyphColor = Color.FromArgb(200, 200, 200);
             thisIsYourWindow1.CaptionHeight = 40;

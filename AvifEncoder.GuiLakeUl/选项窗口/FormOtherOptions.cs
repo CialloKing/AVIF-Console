@@ -265,7 +265,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             btnSelectFont2.BackColor1 = Color.Transparent;
             btnSelectFont2.ForeColor = Color.WhiteSmoke;
-            btnSelectFont2.HoverBackColor1 = Color.Silver;
+            btnSelectFont2.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
             btnSelectFont2.Location = new Point(20, 131);
             btnSelectFont2.Margin = new Padding(2);
             btnSelectFont2.Name = "btnSelectFont2";
@@ -278,7 +278,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             btnSelectFont.BackColor1 = Color.Transparent;
             btnSelectFont.ForeColor = Color.WhiteSmoke;
-            btnSelectFont.HoverBackColor1 = Color.Silver;
+            btnSelectFont.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
             btnSelectFont.Location = new Point(20, 71);
             btnSelectFont.Margin = new Padding(2);
             btnSelectFont.Name = "btnSelectFont";
@@ -290,7 +290,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             btnSaveConfig.BackColor1 = Color.Transparent;
             btnSaveConfig.ForeColor = Color.WhiteSmoke;
-            btnSaveConfig.HoverBackColor1 = Color.Silver;
+            btnSaveConfig.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
             btnSaveConfig.Location = new Point(20, 187);
             btnSaveConfig.Margin = new Padding(2);
             btnSaveConfig.Name = "btnSaveConfig";
@@ -302,7 +302,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             btnLoadConfig.BackColor1 = Color.Transparent;
             btnLoadConfig.ForeColor = Color.WhiteSmoke;
-            btnLoadConfig.HoverBackColor1 = Color.Silver;
+            btnLoadConfig.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
             btnLoadConfig.Location = new Point(20, 249);
             btnLoadConfig.Margin = new Padding(2);
             btnLoadConfig.Name = "btnLoadConfig";
@@ -314,7 +314,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             btnCheckUpdate.BackColor1 = Color.Transparent;
             btnCheckUpdate.ForeColor = Color.WhiteSmoke;
-            btnCheckUpdate.HoverBackColor1 = Color.Silver;
+            btnCheckUpdate.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
             btnCheckUpdate.Location = new Point(20, 313);
             btnCheckUpdate.Margin = new Padding(2);
             btnCheckUpdate.Name = "btnCheckUpdate";
