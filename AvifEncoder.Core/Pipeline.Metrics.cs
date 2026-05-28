@@ -510,7 +510,7 @@ namespace AvifEncoder
             static double? ParseSingleValue(string val)
             {
                 if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
-                    return 100.0;   // 将 inf 映射为极高值，表示几乎无损
+                    return double.PositiveInfinity;   // 完全一致 → 正无穷
                 if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
                     return result;
                 return null;

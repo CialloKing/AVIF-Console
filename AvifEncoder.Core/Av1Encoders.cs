@@ -35,7 +35,9 @@ namespace AvifEncoder
 
         public string BuildLosslessArg()
         {
-            return "-lossless 1";
+            // ffmpeg -lossless 1 在某些构建中不被 libaom 编码器识别（被当作解码器选项忽略），
+            // -crf 0 在 libaom 中等价于数学无损，兼容性更好
+            return "-crf 0";
         }
 
         public string BuildQualityArg(int crf)

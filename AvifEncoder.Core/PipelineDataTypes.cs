@@ -39,6 +39,17 @@ namespace AvifEncoder
         public DateTime StartTime;
     }
 
+    /// <summary> 单个像素差异记录（JSON 扩展字段） </summary>
+    public struct MismatchSample
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public string Channel { get; set; }
+        public int RefValue { get; set; }
+        public int OutValue { get; set; }
+        public int Delta { get; set; }
+    }
+
     /// <summary> 无损验证失败类型 </summary>
     public enum VerificationFailureType
     {
@@ -49,9 +60,10 @@ namespace AvifEncoder
         PixelMismatch        // 其他像素级差异
     }
 
-    /// <summary> 单次无损验证的完整报告（JSON + CSV 共用） </summary>
+    /// <summary> 单次无损验证的完整报告（JSON 详细诊断 + CSV 索引共用） </summary>
     public sealed class FailedVerificationInfo
     {
+        // ===== CSV 索引字段 =====
         public string SourceFile { get; set; } = "";
         public string FailedOutput { get; set; } = "";
         public string Encoder { get; set; } = "";
@@ -75,12 +87,42 @@ namespace AvifEncoder
         public string EncodeCommand { get; set; } = "";
         public string Timestamp { get; set; } = "";
 
+        // ===== JSON 扩展字段（不在 CSV 中） =====
+        /// <summary>差异像素占图像总像素的比例</summary>
+        public double MismatchRatio { get; set; }
+        /// <summary>各通道差异占比（百分比）</summary>
+        public double RPct { get; set; }
+        public double GPct { get; set; }
+        public double BPct { get; set; }
+        public double APct { get; set; }
+        /// <summary>源文件像素格式</summary>
+        public string SourcePixelFormat { get; set; } = "";
+        /// <summary>AVIF 文件大小（字节）</summary>
+        public long OutputFileSize { get; set; }
+        /// <summary>验证耗时（秒）</summary>
+        public double VerificationTimeSec { get; set; }
+        /// <summary>差异热力图相对路径（为空时未生成）</summary>
+        public string? DiffHeatmapPath { get; set; }
+        /// <summary>编码耗时（秒）</summary>
+        public double EncodeTimeSec { get; set; }
+        /// <summary>前 N 个差异像素的精确采样（最多 500 条）</summary>
+        public List<MismatchSample> MismatchSamples { get; set; } = new();
+
         /// <summary> 整理为人类可读摘要 </summary>
         public string ToSummary()
         {
-            string channelBreakdown = $"R:{RMismatches} G:{GMismatches} B:{BMismatches} A:{AMismatches}";
+            double totalPixels = Width * (double)Height;
+            string pctStr = totalPixels > 0
+                ? $"{MismatchRatio:P2}"
+                : "N/A";
+            string channelBreakdown =
+                $"R:{RMismatches}({RPct:F1}%) " +
+                $"G:{GMismatches}({GPct:F1}%) " +
+                $"B:{BMismatches}({BPct:F1}%) " +
+                $"A:{AMismatches}({APct:F1}%)";
             return $"FailureType={FailureType} " +
-                   $"Mismatches={MismatchCount} MaxDelta={MaxDelta} " +
+                   $"Mismatches={MismatchCount} ({pctStr}) " +
+                   $"MaxDelta={MaxDelta} " +
                    $"FirstAt=({FirstMismatchX},{FirstMismatchY}) " +
                    $"Channel={FirstMismatchChannel} " +
                    $"Ref=0x{RefValue:X2} Out=0x{OutValue:X2} " +

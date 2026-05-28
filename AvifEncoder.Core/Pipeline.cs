@@ -910,12 +910,14 @@ namespace AvifEncoder
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
-                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
+                             $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
                     filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
-                             $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                             $"model='version=vmaf_float_v0.6.1':" +
+                             $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
 
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
@@ -1003,6 +1005,17 @@ namespace AvifEncoder
                     }
                 }
 
+                // PSNR-Y 接近 libvmaf 上限 60dB 时，用独立 PSNR 滤镜重算无上限值
+                if (metrics.PSNR_Y >= 59.5)
+                {
+                    var uncappedPsnr = await ComputePsnrUncappedAsync(
+                        refPath, distPath);
+                    if (uncappedPsnr.HasValue)
+                    {
+                        metrics.PSNR_Y = uncappedPsnr.Value;
+                    }
+                }
+
                 return metrics;
             }
             catch (Exception ex)
@@ -1017,6 +1030,53 @@ namespace AvifEncoder
                     if (File.Exists(jsonPath)) File.Delete(jsonPath);
                 }
                 catch { }
+            }
+        }
+
+        /// <summary>
+        /// 使用独立 ffmpeg PSNR 滤镜计算 Y 通道 PSNR，绕过 libvmaf 的 60dB 上限。
+        /// 返回 PSNR-Y 值（可为 inf 即 double.PositiveInfinity），失败返回 null。
+        /// </summary>
+        private async Task<double?> ComputePsnrUncappedAsync(
+            string refPath, string distPath)
+        {
+            try
+            {
+                string args =
+                    $"-loglevel error -hide_banner " +
+                    $"-i \"{refPath}\" -i \"{distPath}\" " +
+                    $"-lavfi \"psnr=stats_file=-\" -f null -";
+
+                var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                    _ffmpegPath, args, TimeSpan.FromMinutes(2),
+                    _globalCts?.Token ?? default);
+
+                if (exitCode != 0) return null;
+
+                string output = stdout + stderr;
+                // stats_file=- 输出格式: "psnr_y:inf" 或 "psnr_y:48.1234"
+                var match = Regex.Match(output,
+                    @"psnr_y:\s*(inf|[0-9.]+)",
+                    RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    string val = match.Groups[1].Value;
+                    if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return double.PositiveInfinity;
+                    }
+                    if (double.TryParse(val, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double psnr))
+                    {
+                        return psnr;
+                    }
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInfo($"ComputePsnrUncapped 异常: {ex.Message}");
+                return null;
             }
         }
 

@@ -644,7 +644,7 @@ namespace AvifEncoder
             string cache = r.CacheReused ? "是" : "否";
 
             string vmaf = r.FinalVMAF?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
-            string psnrY = r.FinalPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string psnrY = FormatDbValue(r.FinalPSNR_Y);
             string msssim = r.FinalMSSSIM?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
             string mix = r.FinalMixScore?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
 
@@ -662,12 +662,10 @@ namespace AvifEncoder
         psnrY,
         msssim,
         mix,
-        // 新增 XPSNR 四列
-        // 新增 XPSNR 四列
-        r.FinalXPSNR_Y?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalXPSNR_U?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalXPSNR_V?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
-        r.FinalWXPSNR?.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+        FormatDbValue(r.FinalXPSNR_Y),
+        FormatDbValue(r.FinalXPSNR_U),
+        FormatDbValue(r.FinalXPSNR_V),
+        FormatDbValue(r.FinalWXPSNR),
         // ★ 新增的高级指标
         r.FinalSSIMULACRA2?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
         r.FinalButteraugli_Raw?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
@@ -736,6 +734,15 @@ namespace AvifEncoder
             >= 1024 => $"{b / 1024.0:F2} KB",
             _ => $"{b} B"
         };
+
+        /// <summary> 格式化 dB 值，正无穷显示为大数值 999999.9999（兼容 Excel 排序），否则保留 4 位小数 </summary>
+        private static string FormatDbValue(double? value)
+        {
+            if (!value.HasValue) return "";
+            if (double.IsPositiveInfinity(value.Value)) return int.MaxValue.ToString();
+            if (double.IsNaN(value.Value)) return "";
+            return value.Value.ToString("F4", CultureInfo.InvariantCulture);
+        }
 
         private static string FormatTimeSpan(TimeSpan t) => t switch
         {

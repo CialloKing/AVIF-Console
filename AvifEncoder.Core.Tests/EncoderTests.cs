@@ -82,7 +82,7 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public void LibAom_BuildLosslessArg()
         {
-            Assert.AreEqual("-lossless 1", Av1EncoderFactory.Get("libaom-av1").BuildLosslessArg());
+            Assert.AreEqual("-crf 0", Av1EncoderFactory.Get("libaom-av1").BuildLosslessArg());
         }
 
         #endregion

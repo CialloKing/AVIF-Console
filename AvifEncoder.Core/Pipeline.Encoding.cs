@@ -356,7 +356,6 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                    PresetConfig cfg, bool isTrueLossless)
         {
             string logLevel = "-loglevel info -hide_banner";
-            string aom = string.IsNullOrEmpty(param.aomParams) ? "" : $"-aom-params {param.aomParams}";
 
             var encoder = Av1EncoderFactory.Get(cfg.Encoder);
 
@@ -364,29 +363,17 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 ? encoder.BuildLosslessArg()
                 : encoder.BuildQualityArg(crf);
 
+            // -b:v 0 防止 ffmpeg 在质量参数不被识别时静默回退到 bitrate 模式
+            string bitrateGuard = "-b:v 0";
+
             string stillPic = encoder.SupportsStillPicture
                 ? "-still-picture 1"
                 : "";
-            string stillPicAom = encoder.SupportsStillPicture
-                ? "enable-keyframe-filtering=0:lag-in-frames=0"
-                : "";
-            string aomCombined;
-            if (!string.IsNullOrEmpty(param.aomParams) && stillPicAom.Length > 0)
-            {
-                aomCombined = $"-aom-params {stillPicAom}:{param.aomParams}";
-            }
-            else if (!string.IsNullOrEmpty(param.aomParams))
-            {
-                aomCombined = $"-aom-params {param.aomParams}";
-            }
-            else if (stillPicAom.Length > 0)
-            {
-                aomCombined = $"-aom-params {stillPicAom}";
-            }
-            else
-            {
-                aomCombined = "";
-            }
+            // still-picture 单帧模式下 enable-keyframe-filtering 和 lag-in-frames 无意义，
+            // 且 lag-in-frames 在 libaom 3.14+ 中会被拒绝导致编码失败
+            string aomCombined = string.IsNullOrEmpty(param.aomParams)
+                ? ""
+                : $"-aom-params {param.aomParams}";
             string encoderSpecific = EncodeHelpers.BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
             string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
@@ -433,7 +420,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             return $"{logLevel} -i \"{input}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
-                   $"{crfPart} {encoderSpecific} " +
+                   $"{crfPart} {bitrateGuard} {encoderSpecific} " +
                    $"{stillPic} -frames:v 1 {aomCombined} {threadsArg} -y \"{output}\"";
         }
 

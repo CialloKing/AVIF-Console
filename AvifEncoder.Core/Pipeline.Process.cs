@@ -347,8 +347,11 @@ namespace AvifEncoder
                 // 无损验证：全量逐像素比对，失败即视为编码失败并生成诊断报告
                 if (config.Lossless && encodeResult.Success)
                 {
+                    var swVerify = System.Diagnostics.Stopwatch.StartNew();
                     var verReport = await VerifyLosslessAsync(
                         workingInputPath, outputPath, name, encInfo.Width);
+                    swVerify.Stop();
+
                     if (verReport != null)
                     {
                         // 填充完整诊断信息
@@ -360,6 +363,13 @@ namespace AvifEncoder
                         verReport.Encoder = config.Encoder;
                         verReport.EncodeCommand = encodeResult.FinalCommand ?? "";
                         verReport.Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        // JSON 扩展字段
+                        verReport.SourcePixelFormat = encInfo.SourcePixFmt;
+                        verReport.VerificationTimeSec =
+                            swVerify.Elapsed.TotalSeconds;
+                        verReport.EncodeTimeSec =
+                            encodeResult.EncodeTime.TotalSeconds;
 
                         // 获取编码器版本
                         var (ffVer, encVers) = await GetEncoderVersionsAsync(_ffmpegPath);
@@ -376,6 +386,10 @@ namespace AvifEncoder
                         string failedOutputName = Path.GetFileName(outputPath);
                         string failedDest = Path.Combine(_failedVerificationDir, failedOutputName);
                         verReport.FailedOutput = failedDest;
+
+                        // 输出文件大小
+                        verReport.OutputFileSize = _fs.FileExists(outputPath)
+                            ? _fs.GetFileLength(outputPath) : 0;
 
                         if (_fs.FileExists(outputPath))
                         {
@@ -398,20 +412,24 @@ namespace AvifEncoder
                         AppendFailedVerificationCsv(verReport);
                         await WriteVerificationReportJsonAsync(verReport);
 
-                        // 生成 diff heatmap（后台执行，不阻塞失败返回）
-                        string diffPngPath = Path.Combine(
-                            _failedVerificationDir,
-                            Path.GetFileNameWithoutExtension(failedOutputName) + ".diff.png");
-                        _ = GenerateDiffHeatmapPngAsync(
-                            workingInputPath,
-                            _fs.FileExists(failedDest) ? failedDest : outputPath,
-                            diffPngPath);
+                        // 差异热力图不再自动生成，用户可从 JSON 的 MismatchSamples 查看差异
 
-                        return FailResult(index,
+                        // 计算质量指标（编码成功但验证失败，指标依然有效）
+                        (double failSsim, QualityMetrics? failMetrics, string failCacheKey) =
+                            await EvaluateFinalQualityAsync(
+                             workingInputPath, _fs.FileExists(failedDest) ? failedDest : outputPath,
+                             encodeResult, encInfo, searchResult, config);
+
+                        // 用 BuildResult 保留完整指标，仅标记为失败
+                        var result = BuildResult(index,
                             Path.GetFileName(outputPath), name,
                             inputPath,
-                            $"无损验证失败：{verReport.FailureType}",
-                            fileStartTime);
+                            _fs.FileExists(failedDest) ? failedDest : outputPath,
+                            encodeResult, searchResult, encInfo, failSsim, failMetrics,
+                            fileStartTime, failCacheKey);
+                        result.Success = false;
+                        result.ErrorMessage = $"无损验证失败：{verReport.FailureType}";
+                        return result;
                     }
                 }
 
@@ -489,6 +507,29 @@ namespace AvifEncoder
                 _logger.LogSearch($"最终指标复用缓存: CRF={encodeResult.Crf} VMAF={cachedMetrics!.VMAF:F4}");
 
                 bool needUpdate = false;
+
+                // PSNR-Y 接近 libvmaf 60dB 上限时用独立滤镜重算
+                if (cachedMetrics.PSNR_Y >= 59.5)
+                {
+                    _logger.LogInfo($"PSNR={cachedMetrics.PSNR_Y} 触上限，用独立滤镜重算...");
+                    try
+                    {
+                        var uncapped = await ComputePsnrUncappedAsync(
+                            workingInputPath, outputPath);
+                        if (uncapped.HasValue)
+                        {
+                            cachedMetrics.PSNR_Y = uncapped.Value;
+                            needUpdate = true;
+                            _logger.LogInfo(
+                                $"PSNR 独立重算完成: {uncapped.Value}");
+                        }
+                        else
+                        {
+                            _logger.LogInfo("PSNR 独立重算返回 null");
+                        }
+                    }
+                    catch (Exception ex) { _logger.LogInfo($"PSNR 上限重算异常: {ex.Message}"); }
+                }
 
                 // 补算缺失的 XPSNR
                 if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
@@ -646,7 +687,7 @@ namespace AvifEncoder
                     };
                 }
 
-                // 全量扫描：统计 mismatch 数量、最大偏差、通道分别计数
+                // 全量扫描：统计 mismatch 数量、最大偏差、通道分别计数、采集差异采样
                 int mismatchCount = 0;
                 int maxDelta = 0;
                 int rCount = 0, gCount = 0, bCount = 0, aCount = 0;
@@ -654,6 +695,8 @@ namespace AvifEncoder
                 int firstRefVal = 0, firstOutVal = 0;
                 int firstChannelIdx = 0;
                 bool firstFound = false;
+                var samples = new List<MismatchSample>();
+                const int maxSamples = 500;
 
                 for (int i = 0; i < refRaw.Length; i++)
                 {
@@ -675,6 +718,24 @@ namespace AvifEncoder
                             case 1: gCount++; break;
                             case 2: bCount++; break;
                             case 3: aCount++; break;
+                        }
+
+                        // 采集差异采样（均匀间隔，最多 maxSamples 条）
+                        if (samples.Count < maxSamples || mismatchCount % (mismatchCount / maxSamples + 1) == 0)
+                        {
+                            if (samples.Count < maxSamples)
+                            {
+                                int pixel = i / 4;
+                                samples.Add(new MismatchSample
+                                {
+                                    X = width > 0 ? pixel % width : pixel,
+                                    Y = width > 0 ? pixel / width : 0,
+                                    Channel = channelIdx switch { 0 => "R", 1 => "G", 2 => "B", _ => "A" },
+                                    RefValue = refB,
+                                    OutValue = avifB,
+                                    Delta = delta
+                                });
+                            }
                         }
 
                         if (!firstFound)
@@ -729,6 +790,7 @@ namespace AvifEncoder
                     $"ref=0x{firstRefVal:X2} out=0x{firstOutVal:X2} " +
                     $"Breakdown=[R:{rCount} G:{gCount} B:{bCount} A:{aCount}]");
 
+                double totalPx = totalPixels;
                 return new FailedVerificationInfo
                 {
                     FailureType = failureType,
@@ -742,7 +804,14 @@ namespace AvifEncoder
                     RMismatches = rCount,
                     GMismatches = gCount,
                     BMismatches = bCount,
-                    AMismatches = aCount
+                    AMismatches = aCount,
+                    // JSON 扩展字段
+                    MismatchRatio = totalPx > 0 ? mismatchCount / totalPx : 0,
+                    RPct = totalPx > 0 ? rCount * 100.0 / mismatchCount : 0,
+                    GPct = totalPx > 0 ? gCount * 100.0 / mismatchCount : 0,
+                    BPct = totalPx > 0 ? bCount * 100.0 / mismatchCount : 0,
+                    APct = totalPx > 0 ? aCount * 100.0 / mismatchCount : 0,
+                    MismatchSamples = samples,
                 };
             }
             catch (Exception ex)

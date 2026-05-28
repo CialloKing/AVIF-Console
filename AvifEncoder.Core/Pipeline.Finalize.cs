@@ -379,7 +379,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt yuv420p " +
-                   $"-crf {crf} {encArgs} " +
+                   $"-crf {crf} -b:v 0 {encArgs} " +
                    $"-color_range pc {stillPic} -frames:v 1 {aomPart} {threadsArg} -y \"{outputPath}\"";
         }
 
