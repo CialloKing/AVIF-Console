@@ -722,7 +722,11 @@ namespace AvifEncoder
                 sb.AppendLine(GetCsvRow(r));
             }
 
-            _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
+            lock (_csvLock)
+            {
+                _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
+                _csvHeaderWritten = true;
+            }
             SafeWriteLine($"CSV ÒÑ±£´æ: {p}");
         }
 

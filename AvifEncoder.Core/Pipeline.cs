@@ -716,19 +716,21 @@ namespace AvifEncoder
         }
         private static double ComputeMixScore(QualityMetrics m)
         {
-            // 归一化各原生指标
+            // NaN 守卫：任何核心指标缺失时返回 NaN
+            if (double.IsNaN(m.VMAF) || double.IsNaN(m.PSNR_Y) ||
+                double.IsNaN(m.SSIM) || double.IsNaN(m.MS_SSIM))
+            {
+                return double.NaN;
+            }
+
             double vmafNorm = m.VMAF / 100.0;
             double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
 
-            // 如果 W?XPSNR 有效，采用五指标加权模型
-            if (m.W_XPSNR.HasValue)
+            if (m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value))
             {
-                // XPSNR 常见范围 40~60 dB，映射到 0~1
                 double xpsnrNorm = Math.Clamp((m.W_XPSNR.Value - 40) / 20.0, 0, 1);
-                // 权重分配：VMAF 0.50 + SSIM 0.05 + MS?SSIM 0.08 + PSNR?Y 0.05 + W?XPSNR 0.32 = 1.00
                 return 0.50 * vmafNorm + 0.05 * m.SSIM + 0.08 * m.MS_SSIM + 0.05 * psnrNorm + 0.32 * xpsnrNorm;
             }
-            // 否则沿用原来的四项指标公式
             return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
         }
 
@@ -750,6 +752,7 @@ namespace AvifEncoder
             _globalCts = null;
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
+            _advancedMetricSemaphore?.Dispose();
             GC.SuppressFinalize(this);
         }
 
