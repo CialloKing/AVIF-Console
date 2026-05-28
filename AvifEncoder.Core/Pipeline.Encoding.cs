@@ -359,6 +359,16 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             var encoder = Av1EncoderFactory.Get(cfg.Encoder);
 
+            // NVENC 硬件编码器 10-bit 映射: yuv*x*p10le → p010le
+            string actualPixFmt = pixFmt;
+            if (cfg.Encoder.Contains("nvenc", StringComparison.OrdinalIgnoreCase))
+            {
+                if (actualPixFmt.Contains("10le") || actualPixFmt.Contains("p010"))
+                    actualPixFmt = "p010le";
+                else if (actualPixFmt.Contains("444"))
+                    actualPixFmt = "yuv420p";  // NVENC 不支持 4:4:4，降为 4:2:0
+            }
+
             string crfPart = isTrueLossless
                 ? encoder.BuildLosslessArg()
                 : encoder.BuildQualityArg(crf);
@@ -419,7 +429,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string colorMeta = $"-color_primaries {primaries} -color_trc {trc} -colorspace {space}";
 
             return $"{logLevel} -i \"{input}\" " +
-                   $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
+                   $"-c:v {cfg.Encoder} -pix_fmt {actualPixFmt} {rangeArg} {colorMeta} " +
                    $"{crfPart} {bitrateGuard} {encoderSpecific} " +
                    $"{stillPic} -frames:v 1 {aomCombined} {threadsArg} -y \"{output}\"";
         }
@@ -441,6 +451,16 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             if (!string.IsNullOrWhiteSpace(stderr))
             {
                 _logger.LogInfo($"ffmpeg stderr:\n{stderr.Trim()}");
+            }
+
+            // 防呆：检测磁盘空间不足，取消所有后续任务
+            if (stderr.Contains("No space left on device") ||
+                stderr.Contains("Disk full") ||
+                stderr.Contains("disk full"))
+            {
+                SafeWriteLine("[FATAL] 磁盘空间不足，正在取消所有待处理任务...");
+                _logger.LogError("磁盘空间不足，终止编码");
+                _globalCts?.Cancel();
             }
 
             string lastLine = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";

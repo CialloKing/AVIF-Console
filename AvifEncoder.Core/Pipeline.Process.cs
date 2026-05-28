@@ -531,21 +531,34 @@ namespace AvifEncoder
                     catch (Exception ex) { _logger.LogInfo($"PSNR 上限重算异常: {ex.Message}"); }
                 }
 
-                // 补算缺失的 XPSNR
+                // XPSNR 后台异步计算（不阻塞主流程）
                 if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
                     !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
                 {
-                    try
+                    var xKey = cacheKey;
+                    var xTask = Task.Run(async () =>
                     {
-                        var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                        cachedMetrics.XPSNR_Y = y;
-                        cachedMetrics.XPSNR_U = u;
-                        cachedMetrics.XPSNR_V = v;
-                        cachedMetrics.W_XPSNR = weighted;
-                        needUpdate = true;
-                        _logger.LogInfo($"XPSNR 补算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                    }
-                    catch (Exception ex) { _logger.LogInfo($"XPSNR 补算异常，将留空: {ex.Message}"); }
+                        try
+                        {
+                            var (y, u, v, weighted) = await ComputeXPSNRAsync(
+                                workingInputPath, outputPath, "yuv444p");
+                            _cache.UpdateMetrics(xKey, m =>
+                            {
+                                m.XPSNR_Y = y; m.XPSNR_U = u;
+                                m.XPSNR_V = v; m.W_XPSNR = weighted;
+                            });
+                            _logger.LogInfo(
+                                $"XPSNR 后台完成: Y={y?.ToString("F4")}, " +
+                                $"U={u?.ToString("F4")}, V={v?.ToString("F4")}, " +
+                                $"W={weighted?.ToString("F4")}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogInfo($"XPSNR 后台异常: {ex.Message}");
+                        }
+                    });
+                    _xpsnrTasks.Enqueue(xTask);
+                    needUpdate = true;
                 }
 
                 // 补算缺失的高级指标（异步后台执行）
@@ -592,16 +605,29 @@ namespace AvifEncoder
             if (metrics != null)
             {
                 // XPSNR
-                try
+                // XPSNR 后台异步计算
+                var xKey2 = cacheKey;
+                _xpsnrTasks.Enqueue(Task.Run(async () =>
                 {
-                    var (y, u, v, weighted) = await ComputeXPSNRAsync(workingInputPath, outputPath, "yuv444p");
-                    metrics.XPSNR_Y = y;
-                    metrics.XPSNR_U = u;
-                    metrics.XPSNR_V = v;
-                    metrics.W_XPSNR = weighted;
-                    _logger.LogInfo($"XPSNR 计算完成: Y={y?.ToString("F4")}, U={u?.ToString("F4")}, V={v?.ToString("F4")}, W={weighted?.ToString("F4")}");
-                }
-                catch (Exception ex) { _logger.LogInfo($"XPSNR 计算异常，将留空: {ex.Message}"); }
+                    try
+                    {
+                        var (y, u, v, weighted) = await ComputeXPSNRAsync(
+                            workingInputPath, outputPath, "yuv444p");
+                        _cache.UpdateMetrics(xKey2, m =>
+                        {
+                            m.XPSNR_Y = y; m.XPSNR_U = u;
+                            m.XPSNR_V = v; m.W_XPSNR = weighted;
+                        });
+                        _logger.LogInfo(
+                            $"XPSNR 后台完成: Y={y?.ToString("F4")}, " +
+                            $"U={u?.ToString("F4")}, V={v?.ToString("F4")}, " +
+                            $"W={weighted?.ToString("F4")}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInfo($"XPSNR 后台异常: {ex.Message}");
+                    }
+                }));
 
                 // 高级指标（改为异步后台执行）
                 bool advancedUpdated = false;

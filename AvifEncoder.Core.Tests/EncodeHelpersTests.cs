@@ -223,7 +223,7 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public void BuildEncoderSpecificArgs_Hardware_OnlyNonEmptyParts()
         {
-            var cfg = new PresetConfig { Encoder = "av1_nvenc" };
+            var cfg = new PresetConfig { Encoder = "av1_qsv" };
             string result = EncodeHelpers.BuildEncoderSpecificArgs(cfg, 0, "", "");
             Assert.AreEqual("", result);
         }

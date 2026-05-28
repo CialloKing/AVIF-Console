@@ -643,21 +643,20 @@ namespace AvifEncoder
             string aomParams = CsvEscape(r.AomParamsUsed ?? "");
             string cache = r.CacheReused ? "是" : "否";
 
-            string vmaf = r.FinalVMAF?.ToString("F4", CultureInfo.InvariantCulture) ?? "";
+            string vmaf = FormatMetric(r.FinalVMAF);
             string psnrY = FormatDbValue(r.FinalPSNR_Y);
-            string msssim = r.FinalMSSSIM?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
-            string mix = r.FinalMixScore?.ToString("F6", CultureInfo.InvariantCulture) ?? "";
+            string msssim = FormatMetric(r.FinalMSSSIM);
+            string mix = FormatMetric(r.FinalMixScore);
 
-            // 按 CsvColumnNames 顺序拼接
             var values = new[]
             {
         CsvEscape(r.FileName),
         CsvEscape(r.OriginalFileName),
         r.OriginalSize.ToString(CultureInfo.InvariantCulture),
         r.OutputSize.ToString(CultureInfo.InvariantCulture),
-        r.CompressionRatio.ToString("F4", CultureInfo.InvariantCulture),
+        FormatMetric(r.CompressionRatio),
         r.UsedCRF.ToString(CultureInfo.InvariantCulture),
-        r.FinalSSIM.ToString("F4", CultureInfo.InvariantCulture),
+        FormatMetric(r.FinalSSIM),
         vmaf,
         psnrY,
         msssim,
@@ -666,15 +665,14 @@ namespace AvifEncoder
         FormatDbValue(r.FinalXPSNR_U),
         FormatDbValue(r.FinalXPSNR_V),
         FormatDbValue(r.FinalWXPSNR),
-        // ★ 新增的高级指标
-        r.FinalSSIMULACRA2?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalButteraugli_Raw?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalButteraugli_3norm?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
-        r.FinalGMSD?.ToString("F6", CultureInfo.InvariantCulture) ?? "",
+        FormatMetric(r.FinalSSIMULACRA2),
+        FormatMetric(r.FinalButteraugli_Raw),
+        FormatMetric(r.FinalButteraugli_3norm),
+        FormatMetric(r.FinalGMSD),
 
-        r.EncodeTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
-        r.SearchTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
-        r.TotalTime.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture),
+        FormatMetric(r.EncodeTime.TotalSeconds),
+        FormatMetric(r.SearchTime.TotalSeconds),
+        FormatMetric(r.TotalTime.TotalSeconds),
         r.Retries.ToString(CultureInfo.InvariantCulture),
         CsvEscape(fmt),
         CsvEscape(srcFmt),
@@ -735,13 +733,30 @@ namespace AvifEncoder
             _ => $"{b} B"
         };
 
-        /// <summary> 格式化 dB 值，正无穷显示为大数值 999999.9999（兼容 Excel 排序），否则保留 4 位小数 </summary>
+        /// <summary>格式化普通指标值，保留完整原生精度，不做四舍五入截断</summary>
+        private static string FormatMetric(double? value)
+        {
+            if (!value.HasValue) return "";
+            if (double.IsNaN(value.Value)) return "";
+            if (double.IsPositiveInfinity(value.Value)) return int.MaxValue.ToString();
+            return value.Value.ToString("G", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>格式化普通指标值</summary>
+        private static string FormatMetric(double value)
+        {
+            if (double.IsNaN(value)) return "";
+            if (double.IsPositiveInfinity(value)) return int.MaxValue.ToString();
+            return value.ToString("G", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>格式化 dB 值，正无穷显示为 int.MaxValue 哨兵值，否则保留完整精度</summary>
         private static string FormatDbValue(double? value)
         {
             if (!value.HasValue) return "";
             if (double.IsPositiveInfinity(value.Value)) return int.MaxValue.ToString();
             if (double.IsNaN(value.Value)) return "";
-            return value.Value.ToString("F4", CultureInfo.InvariantCulture);
+            return value.Value.ToString("G", CultureInfo.InvariantCulture);
         }
 
         private static string FormatTimeSpan(TimeSpan t) => t switch

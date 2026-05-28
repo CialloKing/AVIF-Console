@@ -160,7 +160,7 @@ namespace AvifEncoder.Core.Tests
         #region HardwareAv1Encoder
 
         [TestMethod]
-        public void Hardware_AllFlagsAreFalse()
+        public void Hardware_Qsv_FlagsAreFalse()
         {
             var e = Av1EncoderFactory.Get("av1_qsv");
             Assert.IsFalse(e.SupportsLossless);
@@ -171,21 +171,39 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
-        public void Hardware_BuildSpeedArg_ReturnsEmpty()
+        public void Nvenc_SupportsStillPicture_IsTrue()
         {
-            Assert.AreEqual("", Av1EncoderFactory.Get("av1_amf").BuildSpeedArg(5));
+            Assert.IsTrue(Av1EncoderFactory.Get("av1_nvenc").SupportsStillPicture);
+        }
+
+        [TestMethod]
+        public void Nvenc_BuildSpeedArg_MapsToPreset()
+        {
+            // cpu=0(最慢) → p7(最高质量)
+            Assert.Contains("-preset p7",
+                Av1EncoderFactory.Get("av1_nvenc").BuildSpeedArg(0));
+            // cpu=7(最快) → p1
+            Assert.Contains("-preset p1",
+                Av1EncoderFactory.Get("av1_nvenc").BuildSpeedArg(7));
+        }
+
+        [TestMethod]
+        public void Nvenc_BuildFullTuneArg_Vmaf_ReturnsHq()
+        {
+            Assert.AreEqual("-tune hq",
+                Av1EncoderFactory.Get("av1_nvenc").BuildFullTuneArg("vmaf"));
+        }
+
+        [TestMethod]
+        public void Nvenc_MaxSpeed_Is7()
+        {
+            Assert.AreEqual(7, Av1EncoderFactory.Get("av1_nvenc").MaxSpeed);
         }
 
         [TestMethod]
         public void Hardware_BuildLosslessArg_ReturnsEmpty()
         {
             Assert.AreEqual("", Av1EncoderFactory.Get("av1_vaapi").BuildLosslessArg());
-        }
-
-        [TestMethod]
-        public void Hardware_BuildFullTuneArg_ReturnsEmpty()
-        {
-            Assert.AreEqual("", Av1EncoderFactory.Get("av1_nvenc").BuildFullTuneArg("vmaf"));
         }
 
         #endregion

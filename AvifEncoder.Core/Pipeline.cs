@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Text.Json;   // 如果使用 System.Text.Json
 using System.Text.RegularExpressions;
@@ -139,6 +140,8 @@ namespace AvifEncoder
 
         private int _disposed;
 
+        private FileStream? _lockStream;
+
         private readonly IProcessRunner _processRunner;
 
         private readonly ILogger _logger;
@@ -161,6 +164,7 @@ namespace AvifEncoder
 
 
         private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
+        private readonly ConcurrentQueue<Task> _xpsnrTasks = new();
         private readonly SemaphoreSlim _advancedMetricSemaphore;
 
         // 无损验证报告相关
@@ -629,6 +633,21 @@ namespace AvifEncoder
             _inputDir = EnsureLongPath(inputDir);
             _outputDir = EnsureLongPath(outputDir);
 
+            // 防呆：输出目录互斥锁，防止多个进程同时写同一目录
+            string lockFile = Path.Combine(_outputDir, ".avifencoder.lock");
+            try
+            {
+                _lockStream = new FileStream(lockFile, FileMode.Create,
+                    FileAccess.Write, FileShare.None, 4096,
+                    FileOptions.DeleteOnClose);
+            }
+            catch (IOException)
+            {
+                throw new IOException(
+                    $"输出目录 {outputDir} 已被另一个编码进程占用。" +
+                    "请等待其完成或更换输出目录。");
+            }
+
             // 防呆：输入输出同目录时，若存在 .avif 源文件则自动创建输出子目录
             string normalizedInput = NormalizePathForExternalTool(_inputDir);
             string normalizedOutput = NormalizePathForExternalTool(_outputDir);
@@ -679,6 +698,35 @@ namespace AvifEncoder
                 _logger.LogInfo(
                     $"[INFO] 编码器 {config.Encoder} 不支持 -aom-params，" +
                     "aq-mode/deltaq-mode 等参数将被忽略");
+            }
+
+            // 防呆：输出模板不含 {index} 或 {name} → 多文件可能互相覆盖
+            if (!config.OutputNameFormat.Contains("{index}") &&
+                !config.OutputNameFormat.Contains("{name}"))
+            {
+                SafeWriteLine(
+                    "[WARN] 输出模板不含 {index} 或 {name}，" +
+                    "编码多张图片时可能互相覆盖。");
+            }
+
+            // 防呆：CPU-used 超过编码器上限 → 自动钳制
+            var cpuEnc = Av1EncoderFactory.Get(config.Encoder);
+            if (config.FinalCpuUsed > cpuEnc.MaxSpeed)
+            {
+                SafeWriteLine(
+                    $"[WARN] FinalCpuUsed={config.FinalCpuUsed} " +
+                    $"超过 {config.Encoder} 上限 ({cpuEnc.MaxSpeed})，" +
+                    $"已钳制为 {cpuEnc.MaxSpeed}");
+                config.FinalCpuUsed = cpuEnc.MaxSpeed;
+                config.SearchCpuUsed = Math.Min(config.SearchCpuUsed, cpuEnc.MaxSpeed);
+            }
+            if (config.SearchCpuUsed > cpuEnc.MaxSpeed)
+            {
+                SafeWriteLine(
+                    $"[WARN] SearchCpuUsed={config.SearchCpuUsed} " +
+                    $"超过 {config.Encoder} 上限 ({cpuEnc.MaxSpeed})，" +
+                    $"已钳制为 {cpuEnc.MaxSpeed}");
+                config.SearchCpuUsed = cpuEnc.MaxSpeed;
             }
 
             int cpuCount = Environment.ProcessorCount;
@@ -788,6 +836,7 @@ namespace AvifEncoder
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
             _advancedMetricSemaphore?.Dispose();
+            _lockStream?.Dispose();
             GC.SuppressFinalize(this);
         }
 
@@ -1309,6 +1358,20 @@ namespace AvifEncoder
             _progress.SetTotalFiles(sortedFiles.Count);
             SafeWriteLine($"待处理: {_progress.TotalFiles} 张\n");
 
+            // 防呆：检测超大分辨率图片
+            try
+            {
+                var probe = await GetProbeInfoAsync(sortedFiles[0].path);
+                if (probe != null && Math.Max(probe.Width, probe.Height) > 3840)
+                {
+                    SafeWriteLine(
+                        $"[INFO] 检测到高分辨率图片 " +
+                        $"({probe.Width}x{probe.Height})，" +
+                        "AV1 编码可能较慢，建议使用 --max-resolution 限制分辨率。");
+                }
+            }
+            catch { }
+
             var processingOrder = sortedFiles
                 .OrderByDescending(t => _fs.GetFileLength(t.path))
                 .ToList();
@@ -1361,9 +1424,16 @@ namespace AvifEncoder
             // ★ 等待所有后台高级指标计算完成
             if (!_advancedMetricTasks.IsEmpty)
             {
-                SafeWriteLine("? 等待后台高级指标计算完成...");
+                SafeWriteLine("⏳ 等待后台高级指标计算完成...");
                 try { await Task.WhenAll(_advancedMetricTasks.ToArray()); }
                 catch (Exception ex) { _logger.LogError($"后台高级任务异常: {ex.Message}"); }
+            }
+
+            // ★ 等待所有后台 XPSNR 计算完成并回填
+            if (!_xpsnrTasks.IsEmpty)
+            {
+                try { await Task.WhenAll(_xpsnrTasks.ToArray()); }
+                catch (Exception ex) { _logger.LogInfo($"XPSNR 后台异常: {ex.Message}"); }
             }
 
             var totalTime = DateTime.Now - _progress.StartTime;

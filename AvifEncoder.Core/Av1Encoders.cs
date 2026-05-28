@@ -171,19 +171,31 @@ namespace AvifEncoder
     internal sealed class HardwareAv1Encoder : IAv1Encoder
     {
         private readonly string _name;
-        public HardwareAv1Encoder(string name) => _name = name;
+        private readonly bool _isNvenc;
+
+        public HardwareAv1Encoder(string name)
+        {
+            _name = name;
+            _isNvenc = name.Contains("nvenc", StringComparison.OrdinalIgnoreCase);
+        }
+
         public string Name => _name;
         public bool SupportsLossless => false;
-        public bool SupportsStillPicture => false;
+        public bool SupportsStillPicture => _isNvenc;
         public bool SupportsTiles => false;
         public bool SupportsRowMt => false;
         public bool SupportsAomParams => false;
-        public int MinSpeed => 0;
-        public int MaxSpeed => 0;
+
+        // NVENC preset: p1(最快) ~ p7(最慢/最高质量)
+        // cpu-used: 0(慢/高质量) ~ 7(快)，需要反转映射
+        public int MinSpeed => _isNvenc ? 0 : 0;
+        public int MaxSpeed => _isNvenc ? 7 : 0;
 
         public string BuildSpeedArg(int cpuUsed)
         {
-            return "";
+            if (!_isNvenc) return "";
+            int preset = Math.Max(1, 7 - Math.Clamp(cpuUsed, 0, 7));  // cpu=0→p7, cpu=7→p1
+            return $"-preset p{preset}";
         }
 
         public string BuildLosslessArg()
@@ -212,12 +224,19 @@ namespace AvifEncoder
 
         public string BuildTuneArg(string? metricMode)
         {
-            return "";
+            if (!_isNvenc) return "";
+            return metricMode switch
+            {
+                "vmaf" or "psnr" or "ssim" or "msssim" => "hq",
+                _ => ""
+            };
         }
 
         public string BuildFullTuneArg(string? metricMode)
         {
-            return "";
+            if (!_isNvenc) return "";
+            string tune = BuildTuneArg(metricMode);
+            return tune.Length > 0 ? $"-tune {tune}" : "";
         }
     }
 }
