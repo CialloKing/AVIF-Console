@@ -48,6 +48,7 @@
             // txtHelp
             // 
             txtHelp.AllowDrop = true;
+            txtHelp.AnimationFPS = 0;
             txtHelp.BackColor1 = Color.Transparent;
             txtHelp.BackgroundSource = modernPanel1;
             txtHelp.BorderColor = Color.Transparent;

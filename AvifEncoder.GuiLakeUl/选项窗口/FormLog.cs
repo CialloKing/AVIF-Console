@@ -75,6 +75,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             // 
             // txtLog
             // 
+            txtLog.AnimationFPS = 0;
             txtLog.BackColor1 = Color.Transparent;
             txtLog.BorderColor = Color.Transparent;
             txtLog.BorderColorFocus = Color.Transparent;
@@ -82,6 +83,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             txtLog.ForeColor = Color.White;
             txtLog.Location = new Point(1, 1);
             txtLog.Margin = new Padding(2);
+            txtLog.MaxUndoCount = 0;
             txtLog.MultiLine = true;
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;

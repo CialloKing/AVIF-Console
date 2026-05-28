@@ -359,7 +359,7 @@
             chkSweep.ForeColor = Color.WhiteSmoke;
             chkSweep.Location = new Point(639, 301);
             chkSweep.Name = "chkSweep";
-            chkSweep.Size = new Size(150, 21);
+            chkSweep.Size = new Size(176, 21);
             chkSweep.TabIndex = 52;
             chkSweep.Text = "遍历模式";
             // 

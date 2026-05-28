@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -111,10 +112,15 @@ namespace AvifEncoder
                     currentVariant = HasNet10Runtime() ? "fdd" : "scd";
                 }
 
+                // 检测进程类型（CLI / Gui / GuiLakeUl），改名后仍能匹配正确资产
+                string currentType = DetectProcessType();
+
                 string downloadUrl = "";
                 long fileSize = 0;
                 string firstExeUrl = "";
                 long firstExeSize = 0;
+                string sameTypeVariantUrl = "";
+                long sameTypeVariantSize = 0;
                 string sameVariantUrl = "";
                 long sameVariantSize = 0;
 
@@ -150,7 +156,20 @@ namespace AvifEncoder
                         firstExeSize = assetSize;
                     }
 
-                    // 第 2 优先：同变体（同为 scd 或同为 fdd）
+                    // 第 2 优先：同类型 + 同变体（如都是 GuiLakeUl + fdd）
+                    if (currentVariant.Length > 0 &&
+                        currentType.Length > 0 &&
+                        name.Contains($"-{currentVariant}",
+                        StringComparison.OrdinalIgnoreCase) &&
+                        name.Contains($".{currentType}-",
+                        StringComparison.OrdinalIgnoreCase) &&
+                        sameTypeVariantUrl.Length == 0)
+                    {
+                        sameTypeVariantUrl = assetUrl;
+                        sameTypeVariantSize = assetSize;
+                    }
+
+                    // 第 3 优先：同变体（同为 scd 或同为 fdd），类型不限
                     if (currentVariant.Length > 0 &&
                         name.Contains($"-{currentVariant}",
                         StringComparison.OrdinalIgnoreCase) &&
@@ -161,13 +180,24 @@ namespace AvifEncoder
                     }
                 }
 
-                // 优先级：精确同名 > 同变体 > 第一个 .exe
+                // 优先级：精确同名 > 同类型+同变体 > 同变体 > 第一个 .exe
                 if (downloadUrl.Length == 0)
                 {
-                    downloadUrl = sameVariantUrl.Length > 0
-                        ? sameVariantUrl : firstExeUrl;
-                    fileSize = sameVariantUrl.Length > 0
-                        ? sameVariantSize : firstExeSize;
+                    if (sameTypeVariantUrl.Length > 0)
+                    {
+                        downloadUrl = sameTypeVariantUrl;
+                        fileSize = sameTypeVariantSize;
+                    }
+                    else if (sameVariantUrl.Length > 0)
+                    {
+                        downloadUrl = sameVariantUrl;
+                        fileSize = sameVariantSize;
+                    }
+                    else
+                    {
+                        downloadUrl = firstExeUrl;
+                        fileSize = firstExeSize;
+                    }
                 }
 
 
@@ -310,6 +340,32 @@ namespace AvifEncoder
 
             // 退出应用
             Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// 通过当前加载的程序集判断进程类型。
+        /// 改名后无法从文件名判断 CLI/GUI 时，靠此方法决定匹配哪种资产。
+        /// </summary>
+        private static string DetectProcessType()
+        {
+            try
+            {
+                var asmNames = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => a.GetName().Name ?? "")
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (asmNames.Contains("AvifEncoder.GuiLakeUl"))
+                {
+                    return "GuiLakeUl";
+                }
+                if (asmNames.Contains("AvifEncoder.Gui"))
+                {
+                    return "Gui";
+                }
+            }
+            catch { }
+
+            return "";   // 未知或 CLI（CLI 项目名不是合法类型标识符）
         }
 
         /// <summary>
