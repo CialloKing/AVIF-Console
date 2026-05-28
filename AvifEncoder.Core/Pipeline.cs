@@ -1117,7 +1117,7 @@ namespace AvifEncoder
 
             // 根据 MetricMode 动态生成标签和原生数值
             string metricMode = (_config.MetricMode ?? "vmaf").ToUpper();
-            string targetDisplay = GetTargetDisplayString(_config.TargetSSIM, metricMode, _config);
+            string targetDisplay = GetTargetDisplayString(_config);
 
             SafeWriteLine($"编码器: {_config.Encoder}");
             SafeWriteLine($"同时调用ffmpeg编码数: {_maxFfmpegConcurrency}");
@@ -1125,51 +1125,29 @@ namespace AvifEncoder
             SafeWriteLine($"文件名模板: {_config.OutputNameFormat}");
         }
 
-        // 辅助方法：将内部 0~1 目标值转换为对应模式的原生显示字符串
-        private static string GetTargetDisplayString(double targetSSIM, string metricMode, PresetConfig? config = null)
+        // 辅助方法：获取当前配置的目标值显示字符串（优先原生值）
+        private static string GetTargetDisplayString(PresetConfig config)
         {
-            if (config != null)
-            {
-                if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) && config.XpsnrTargetValue.HasValue)
-                    return $"{config.XpsnrTargetValue.Value:F1} dB ({config.XpsnrTargetChannel?.ToUpper() ?? "W"})";
+            string metricMode = config.MetricMode ?? "vmaf";
+            double target = config.GetEffectiveTarget();
 
-                switch (metricMode.ToLower())
-                {
-                    case "ssimu2":
-                        if (config.Ssimu2TargetValue.HasValue)
-                            return config.Ssimu2TargetValue.Value.ToString("F4") + " (SSIMU2)";
-                        break;
-                    case "butter3":
-                        if (config.Butteraugli3TargetValue.HasValue)
-                            return config.Butteraugli3TargetValue.Value.ToString("F4") + " (Butter3)";
-                        break;
-                    case "gmsd":
-                        if (config.GmsdTargetValue.HasValue)
-                            return config.GmsdTargetValue.Value.ToString("F4") + " (GMSD)";
-                        break;
-                }
+            if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{target:F1} dB ({(config.XpsnrTargetChannel ?? "W").ToUpper()})";
             }
 
-            // 回退到基于 0?1 目标的显示
-            switch (metricMode.ToLower())
+            return metricMode.ToLower() switch
             {
-                case "vmaf":
-                    double vmafTarget = targetSSIM * 100;
-                    if (Math.Abs(vmafTarget - Math.Round(vmafTarget)) < 0.001)
-                        return vmafTarget.ToString("F0");
-                    else
-                        return vmafTarget.ToString("F1");
-                case "psnr":
-                    double rawPsnr = targetSSIM * 20 + 30;
-                    return rawPsnr.ToString("F1") + " dB";
-                case "ssim":
-                case "msssim":
-                    return targetSSIM.ToString("F4");
-                case "mix":
-                    return targetSSIM.ToString("F4");
-                default:
-                    return targetSSIM.ToString("F4");
-            }
+                "vmaf" => target.ToString("F0"),
+                "psnr" => target.ToString("F1") + " dB",
+                "ssim" => target.ToString("F4"),
+                "msssim" => target.ToString("F4"),
+                "mix" => target.ToString("F4"),
+                "ssimu2" => target.ToString("F4") + " (SSIMU2)",
+                "butter3" => target.ToString("F4") + " (Butter3)",
+                "gmsd" => target.ToString("F4") + " (GMSD)",
+                _ => target.ToString("F4")
+            };
         }
 
         /// <summary> 扫描输入目录，返回按文件大小降序排列的文件列表 </summary>

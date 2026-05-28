@@ -10,12 +10,12 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public async Task BinarySearch_FindsOptimalCrf()
         {
-            // CRF 25→达标, 30→达标, 35→达标, 40→不达标
+            // 原生 SSIM 值：CRF 25→0.98, 30→0.98, 35→0.98, 40→0.90
             // 目标 0.95，最优 CRF=35
             Func<int, Task<double>> getScore = crf =>
                 Task.FromResult(crf <= 35 ? 0.98 : 0.90);
 
-            var cfg = new PresetConfig { MetricMode = "ssim" };
+            var cfg = new PresetConfig { MetricMode = "ssim", NativeTargetValue = 0.95 };
 
             var (bestCrf, evals) = await AvifPipeline.StandardBinarySearch(
                 "test.png", 0, cfg, "yuv420p", false,

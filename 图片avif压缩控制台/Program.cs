@@ -449,7 +449,7 @@ namespace AvifEncoder
                 Console.WriteLine("== Dry Run ==");
                 Console.WriteLine($"Input: {opts.InputDir}\nOutput: {opts.OutputDir}");
                 Console.WriteLine($"Encoder: {config.Encoder}\nSearch: {config.UseCRFSearch}");
-                Console.WriteLine($"Target: {config.TargetSSIM} (Metric: {config.MetricMode})");
+                Console.WriteLine($"Target: {config.GetEffectiveTarget()} (Metric: {config.MetricMode})");
                 Console.WriteLine($"CRF: {config.BaseCRF}, Chroma: {opts.Chroma}, BitDepth: {config.BitDepth}");
                 return;
             }

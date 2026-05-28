@@ -30,7 +30,7 @@ namespace AvifEncoder
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
                 string metricModeLabel = (config.MetricMode ?? "vmaf").ToUpper();
-                string targetDisplay = GetTargetDisplayString(config.TargetSSIM, metricModeLabel, config);
+                string targetDisplay = GetTargetDisplayString(config);
                 SafeWriteLine($"  [SEARCH] [{name}] 开始 CRF 搜索 (目标 {metricModeLabel}={targetDisplay})，请耐心等待...");
 
                 try
@@ -157,7 +157,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             var safeToken = CancellationTokenSource.CreateLinkedTokenSource(
                 safeCts.Token, _globalCts?.Token ?? default).Token;
 
-            double target = config.TargetSSIM + SSIMMargin;
+            double target = config.GetEffectiveTarget() + SSIMMargin;
             int bestSafeCRF = -1;
             // ★ 使用传入的区间，而非全局 MinCRF/MaxCRF
             int start = scanHigh;

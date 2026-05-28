@@ -8,7 +8,19 @@ namespace AvifEncoder
     public class PresetConfig
     {
         public int BaseCRF { get; set; }
+
+        /// <summary>
+        /// 通用质量意图（0-1 尺度，不绑定具体指标）。
+        /// 预设（CreateFromPreset）使用此字段存储 SSIM 尺度的质量意图。
+        /// 当用户通过 -q 显式指定目标时，优先使用 NativeTargetValue。
+        /// </summary>
         public double TargetSSIM { get; set; }
+
+        /// <summary>
+        /// 用户显式指定的原生质量目标值（各指标的原始尺度）。
+        /// 不为 null 时优先于 TargetSSIM，搜索直接使用此原生值，无需归一化/反算。
+        /// </summary>
+        public double? NativeTargetValue { get; set; }
         public int FinalCpuUsed { get; set; } = 0;
         public int SearchCpuUsed { get; set; } = 2;
         public bool UseCRFSearch { get; set; }
@@ -155,52 +167,95 @@ namespace AvifEncoder
         /// </summary>
         public void SetQualityTarget(double rawValue, string metricMode)
         {
-            // 清除所有独立目标字段
+            // 清除所有目标字段
             XpsnrTargetValue = null;
             XpsnrTargetChannel = null;
             Ssimu2TargetValue = null;
             Butteraugli3TargetValue = null;
             GmsdTargetValue = null;
             MetricLowerIsBetter = null;
+            NativeTargetValue = null;
+            TargetSSIM = 0;
+
+            MetricMode = metricMode;
 
             // XPSNR 特殊处理
             if (metricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
             {
                 XpsnrTargetValue = rawValue;
                 XpsnrTargetChannel = metricMode.Length > 5 ? metricMode.Substring(6).ToLower() : "w";
-                TargetSSIM = 0;
                 return;
             }
 
-            // 高级指标：直接使用用户输入的原生数值，不做范围限制
+            // 高级指标：使用独立原生字段
             if (metricMode is "ssimu2" or "butter3" or "gmsd")
             {
-                TargetSSIM = 0;
                 MetricLowerIsBetter = IsMetricLowerBetter(metricMode);
                 switch (metricMode)
                 {
                     case "ssimu2":
-                        Ssimu2TargetValue = rawValue;      // 允许 -∞ ~ 100
+                        Ssimu2TargetValue = rawValue;
                         break;
                     case "butter3":
-                        Butteraugli3TargetValue = rawValue; // 允许 ≥0 任意值
+                        Butteraugli3TargetValue = rawValue;
                         break;
                     case "gmsd":
-                        GmsdTargetValue = rawValue;        // 允许 ≥0 任意值
+                        GmsdTargetValue = rawValue;
                         break;
                 }
                 return;
             }
 
-            // 其他模式：归一化到0‑1目标（维持原有逻辑）
-            TargetSSIM = metricMode?.ToLower() switch
+            // ★ 传统指标（VMAF/PSNR/SSIM/MSSSIM/mix）：直接存储原生值
+            NativeTargetValue = rawValue;
+        }
+
+        /// <summary>
+        /// 获取当前指标模式下的有效原生目标值。
+        /// 优先返回 NativeTargetValue（用户显式指定），否则从 TargetSSIM 反算（预设路径）。
+        /// </summary>
+        public double GetEffectiveTarget()
+        {
+            string mode = MetricMode ?? "vmaf";
+
+            if (NativeTargetValue.HasValue)
             {
-                "ssim" => Math.Clamp(rawValue, 0, 1),
-                "psnr" => Math.Clamp((rawValue - 30) / 20.0, 0, 1),
-                "msssim" => Math.Clamp(rawValue, 0, 1),
-                "vmaf" => Math.Clamp(rawValue / 100.0, 0, 1),
-                "mix" => Math.Clamp(rawValue, 0, 1),
-                _ => Math.Clamp(rawValue, 0, 1)
+                return NativeTargetValue.Value;
+            }
+
+            // 高级指标从独立字段取
+            if (XpsnrTargetValue.HasValue)
+            {
+                return XpsnrTargetValue.Value;
+            }
+            if (Ssimu2TargetValue.HasValue)
+            {
+                return Ssimu2TargetValue.Value;
+            }
+            if (Butteraugli3TargetValue.HasValue)
+            {
+                return Butteraugli3TargetValue.Value;
+            }
+            if (GmsdTargetValue.HasValue)
+            {
+                return GmsdTargetValue.Value;
+            }
+
+            // 预设路径：从 TargetSSIM（0-1）反算原生值
+            return TargetToRaw(TargetSSIM, mode);
+        }
+
+        /// <summary>
+        /// 将内部 TargetSSIM (0-1) 反算为各指标的原生目标值。
+        /// 仅用于预设路径（无 NativeTargetValue 时）。
+        /// </summary>
+        private static double TargetToRaw(double targetSSIM, string metricMode)
+        {
+            return metricMode?.ToLower() switch
+            {
+                "vmaf" => targetSSIM * 100.0,
+                "psnr" => targetSSIM * 20.0 + 30,
+                _ => targetSSIM   // SSIM/MS-SSIM/mix 本身 0-1，无需转换
             };
         }
 

@@ -125,6 +125,9 @@ namespace AvifEncoder
             double margin;
             bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
 
+            // 获取统一原生目标值
+            double effectiveTarget = cfg.GetEffectiveTarget();
+
             // 选择 margin（原生值尺度）
             if (cfg.XpsnrTargetValue.HasValue) margin = 0.01;
             else if (cfg.Ssimu2TargetValue.HasValue) margin = 0.2;
@@ -137,26 +140,16 @@ namespace AvifEncoder
                 _ => SSIMMargin
             };
 
-            // 提取最终的目标值（全部使用原生值）
+            // 计算搜索用的判定阈值（原生值）
             if (cfg.XpsnrTargetValue.HasValue)
-                target = cfg.XpsnrTargetValue.Value - margin;
-            else if (cfg.Ssimu2TargetValue.HasValue)
-                target = cfg.Ssimu2TargetValue.Value;
-            else if (cfg.Butteraugli3TargetValue.HasValue)
-                target = cfg.Butteraugli3TargetValue.Value + margin;
-            else if (cfg.GmsdTargetValue.HasValue)
-                target = cfg.GmsdTargetValue.Value + margin;
+                target = effectiveTarget - margin;
+            else if (cfg.Butteraugli3TargetValue.HasValue || cfg.GmsdTargetValue.HasValue)
+                target = effectiveTarget + margin;
             else
-                target = TargetToRaw(cfg.TargetSSIM, metricMode) + margin;
+                target = effectiveTarget + margin;
 
-            // 用于控制台显示的目标值
-            double displayTarget;
-            if (cfg.XpsnrTargetValue.HasValue) displayTarget = cfg.XpsnrTargetValue.Value;
-            else if (cfg.Ssimu2TargetValue.HasValue) displayTarget = cfg.Ssimu2TargetValue.Value;
-            else if (cfg.Butteraugli3TargetValue.HasValue) displayTarget = cfg.Butteraugli3TargetValue.Value;
-            else if (cfg.GmsdTargetValue.HasValue) displayTarget = cfg.GmsdTargetValue.Value;
-            else displayTarget = TargetToRaw(cfg.TargetSSIM, metricMode);
-            string targetDisplay = FormatScore(displayTarget, metricMode);
+            // 控制台显示
+            string targetDisplay = FormatScore(effectiveTarget, metricMode);
             SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
@@ -399,16 +392,6 @@ namespace AvifEncoder
         /// <summary>
         /// 将内部 TargetSSIM (0-1) 反算为各指标的原生目标值。
         /// </summary>
-        private static double TargetToRaw(double targetSSIM, string metricMode)
-        {
-            return metricMode?.ToLower() switch
-            {
-                "vmaf" => targetSSIM * 100.0,
-                "psnr" => targetSSIM * 20.0 + 30,
-                _ => targetSSIM   // SSIM/MS-SSIM/mix 本身已是 0-1，无需转换
-            };
-        }
-
         private static string FormatScore(double score, string metricMode)
         {
             if (metricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
