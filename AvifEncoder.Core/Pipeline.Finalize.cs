@@ -342,18 +342,6 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         }
 
         /// <summary>
-        /// 构造安全模式（yuv420p + 单tile + 全色域）的 ffmpeg 参数字符串
-        /// </summary>
-        /// <summary>
-        /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
-        /// 仅对 libaom?av1 启用 tile 与 row?mt 参数，其他编码器忽略，避免无效参数造成失败。
-        /// </summary>
-        /// <summary>
-        /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
-        /// 仅对 libaom?av1 启用 tile 与 row?mt 参数，其他编码器忽略，避免无效参数造成失败。
-        /// 若启用了 DisableTileParallel，则强制 tile=0 且关闭 row?mt。
-        /// </summary>
-        /// <summary>
         /// 构造安全模式（yuv420p + 单 tile + 全色域）的 ffmpeg 参数字符串。
         /// 若启用了 SerialEncode，则强制 tile=0 且关闭 row?mt。
         /// </summary>

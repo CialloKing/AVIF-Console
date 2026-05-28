@@ -48,7 +48,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                               当设为 auto 时由程序根据源文件自动选择
 
 其他编码选项:
-  -l, --lossless               无损模式 (有bug，不建议使用)
+  -l, --lossless               无损模式（编解码后逐像素验证）
   -t, --output-template <模板>  输出文件名模板 (默认: covers-{index}.avif)
                                可用占位符: {name} 源文件主名, {index} 序号(01,02...)
                                正确示例:

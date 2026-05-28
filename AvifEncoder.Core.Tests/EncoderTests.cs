@@ -189,5 +189,47 @@ namespace AvifEncoder.Core.Tests
         }
 
         #endregion
+
+        #region BuildQualityArg
+
+        [TestMethod]
+        public void BuildQualityArg_LibAom_ReturnsCrf()
+        {
+            Assert.AreEqual("-crf 30", Av1EncoderFactory.Get("libaom-av1").BuildQualityArg(30));
+        }
+
+        [TestMethod]
+        public void BuildQualityArg_SvtAv1_ReturnsCrf()
+        {
+            Assert.AreEqual("-crf 25", Av1EncoderFactory.Get("libsvtav1").BuildQualityArg(25));
+        }
+
+        [TestMethod]
+        public void BuildQualityArg_Nvenc_ReturnsCq()
+        {
+            Assert.AreEqual("-cq 30", Av1EncoderFactory.Get("av1_nvenc").BuildQualityArg(30));
+        }
+
+        [TestMethod]
+        public void BuildQualityArg_Qsv_ReturnsGlobalQuality()
+        {
+            Assert.AreEqual("-global_quality 25", Av1EncoderFactory.Get("av1_qsv").BuildQualityArg(25));
+        }
+
+        [TestMethod]
+        public void BuildQualityArg_Amf_ReturnsQpCombined()
+        {
+            string result = Av1EncoderFactory.Get("av1_amf").BuildQualityArg(20);
+            Assert.Contains("-qp_i 20", result);
+            Assert.Contains("-qp_p 20", result);
+        }
+
+        [TestMethod]
+        public void BuildQualityArg_UnknownHardware_FallsBackToCrf()
+        {
+            Assert.AreEqual("-crf 30", Av1EncoderFactory.Get("av1_unknown").BuildQualityArg(30));
+        }
+
+        #endregion
     }
 }

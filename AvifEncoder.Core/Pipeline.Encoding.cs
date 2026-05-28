@@ -362,7 +362,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             string crfPart = isTrueLossless
                 ? encoder.BuildLosslessArg()
-                : $"-crf {crf}";
+                : encoder.BuildQualityArg(crf);
 
             string stillPic = encoder.SupportsStillPicture
                 ? "-still-picture 1"

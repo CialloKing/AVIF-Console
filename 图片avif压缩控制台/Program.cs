@@ -379,7 +379,7 @@ namespace AvifEncoder
             if (opts.ManualCrf.HasValue)
             {
                 config.BaseCRF = opts.ManualCrf.Value;
-                if (!opts.EnableSearch) config.UseCRFSearch = false;
+                config.UseCRFSearch = false;   // 固定 CRF 强制关闭搜索
             }
             if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
             if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
@@ -447,6 +447,18 @@ namespace AvifEncoder
                 Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
                 return;
             }
+            // 路径校验
+            if (string.IsNullOrWhiteSpace(opts.InputDir))
+            {
+                Console.WriteLine("[ERROR] 输入目录不能为空");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(opts.OutputDir))
+            {
+                Console.WriteLine("[ERROR] 输出目录不能为空");
+                return;
+            }
+
             PresetConfig config = BuildPresetConfig(opts);
             if (opts.DryRun)
             {

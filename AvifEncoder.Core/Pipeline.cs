@@ -629,6 +629,33 @@ namespace AvifEncoder
             _inputDir = EnsureLongPath(inputDir);
             _outputDir = EnsureLongPath(outputDir);
 
+            // 防呆：输入输出同目录时，若存在 .avif 源文件则自动创建输出子目录
+            string normalizedInput = NormalizePathForExternalTool(_inputDir);
+            string normalizedOutput = NormalizePathForExternalTool(_outputDir);
+            if (string.Equals(normalizedInput, normalizedOutput,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                bool hasAvifInput = false;
+                try
+                {
+                    hasAvifInput = _fs.EnumerateFiles(normalizedInput, "*.avif",
+                        SearchOption.TopDirectoryOnly).Any();
+                }
+                catch { }
+
+                if (hasAvifInput)
+                {
+                    string subDir = Path.Combine(_outputDir, "Avifoutput");
+                    _logger?.LogInfo(
+                        $"[INFO] 输入输出同目录且存在 .avif 源文件，" +
+                        $"输出自动重定向到: {subDir}");
+                    SafeWriteLine(
+                        $"[INFO] 输入和输出目录相同，为避免覆盖源 .avif 文件，" +
+                        $"输出目录自动变更为: {subDir}");
+                    _outputDir = EnsureLongPath(subDir);
+                }
+            }
+
             _config = config;
             _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg 未找到");
             _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe 未找到");
@@ -1082,13 +1109,12 @@ namespace AvifEncoder
 
 
 
-        // ========== 修复后的 RunAsync（统计准确） ==========
         // ==================== 主入口 ====================
-        public async Task RunAsync()
+        public async Task RunAsync(CancellationToken externalToken = default)
         {
             try
             {
-                _globalCts = new CancellationTokenSource();
+                _globalCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
                 Console.CancelKeyPress += (s, e) =>
                 {
                     e.Cancel = true;
@@ -1183,7 +1209,7 @@ namespace AvifEncoder
 {
     ".jpg", ".jpeg", ".png", ".webp",
     ".bmp", ".tif", ".tiff", ".gif",
-    ".jp2", ".j2k", ".jpx"
+    ".jp2", ".j2k", ".jpx", ".avif"
 };
 
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;

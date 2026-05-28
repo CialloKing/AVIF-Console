@@ -523,7 +523,41 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 return;
             }
 
-            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".jp2", ".j2k", ".jpx" };
+            // 防呆：输入输出同目录时自动创建子目录（仅当存在 .avif 源文件时）
+            if (string.Equals(
+                Path.GetFullPath(inputDir),
+                Path.GetFullPath(outputDir),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                bool hasAvif = false;
+                try
+                {
+                    hasAvif = Directory.EnumerateFiles(inputDir, "*.avif",
+                        SearchOption.TopDirectoryOnly).Any();
+                }
+                catch { }
+
+                if (hasAvif)
+                {
+                    string subDir = Path.Combine(outputDir, "Avifoutput");
+                    var result = MessageBox.Show(
+                        $"输入和输出目录相同，且存在 .avif 源文件。\n" +
+                        $"是否将输出自动重定向到子目录？\n\n{subDir}",
+                        "同目录警告", MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (result == DialogResult.Yes)
+                    {
+                        outputDir = subDir;
+                        txtOutput.Text = outputDir;
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+            }
+
+            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".jp2", ".j2k", ".jpx", ".avif" };
             var files = Directory.EnumerateFiles(inputDir, "*.*", SearchOption.AllDirectories)
                                  .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                                  .ToList();
@@ -579,7 +613,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                             inputDir, outputDir, config,
                             logger: logger,
                             progress: progress);
-                        await pipeline.RunAsync();
+                        await pipeline.RunAsync(_cts.Token);
                     }
                     catch (OperationCanceledException)
                     {

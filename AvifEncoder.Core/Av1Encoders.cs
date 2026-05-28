@@ -12,6 +12,7 @@ namespace AvifEncoder
         int MaxSpeed { get; }
         string BuildSpeedArg(int cpuUsed);
         string BuildLosslessArg();
+        string BuildQualityArg(int crf);
         string BuildTuneArg(string? metricMode);
         string BuildFullTuneArg(string? metricMode);
     }
@@ -35,6 +36,11 @@ namespace AvifEncoder
         public string BuildLosslessArg()
         {
             return "-lossless 1";
+        }
+
+        public string BuildQualityArg(int crf)
+        {
+            return $"-crf {crf}";
         }
 
         public string BuildTuneArg(string? metricMode)
@@ -76,6 +82,11 @@ namespace AvifEncoder
             return "-svtav1-params lossless=1";
         }
 
+        public string BuildQualityArg(int crf)
+        {
+            return $"-crf {crf}";
+        }
+
         public string BuildTuneArg(string? metricMode)
         {
             return metricMode switch
@@ -113,6 +124,11 @@ namespace AvifEncoder
         public string BuildLosslessArg()
         {
             return "-rav1e-params lossless=1";
+        }
+
+        public string BuildQualityArg(int crf)
+        {
+            return $"-crf {crf}";
         }
 
         public string BuildTuneArg(string? metricMode)
@@ -171,6 +187,25 @@ namespace AvifEncoder
         public string BuildLosslessArg()
         {
             return "";
+        }
+
+        public string BuildQualityArg(int crf)
+        {
+            string lower = _name.ToLower();
+            if (lower.Contains("nvenc"))
+            {
+                return $"-cq {crf}";
+            }
+            if (lower.Contains("qsv") || lower.Contains("vaapi"))
+            {
+                return $"-global_quality {crf}";
+            }
+            if (lower.Contains("amf"))
+            {
+                return $"-qp_i {crf} -qp_p {crf}";
+            }
+            // 兜底：仍用 -crf
+            return $"-crf {crf}";
         }
 
         public string BuildTuneArg(string? metricMode)
