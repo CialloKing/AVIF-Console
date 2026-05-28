@@ -693,12 +693,28 @@ namespace AvifEncoder
             return string.Join(",", values);
         }
 
+        /// <summary> 线程安全追加一行到 CSV。首次写入时自动写表头。 </summary>
+        private void AppendCsvRow(EncodeResult r)
+        {
+            lock (_csvLock)
+            {
+                if (!_csvHeaderWritten)
+                {
+                    _fs.WriteAllText(_csvPath,
+                        string.Join(",", CsvColumnNames) + "\n",
+                        new UTF8Encoding(true));
+                    _csvHeaderWritten = true;
+                }
+
+                _fs.AppendAllText(_csvPath, GetCsvRow(r) + "\n");
+            }
+        }
+
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
             string p = Path.Combine(_outputDir, "avif_stats.csv");
             var sb = new StringBuilder();
 
-            // 表头
             sb.AppendLine(string.Join(",", CsvColumnNames));
 
             foreach (var r in results)

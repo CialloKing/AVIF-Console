@@ -168,6 +168,11 @@ namespace AvifEncoder
         private string _failedCsvPath = "";
         private string _failedVerificationDir = "";
 
+        // CSV 持续写入
+        private readonly object _csvLock = new();
+        private string _csvPath = "";
+        private bool _csvHeaderWritten;
+
 
 
 
@@ -632,6 +637,15 @@ namespace AvifEncoder
             _cache = cacheManager ?? new CacheManager();
 
             bool isHardwareEncoder = !Av1EncoderFactory.Get(config.Encoder).SupportsLossless;
+
+            // 警告：非 libaom 编码器不支持 AOM 高级参数
+            if (!Av1EncoderFactory.Get(config.Encoder).SupportsAomParams)
+            {
+                _logger.LogInfo(
+                    $"[INFO] 编码器 {config.Encoder} 不支持 -aom-params，" +
+                    "aq-mode/deltaq-mode 等参数将被忽略");
+            }
+
             int cpuCount = Environment.ProcessorCount;
 
             // 若用户未通过 -j 指定并发数，则自动计算
@@ -661,6 +675,8 @@ namespace AvifEncoder
                 _fs.CreateDirectory(_failedVerificationDir);
             }
             _failedCsvPath = Path.Combine(_failedVerificationDir, "failed_verification.csv");
+
+            _csvPath = Path.Combine(_outputDir, "avif_stats.csv");
 
         }
 
@@ -1270,6 +1286,32 @@ namespace AvifEncoder
                     r.FinalButteraugli_3norm = updated?.Butteraugli_3norm;
                     r.FinalGMSD = updated?.GMSD;
                 }
+            }
+
+            // 标注外部工具缺失导致的高级指标空缺
+            bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
+            bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
+            if (!hasSsimu2 || !hasButter)
+            {
+                var missingTools = new List<string>();
+                if (!hasSsimu2) missingTools.Add("SSIMULACRA2(ssimulacra2.exe)");
+                if (!hasButter) missingTools.Add("Butteraugli(butteraugli_main.exe)");
+                string note = $"外部工具缺失: {string.Join(", ", missingTools)}";
+
+                foreach (var r in allResults)
+                {
+                    bool advancedEmpty = !r.FinalSSIMULACRA2.HasValue &&
+                        !r.FinalButteraugli_Raw.HasValue &&
+                        !r.FinalButteraugli_3norm.HasValue;
+                    if (r.Success && advancedEmpty)
+                    {
+                        r.ErrorMessage = string.IsNullOrEmpty(r.ErrorMessage)
+                            ? note
+                            : r.ErrorMessage + " | " + note;
+                    }
+                }
+                SafeWriteLine(
+                    $"[INFO] 外部工具缺失，高级指标单元格留空: {string.Join(", ", missingTools)}");
             }
 
             ExportCsv(allResults);

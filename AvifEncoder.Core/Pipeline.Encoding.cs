@@ -365,8 +365,28 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 : $"-crf {crf}";
 
             string stillPic = encoder.SupportsStillPicture
-                ? "-still-picture 1 -aom-params enable-keyframe-filtering=0:lag-in-frames=0"
+                ? "-still-picture 1"
                 : "";
+            string stillPicAom = encoder.SupportsStillPicture
+                ? "enable-keyframe-filtering=0:lag-in-frames=0"
+                : "";
+            string aomCombined;
+            if (!string.IsNullOrEmpty(param.aomParams) && stillPicAom.Length > 0)
+            {
+                aomCombined = $"-aom-params {stillPicAom}:{param.aomParams}";
+            }
+            else if (!string.IsNullOrEmpty(param.aomParams))
+            {
+                aomCombined = $"-aom-params {param.aomParams}";
+            }
+            else if (stillPicAom.Length > 0)
+            {
+                aomCombined = $"-aom-params {stillPicAom}";
+            }
+            else
+            {
+                aomCombined = "";
+            }
             string encoderSpecific = EncodeHelpers.BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
             string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
@@ -414,7 +434,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             return $"{logLevel} -i \"{input}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {pixFmt} {rangeArg} {colorMeta} " +
                    $"{crfPart} {encoderSpecific} " +
-                   $"{stillPic} -frames:v 1 {aom} {threadsArg} -y \"{output}\"";
+                   $"{stillPic} -frames:v 1 {aomCombined} {threadsArg} -y \"{output}\"";
         }
 
         private static string CsvEscape(string field)

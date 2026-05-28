@@ -74,6 +74,7 @@ namespace AvifEncoder
             public int? SearchCpuUsed;
             public int? FinalCpuUsed;
             public bool SweepMode { get; set; } = false;
+            public bool RecomputeMetrics { get; set; } = false;
         }
 
         // ========== ²ÎÊý½âÎö ==========
@@ -217,6 +218,9 @@ namespace AvifEncoder
                             break;
                         case "sweep":
                             opts.SweepMode = true;
+                            break;
+                        case "recompute-metrics":
+                            opts.RecomputeMetrics = true;
                             break;
                         default:
                             if (key.StartsWith("timeout-"))
@@ -482,7 +486,15 @@ namespace AvifEncoder
                     processRunner: null,
                     fileSystem: new PresetConfig.RealFileSystem(),
                     cacheManager: cache);
-                await pipeline.RunAsync();
+
+                if (opts.RecomputeMetrics)
+                {
+                    await pipeline.RunRecomputeMetricsAsync();
+                }
+                else
+                {
+                    await pipeline.RunAsync();
+                }
             }
             catch (Exception ex)
             {

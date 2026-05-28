@@ -174,8 +174,8 @@ namespace AvifEncoder
                                 return;
                             }
 
-                            // 质量指标计算（忽略第三个返回值 cacheKey）
-                            (double ssim, QualityMetrics? metrics, _) = await EvaluateFinalQualityAsync(
+                            // 质量指标计算
+                            (double ssim, QualityMetrics? metrics, string sweepCacheKey) = await EvaluateFinalQualityAsync(
                                 workingInput, outputPath,
                                 new FinalEncodeResult
                                 {
@@ -234,8 +234,18 @@ namespace AvifEncoder
                                 FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
                                 FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
                                 FinalGMSD = metrics?.GMSD,
+                                AomParamsUsed = actualAom ?? config.GetEffectiveAomParams(),
+                                AdvancedMetricsCacheKey = sweepCacheKey,
                                 SearchEvaluations = 0
                             };
+
+                            // 标注 AOM 参数降级
+                            string expectedAom = config.GetEffectiveAomParams();
+                            if (expectedAom.Length > 0 && (actualAom ?? "") != expectedAom)
+                            {
+                                result.ErrorMessage = "AOM参数已降级（编码器未使用完整参数）";
+                            }
+
                             MarkProcessed(result);
                             results.Add(result);
                         }
@@ -406,13 +416,13 @@ namespace AvifEncoder
                 }
 
                 // 计算最终质量
-                (double ssim, QualityMetrics? metrics, string _) = await EvaluateFinalQualityAsync(
+                (double ssim, QualityMetrics? metrics, string advancedCacheKey) = await EvaluateFinalQualityAsync(
                  workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
 
-                // 组装结果（第三个参数是纯文件名，用于显示）
+                // 组装结果（传递 cacheKey 以便最终回填高级指标）
                 return BuildResult(index, Path.GetFileName(outputPath), name,
                                        inputPath, outputPath,
-                                       encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime);
+                                       encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey);
             }
             finally
             {
@@ -947,6 +957,17 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 SearchEvaluations = searchResult.SearchEvalCount
             };
             result.AdvancedMetricsCacheKey = advancedCacheKey;
+
+            // 标注 AOM 参数降级
+            string expectedAom = _config.GetEffectiveAomParams();
+            string actualAomUsed = encodeResult.ActualAom ?? "";
+            if (result.Success && expectedAom.Length > 0 && actualAomUsed != expectedAom)
+            {
+                result.ErrorMessage = string.IsNullOrEmpty(result.ErrorMessage)
+                    ? "AOM参数已降级（编码器未使用完整参数）"
+                    : result.ErrorMessage + " | AOM参数已降级";
+            }
+
             MarkProcessed(result);
             return result;
         }

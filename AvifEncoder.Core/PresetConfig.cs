@@ -143,7 +143,7 @@ namespace AvifEncoder
         /// </summary>
         public void AdjustTargetForMetricMode()
         {
-            if (Lossless || XpsnrTargetValue.HasValue) return;
+            if (Lossless || XpsnrTargetValue.HasValue || NativeTargetValue.HasValue) return;
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":
