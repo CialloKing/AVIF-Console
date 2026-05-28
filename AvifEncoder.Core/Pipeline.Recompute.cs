@@ -50,7 +50,7 @@ namespace AvifEncoder
                 last = last.Substring(1, last.Length - 2).Replace("\"\"", "\"");
             }
             result.Add(last);
-            return result.ToArray();
+            return [.. result];
         }
 
         /// <summary>

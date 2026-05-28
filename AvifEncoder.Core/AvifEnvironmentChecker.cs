@@ -17,13 +17,13 @@ namespace AvifEncoder
     public class EncoderVersionInfo
     {
         public string FfmpegVersion { get; set; } = "";
-        public Dictionary<string, string> EncoderVersions { get; set; } = new();
+        public Dictionary<string, string> EncoderVersions { get; set; } = [];
     }
 
     public class EnvironmentCheckResult
     {
         public bool FfmpegAvailable { get; set; }
-        public List<EncoderStatus> Encoders { get; set; } = new();
+        public List<EncoderStatus> Encoders { get; set; } = [];
         public bool Ssimulacra2Available { get; set; }
         public bool ButteraugliAvailable { get; set; }
         public EncoderVersionInfo VersionInfo { get; set; } = new();
@@ -74,7 +74,7 @@ namespace AvifEncoder
 
                 var tasks = encoders.Select(enc => TestEncoderAsync(enc, testBmpPath, workDir));
                 var encoderResults = await Task.WhenAll(tasks);
-                result.Encoders = encoderResults.ToList();
+                result.Encoders = [.. encoderResults];
 
                 // 4. 输出编码器测试结果（旧版格式）
                 Log("\n编码器可用性测试结果");

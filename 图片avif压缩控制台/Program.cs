@@ -543,7 +543,7 @@ namespace AvifEncoder
                 else current.Append(c);
             }
             if (current.Length > 0) args.Add(current.ToString());
-            return args.ToArray();
+            return [.. args];
         }
     }
 

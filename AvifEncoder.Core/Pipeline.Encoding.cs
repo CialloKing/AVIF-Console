@@ -139,16 +139,16 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             if (baseFmt.Contains("444") && !isTrueLossless)
             {
                 return hasAlpha
-                    ? new[] { $"yuva444p{depthSuffix}", $"yuva422p{depthSuffix}", $"yuva420p{depthSuffix}" }
-                    : new[] { $"yuv444p{depthSuffix}", $"yuv422p{depthSuffix}", $"yuv420p{depthSuffix}" };
+                    ? [$"yuva444p{depthSuffix}", $"yuva422p{depthSuffix}", $"yuva420p{depthSuffix}"]
+                    : [$"yuv444p{depthSuffix}", $"yuv422p{depthSuffix}", $"yuv420p{depthSuffix}"];
             }
             if (baseFmt.Contains("422") && !isTrueLossless)
             {
                 return hasAlpha
-                    ? new[] { $"yuva422p{depthSuffix}", $"yuva420p{depthSuffix}" }
-                    : new[] { $"yuv422p{depthSuffix}", $"yuv420p{depthSuffix}" };
+                    ? [$"yuva422p{depthSuffix}", $"yuva420p{depthSuffix}"]
+                    : [$"yuv422p{depthSuffix}", $"yuv420p{depthSuffix}"];
             }
-            return new[] { pixFmt };
+            return [pixFmt];
         }
 
         /// <summary> 构建参数集尝试列表 </summary>

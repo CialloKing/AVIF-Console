@@ -9,8 +9,8 @@ namespace AvifEncoder
     /// </summary>
     public static class VmafPriorHelper
     {
-        private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> Table = new()
-        {
+        private static readonly List<(double TargetVmaf, int Median, int Lo, int Hi)> Table =
+        [
             (90, 38, 26, 58),
             (91, 36, 24, 57),
             (92, 34, 20, 56),
@@ -18,7 +18,7 @@ namespace AvifEncoder
             (94, 29, 13, 52),
             (95, 25,  9, 49),
             (96, 19,  5, 43),
-        };
+        ];
 
         public static (int median, int lo, int hi) GetPriorFromVmaf(double targetVmaf)
         {

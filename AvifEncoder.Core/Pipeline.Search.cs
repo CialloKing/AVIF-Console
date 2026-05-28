@@ -268,7 +268,7 @@ namespace AvifEncoder
             SafeWriteLine($"  [{name}] [PRIOR] 先验中位数 CRF={priorMedian} ...");
             double medianScore = await getScore(priorMedian);
             totalEvalCount++;
-            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore) :F4}" : $"分数={displayScore(medianScore):F4}";
+            string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore):F4}" : $"分数={displayScore(medianScore):F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
             if (metricMode == "vmaf" && medianScore >= 0)
@@ -284,7 +284,7 @@ namespace AvifEncoder
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) :F4}" : $"分数={displayScore(probeScore):F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore):F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -315,7 +315,7 @@ namespace AvifEncoder
                             SafeWriteLine($"  [{name}] [SENTINEL] 哨兵探测 CRF={probe} ...");
                             double probeScore = await getScore(probe);
                             totalEvalCount++;
-                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore) :F4}" : $"分数={displayScore(probeScore):F4}";
+                            string probeDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(probeScore):F4}" : $"分数={displayScore(probeScore):F4}";
                             SafeWriteLine($"  [{name}] [SENTINEL] CRF={probe} → {probeDisplay}");
 
                             if (probeScore >= target)
@@ -434,7 +434,7 @@ namespace AvifEncoder
             {
                 bestCrf = lo;
                 double displayKnown = lowerIsBetter && knownLoScore.Value != -1 ? -knownLoScore.Value : knownLoScore.Value;
-                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown :F4}" : $"分数={displayKnown:F4}";
+                string loDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayKnown:F4}" : $"分数={displayKnown:F4}";
                 SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
             }
 
@@ -450,7 +450,7 @@ namespace AvifEncoder
                 evalCount++;
 
                 double displayMid = lowerIsBetter && score != -1 ? -score : score;
-                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid :F4}" : $"分数={displayMid:F4}";
+                string midDisplay = cfg.MetricMode == "vmaf" ? $"VMAF={displayMid:F4}" : $"分数={displayMid:F4}";
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
                 if (score >= target)
@@ -512,7 +512,7 @@ namespace AvifEncoder
 
                 bool pass = proxyScore >= target + passMargin;
                 string status = pass ? "明确通过" : "保守失败";
-                string display = metricMode == "vmaf" ? $"VMAF={proxyScore :F4}" : $"分数={proxyScore:F4}";
+                string display = metricMode == "vmaf" ? $"VMAF={proxyScore:F4}" : $"分数={proxyScore:F4}";
                 SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
 
                 if (pass)

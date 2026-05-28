@@ -268,7 +268,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string cleanBase = effectiveAlpha ? baseFmt.Replace("a", "") : baseFmt;
 
             if (config.AutoSource)
-                return new List<string> { actualPixFmt };
+                return [actualPixFmt];
 
             var attempts = new List<string>();
             int startChroma = cleanBase.Contains("444") ? 0 :
@@ -302,7 +302,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
             }
 
-            return attempts.Distinct().ToList();
+            return [.. attempts.Distinct()];
         }
 
         // 5. Ö´ÐÐ×îÖÕ±àÂë

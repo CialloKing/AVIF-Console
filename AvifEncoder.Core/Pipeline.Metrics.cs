@@ -142,8 +142,8 @@ namespace AvifEncoder
 
 
         // CSV 列名常量，修改这里即可同步表头和数据行
-        private static readonly string[] CsvColumnNames = new[]
-{
+        private static readonly string[] CsvColumnNames =
+[
     "文件名", "原始文件名", "原始大小", "输出大小", "压缩率",
     "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
     "XPSNR-Y", "XPSNR-U", "XPSNR-V", "W-XPSNR",
@@ -153,7 +153,7 @@ namespace AvifEncoder
     "AOM参数", "完整命令行",
     "缓存复用", "状态", "失败原因",
     "搜索评估次数"
-};
+];
         /// <summary>
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>

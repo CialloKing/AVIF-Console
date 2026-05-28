@@ -140,6 +140,8 @@
             // cmbTemplate
             // 
             cmbTemplate.BackColor1 = Color.Transparent;
+            cmbTemplate.BorderColor = Color.Gainsboro;
+            cmbTemplate.BorderColorFocus = Color.White;
             cmbTemplate.DropDownAnimationFPS = 0;
             cmbTemplate.DropDownBackColor = Color.Transparent;
             cmbTemplate.DropDownBackdropBlurPasses = 2;
@@ -163,6 +165,8 @@
             // cmbPreset
             // 
             cmbPreset.BackColor1 = Color.Transparent;
+            cmbPreset.BorderColor = Color.Gainsboro;
+            cmbPreset.BorderColorFocus = Color.White;
             cmbPreset.DropDownAnimationFPS = 0;
             cmbPreset.DropDownBackColor = Color.Transparent;
             cmbPreset.DropDownBackdropBlurPasses = 2;
@@ -186,6 +190,8 @@
             // cmbEncoder
             // 
             cmbEncoder.BackColor1 = Color.Transparent;
+            cmbEncoder.BorderColor = Color.Gainsboro;
+            cmbEncoder.BorderColorFocus = Color.White;
             cmbEncoder.DropDownAnimationFPS = 0;
             cmbEncoder.DropDownBackColor = Color.Transparent;
             cmbEncoder.DropDownBackdropBlurPasses = 2;
@@ -209,6 +215,8 @@
             // cmbConflict
             // 
             cmbConflict.BackColor1 = Color.Transparent;
+            cmbConflict.BorderColor = Color.Gainsboro;
+            cmbConflict.BorderColorFocus = Color.White;
             cmbConflict.DropDownAnimationFPS = 0;
             cmbConflict.DropDownBackColor = Color.Transparent;
             cmbConflict.DropDownBackdropBlurPasses = 2;
@@ -232,6 +240,8 @@
             // cmbChroma
             // 
             cmbChroma.BackColor1 = Color.Transparent;
+            cmbChroma.BorderColor = Color.Gainsboro;
+            cmbChroma.BorderColorFocus = Color.White;
             cmbChroma.DropDownAnimationFPS = 0;
             cmbChroma.DropDownBackColor = Color.Transparent;
             cmbChroma.DropDownBackdropBlurPasses = 2;
@@ -255,6 +265,8 @@
             // cmbBitDepth
             // 
             cmbBitDepth.BackColor1 = Color.Transparent;
+            cmbBitDepth.BorderColor = Color.Gainsboro;
+            cmbBitDepth.BorderColorFocus = Color.White;
             cmbBitDepth.DropDownAnimationFPS = 0;
             cmbBitDepth.DropDownBackColor = Color.Transparent;
             cmbBitDepth.DropDownBackdropBlurPasses = 2;
@@ -278,6 +290,8 @@
             // cmbQualityMode
             // 
             cmbQualityMode.BackColor1 = Color.Transparent;
+            cmbQualityMode.BorderColor = Color.Gainsboro;
+            cmbQualityMode.BorderColorFocus = Color.White;
             cmbQualityMode.DropDownAnimationFPS = 0;
             cmbQualityMode.DropDownBackColor = Color.Transparent;
             cmbQualityMode.DropDownBackdropBlurPasses = 2;
@@ -302,6 +316,7 @@
             // 
             numSearchCpuUsed.AllowDrop = true;
             numSearchCpuUsed.BackColor1 = Color.Transparent;
+            numSearchCpuUsed.BorderColorFocus = Color.White;
             numSearchCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
             numSearchCpuUsed.DecimalPlaces = 15;
             numSearchCpuUsed.ForeColor = Color.White;
@@ -316,6 +331,7 @@
             // 
             numFinalCpuUsed.AllowDrop = true;
             numFinalCpuUsed.BackColor1 = Color.Transparent;
+            numFinalCpuUsed.BorderColorFocus = Color.White;
             numFinalCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
             numFinalCpuUsed.DecimalPlaces = 15;
             numFinalCpuUsed.ForeColor = Color.White;
@@ -330,6 +346,7 @@
             // 
             numMaxRes.AllowDrop = true;
             numMaxRes.BackColor1 = Color.Transparent;
+            numMaxRes.BorderColorFocus = Color.White;
             numMaxRes.CaretColor = Color.FromArgb(220, 220, 220);
             numMaxRes.DecimalPlaces = 15;
             numMaxRes.ForeColor = Color.White;
@@ -347,6 +364,7 @@
             // 
             numJobs.AllowDrop = true;
             numJobs.BackColor1 = Color.Transparent;
+            numJobs.BorderColorFocus = Color.White;
             numJobs.CaretColor = Color.FromArgb(220, 220, 220);
             numJobs.DecimalPlaces = 15;
             numJobs.ForeColor = Color.White;
@@ -361,6 +379,7 @@
             // 
             numQualityValue.AllowDrop = true;
             numQualityValue.BackColor1 = Color.Transparent;
+            numQualityValue.BorderColorFocus = Color.White;
             numQualityValue.CaretColor = Color.FromArgb(220, 220, 220);
             numQualityValue.DecimalPlaces = 15;
             numQualityValue.ForeColor = Color.White;
@@ -521,6 +540,8 @@
             // cmbMetric
             // 
             cmbMetric.BackColor1 = Color.Transparent;
+            cmbMetric.BorderColor = Color.Gainsboro;
+            cmbMetric.BorderColorFocus = Color.White;
             cmbMetric.DropDownAnimationFPS = 0;
             cmbMetric.DropDownBackColor = Color.Transparent;
             cmbMetric.DropDownBackdropBlurPasses = 2;
@@ -561,6 +582,7 @@
             // numCrfMax
             // 
             numCrfMax.BackColor1 = Color.Transparent;
+            numCrfMax.BorderColorFocus = Color.White;
             numCrfMax.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfMax.ForeColor = Color.White;
             numCrfMax.HoverArrowColor = Color.Gray;
@@ -573,6 +595,7 @@
             // numCrfMin
             // 
             numCrfMin.BackColor1 = Color.Transparent;
+            numCrfMin.BorderColorFocus = Color.White;
             numCrfMin.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfMin.ForeColor = Color.White;
             numCrfMin.HoverArrowColor = Color.Gray;
@@ -586,6 +609,7 @@
             // 
             numCrfFix.AllowDrop = true;
             numCrfFix.BackColor1 = Color.Transparent;
+            numCrfFix.BorderColorFocus = Color.White;
             numCrfFix.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfFix.ForeColor = Color.White;
             numCrfFix.HoverArrowColor = Color.Gray;
@@ -643,6 +667,8 @@
             // txtTemplate
             // 
             txtTemplate.BackColor1 = Color.Transparent;
+            txtTemplate.BorderColorFocus = Color.White;
+            txtTemplate.Cursor = Cursors.IBeam;
             txtTemplate.ForeColor = Color.WhiteSmoke;
             txtTemplate.Location = new Point(230, 113);
             txtTemplate.Margin = new Padding(2);
@@ -685,6 +711,7 @@
             // 
             btnStop.AnimationFPS = 0;
             btnStop.BackColor1 = Color.Transparent;
+            btnStop.BorderColor = Color.White;
             btnStop.BorderRadius = 10;
             btnStop.ForeColor = Color.WhiteSmoke;
             btnStop.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -741,7 +768,8 @@
             // 
             // progressBar1
             // 
-            progressBar1.BorderColor = Color.Gainsboro;
+            progressBar1.BorderColor = Color.White;
+            progressBar1.BorderSize = 1;
             progressBar1.DisabledOverlayColor = Color.White;
             progressBar1.FillColor = Color.FromArgb(0, 120, 215);
             progressBar1.Location = new Point(37, 528);
@@ -750,12 +778,13 @@
             progressBar1.Size = new Size(800, 20);
             progressBar1.TabIndex = 7;
             progressBar1.TextPadding = new Padding(0);
-            progressBar1.TrackColor = Color.White;
+            progressBar1.TrackColor = Color.Transparent;
             // 
             // btnBrowseOutput
             // 
             btnBrowseOutput.AnimationFPS = 0;
             btnBrowseOutput.BackColor1 = Color.Transparent;
+            btnBrowseOutput.BorderColor = Color.Gainsboro;
             btnBrowseOutput.BorderRadius = 10;
             btnBrowseOutput.ForeColor = Color.WhiteSmoke;
             btnBrowseOutput.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -772,6 +801,7 @@
             // 
             txtOutput.AllowDrop = true;
             txtOutput.BackColor1 = Color.Transparent;
+            txtOutput.BorderColorFocus = Color.White;
             txtOutput.ForeColor = Color.WhiteSmoke;
             txtOutput.Location = new Point(156, 67);
             txtOutput.Margin = new Padding(2);
@@ -784,6 +814,7 @@
             // 
             btnBrowseInput.AnimationFPS = 0;
             btnBrowseInput.BackColor1 = Color.Transparent;
+            btnBrowseInput.BorderColor = Color.Gainsboro;
             btnBrowseInput.BorderRadius = 10;
             btnBrowseInput.ForeColor = Color.WhiteSmoke;
             btnBrowseInput.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -800,6 +831,7 @@
             // 
             btnStart.AnimationFPS = 0;
             btnStart.BackColor1 = Color.Transparent;
+            btnStart.BorderColor = Color.White;
             btnStart.BorderRadius = 10;
             btnStart.ForeColor = Color.WhiteSmoke;
             btnStart.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -816,6 +848,7 @@
             // 
             txtInput.AllowDrop = true;
             txtInput.BackColor1 = Color.Transparent;
+            txtInput.BorderColorFocus = Color.White;
             txtInput.ForeColor = Color.WhiteSmoke;
             txtInput.Location = new Point(156, 21);
             txtInput.Margin = new Padding(2);

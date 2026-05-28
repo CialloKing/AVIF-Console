@@ -106,7 +106,7 @@ namespace AvifEncoder
         /// <summary>编码耗时（秒）</summary>
         public double EncodeTimeSec { get; set; }
         /// <summary>前 N 个差异像素的精确采样（最多 500 条）</summary>
-        public List<MismatchSample> MismatchSamples { get; set; } = new();
+        public List<MismatchSample> MismatchSamples { get; set; } = [];
 
         /// <summary> 整理为人类可读摘要 </summary>
         public string ToSummary()

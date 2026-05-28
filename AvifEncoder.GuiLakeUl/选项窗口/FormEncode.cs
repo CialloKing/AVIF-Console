@@ -125,10 +125,12 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             {
                 "covers-{index}.avif",
                 "{name}.avif",
-                "{name}_CRF{crf}.avif",
+                "{name}_{encoder}_crf{crf}.avif",
+                "{name}_{encoder}_crf{crf}_s{speed}.avif",
                 "{name}_lossless.avif",
-                "{index:000}_{name}.avif",
-                "output-{index}.avif",
+                "{name}_{encoder}_{pixfmt}.avif",
+                "{date}/{name}_{crf}.avif",
+                "{name}_{encoder}_crf{crf}_{pixfmt}.avif",
                 "自定义..."
             });
             cmbTemplate.SelectedIndex = 0;
@@ -413,17 +415,16 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             SetQualityRange(mode);
             // 根据模式设置默认值（仅当手动切换时使用）
-            switch (mode)
+            numQualityValue.Value = mode switch
             {
-                case "VMAF": numQualityValue.Value = 95; break;
-                case "PSNR-Y": numQualityValue.Value = 40; break;
-                case "XPSNR": numQualityValue.Value = 45; break;
-                case "SSIMULACRA2": numQualityValue.Value = 90; break;
-                case "Butteraugli 3-norm": numQualityValue.Value = 1; break;
-                case "GMSD": numQualityValue.Value = 0.2; break;
-                default: numQualityValue.Value = 0.95; break;
-            }
-
+                "VMAF" => 95,
+                "PSNR-Y" => 40,
+                "XPSNR" => 45,
+                "SSIMULACRA2" => 90,
+                "Butteraugli 3-norm" => 1,
+                "GMSD" => 0.2,
+                _ => 0.95,
+            };
             string metric = mode.ToLower() switch
             {
                 "vmaf" => "vmaf",
@@ -729,11 +730,13 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         /// </summary>
         private PresetConfig BuildConfigFromUI()
         {
-            var config = new PresetConfig();
-            config.Encoder = cmbEncoder.SelectedIndex >= 0
-                ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString()
-                    ?? "libaom-av1"
-                : "libaom-av1";
+            var config = new PresetConfig
+            {
+                Encoder = cmbEncoder.SelectedIndex >= 0
+                    ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString()
+                        ?? "libaom-av1"
+                    : "libaom-av1"
+            };
 
             int jobs = (int)numJobs.Value;
             if (jobs > 0)

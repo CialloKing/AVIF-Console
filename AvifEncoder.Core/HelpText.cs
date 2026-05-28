@@ -50,13 +50,25 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 其他编码选项:
   -l, --lossless               无损模式（编解码后逐像素验证）
   -t, --output-template <模板>  输出文件名模板 (默认: covers-{index}.avif)
-                               可用占位符: {name} 源文件主名, {index} 序号(01,02...)
-                               正确示例:
-                                 -m {name}.avif            按源文件名
-                                 -m img_{index}.avif       自定义前缀
-                                 -m {name}_{index}.avif   源名+序号
-                               错误示例:
-                                 -m ""{name}.avif""        （引号会被当成文件名的一部分）
+                               可用占位符及示例(假设原图 photo.png, encoder=libaom-av1, crf=30, speed=4):
+                                 {name}      → photo
+                                 {ext}       → .png
+                                 {dir}       → photos (源文件所在目录名)
+                                 {index}     → 01 (默认2位)
+                                 {index:000} → 001 (3位补零)
+                                 {encoder}   → libaom-av1
+                                 {crf}       → 30
+                                 {speed}     → 4
+                                 {pixfmt}    → yuv444p
+                                 {lossless}  → lossless 或 lossy
+                                 {bitdepth}  → 8 或 10
+                                 {date}      → 2022-02-22
+                                 {time}      → 22-22-22
+                               推荐模板及输出示例:
+                                 {name}.avif                          → photo.avif
+                                 {name}_{encoder}_crf{crf}.avif       → photo_libaom-av1_crf30.avif
+                                 {name}_{crf}_{pixfmt}.avif           → photo_30_yuv444p.avif
+                                 {date}/{name}_{crf}.avif             → 2022-02-22/photo_30.avif
   -r, --recursive              递归处理子目录
 
       --serial-encode          极限压缩模式：强制单线程，关闭所有并行（tile/row-mt/内部线程）
@@ -362,15 +374,36 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
 【输出文件名模板】
 
-  默认模板：covers-{index}.avif
-  可用占位符：
-    {name}  — 源文件主名（不含扩展名）
-    {index} — 两位数字序号（01, 02, ...）
+  默认模板：covers-{index}.avif → covers-01.avif
 
-  示例：
-    {name}.avif          → photo.avif
-    img_{index}.avif     → img_01.avif
-    {name}_{index}.avif  → photo_01.avif
+  ── 基础占位符（假设原图 photo.png 位于 photos/ 目录）──
+    {name}        → photo             源文件主名
+    {ext}         → .png              源扩展名
+    {dir}         → photos            源文件所在目录名
+    {index}       → 01                默认2位数字序号
+    {index:000}   → 001               自定义宽度补零
+    {index:0000}  → 0001              4位补零
+
+  ── 编码参数占位符（假设 libaom-av1, crf=30, cpu-used=4）──
+    {encoder}     → libaom-av1       编码器名
+    {crf}         → 30               CRF值
+    {speed}       → 4                cpu-used值
+    {pixfmt}      → yuv444p          像素格式
+    {lossless}    → lossless         无损/有损标识
+    {bitdepth}    → 10               位深
+
+  ── 时间占位符 ──
+    {date}        → 2022-02-22
+    {time}        → 22-22-22
+    {datetime}    → 2022-02-22_22-22-22
+
+  ── 模板示例及输出 ──
+    {name}.avif                          → photo.avif
+    {name}_{encoder}_crf{crf}.avif       → photo_libaom-av1_crf30.avif
+    {name}_{crf}_{pixfmt}.avif           → photo_30_yuv444p.avif
+    {date}/{name}_{crf}.avif             → 2022-02-22/photo_30.avif
+    {name}_{encoder}_crf{crf}_s{speed}_{pixfmt}.avif
+      → photo_libaom-av1_crf30_s4_yuv444p10le.avif
 
 ═══════════════════════════════════════
 

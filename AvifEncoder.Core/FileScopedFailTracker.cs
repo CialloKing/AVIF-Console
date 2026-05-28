@@ -4,8 +4,8 @@ namespace AvifEncoder
 {
     internal sealed class FileScopedFailTracker
     {
-        public HashSet<int> KnownBadCrfs { get; } = new();
-        public Dictionary<int, int> CrfFailCount { get; } = new();
+        public HashSet<int> KnownBadCrfs { get; } = [];
+        public Dictionary<int, int> CrfFailCount { get; } = [];
         public const int HardFailThreshold = 2;
         public const int AvoidRadius = 2;
 

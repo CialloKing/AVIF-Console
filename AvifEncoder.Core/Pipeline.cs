@@ -115,7 +115,7 @@ namespace AvifEncoder
 
         private const double SSIMMargin = 0.0002;
 
-        private readonly ProgressTracker _progress = new ProgressTracker();
+        private readonly ProgressTracker _progress = new();
 
         private readonly IProgress<int>? _guiProgress;   // ★ 新增字段，不与 _progress 冲突
 
@@ -1203,24 +1203,47 @@ namespace AvifEncoder
         /// </summary>
         private string GetOutputFileName(string inputFile, int index)
         {
-            // 清洗模板，去除可能意外带入的引号、末尾空白
             string template = _config.OutputNameFormat.Trim('"', '\'').Trim();
             string name = Path.GetFileNameWithoutExtension(inputFile);
+            string ext = Path.GetExtension(inputFile);
+            string dir = Path.GetFileName(Path.GetDirectoryName(inputFile)) ?? "";
+            var now = DateTime.Now;
 
+            // 基础占位符
             string result = template
                 .Replace("{name}", name)
-                .Replace("{filename}", name)        // 别名
-                .Replace("{index}", index.ToString("D2"));
+                .Replace("{filename}", name)
+                .Replace("{ext}", ext)
+                .Replace("{dir}", dir);
 
-            // 确保扩展名为 .avif，但避免重复追加（例如模板已含 .avif 的情况）
+            // 编码参数占位符
+            result = result
+                .Replace("{encoder}", _config.Encoder)
+                .Replace("{crf}", _config.BaseCRF.ToString())
+                .Replace("{preset}", _config.MetricMode ?? "")
+                .Replace("{speed}", _config.FinalCpuUsed.ToString())
+                .Replace("{pixfmt}", _config.PixelFormat ?? "auto")
+                .Replace("{bitdepth}", _config.BitDepth.ToString())
+                .Replace("{lossless}", _config.Lossless ? "lossless" : "lossy");
+
+            // 时间占位符
+            result = result
+                .Replace("{date}", now.ToString("yyyy-MM-dd"))
+                .Replace("{time}", now.ToString("HH-mm-ss"))
+                .Replace("{datetime}", now.ToString("yyyy-MM-dd_HH-mm-ss"));
+
+            // {index} 支持自定义宽度: {index}→01, {index:000}→001
+            result = Regex.Replace(result, @"\{index(?::(\d+))?\}",
+                m => index.ToString("D" + (m.Groups[1].Success ? m.Groups[1].Value : "2")));
+
+            // 确保扩展名为 .avif
             if (!result.EndsWith(".avif", StringComparison.OrdinalIgnoreCase))
                 result += ".avif";
 
-            // 替换所有非法文件名字符（此时引号已经移除，不会有下划线）
+            // 替换非法文件名字符
             foreach (char c in Path.GetInvalidFileNameChars())
                 result = result.Replace(c, '_');
 
-            // 最后再 trim 一下，防止首尾出现空格或控制符
             return result.Trim();
         }
 
@@ -1382,7 +1405,7 @@ namespace AvifEncoder
         private async Task<List<EncodeResult?>> ProcessInitialBatchAsync(List<(string path, int index)> files)
         {
             var result = await ProcessFilesAsync(files, _config, isRetry: false);
-            return result.Select(r => (EncodeResult?)r).ToList();
+            return [.. result.Select(r => (EncodeResult?)r)];
         }
 
         /// <summary> 重试失败的文件，并返回合并后的结果列表 </summary>
@@ -1424,15 +1447,15 @@ namespace AvifEncoder
             // ★ 等待所有后台高级指标计算完成
             if (!_advancedMetricTasks.IsEmpty)
             {
-                SafeWriteLine("⏳ 等待后台高级指标计算完成...");
-                try { await Task.WhenAll(_advancedMetricTasks.ToArray()); }
+                SafeWriteLine("?? 等待后台高级指标计算完成...");
+                try { await Task.WhenAll([.. _advancedMetricTasks]); }
                 catch (Exception ex) { _logger.LogError($"后台高级任务异常: {ex.Message}"); }
             }
 
             // ★ 等待所有后台 XPSNR 计算完成并回填
             if (!_xpsnrTasks.IsEmpty)
             {
-                try { await Task.WhenAll(_xpsnrTasks.ToArray()); }
+                try { await Task.WhenAll([.. _xpsnrTasks]); }
                 catch (Exception ex) { _logger.LogInfo($"XPSNR 后台异常: {ex.Message}"); }
             }
 

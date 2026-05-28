@@ -124,8 +124,8 @@ namespace AvifEncoder.GuiLakeUl
         private struct RECT
         {
             public int Left, Top, Right, Bottom;
-            public Rectangle ToRectangle() => new Rectangle(Left, Top, Right - Left, Bottom - Top);
-            public static RECT FromRectangle(Rectangle r) => new RECT
+            public Rectangle ToRectangle() => new(Left, Top, Right - Left, Bottom - Top);
+            public static RECT FromRectangle(Rectangle r) => new()
             {
                 Left = r.Left,
                 Top = r.Top,

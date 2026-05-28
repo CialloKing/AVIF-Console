@@ -290,16 +290,16 @@ namespace AvifEncoder.Gui
             SetQualityValueRange(mode);
 
             // 根据模式设置默认质量值（用户手动切换时触发）
-            switch (mode)
+            numQualityValue.Value = mode switch
             {
-                case "VMAF": numQualityValue.Value = 95; break;
-                case "PSNR-Y": numQualityValue.Value = 40; break;
-                case "XPSNR": numQualityValue.Value = 45; break;
-                case "SSIMULACRA2": numQualityValue.Value = 90; break;
-                case "Butteraugli 3-norm": numQualityValue.Value = 1; break;
-                case "GMSD": numQualityValue.Value = 0.2m; break;
-                default: numQualityValue.Value = 0.95m; break;
-            }
+                "VMAF" => 95,
+                "PSNR-Y" => 40,
+                "XPSNR" => 45,
+                "SSIMULACRA2" => 90,
+                "Butteraugli 3-norm" => 1,
+                "GMSD" => 0.2m,
+                _ => 0.95m,
+            };
 
             // 联动：搜索度量自动跟随目标类型
             if (mode != "无")
@@ -342,8 +342,10 @@ namespace AvifEncoder.Gui
                 return;
             }
 
-            var config = new PresetConfig();
-            config.Encoder = cmbEncoder.SelectedItem?.ToString() ?? "libaom-av1";
+            var config = new PresetConfig
+            {
+                Encoder = cmbEncoder.SelectedItem?.ToString() ?? "libaom-av1"
+            };
 
             int jobs = (int)numJobs.Value;
             if (jobs > 0) { config.MaxJobs = jobs; config.UserSpecifiedMaxJobs = true; }

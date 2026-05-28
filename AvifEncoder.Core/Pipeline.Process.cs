@@ -402,7 +402,7 @@ namespace AvifEncoder
                         }
 
                         _logger.LogInfo(
-                            $"✘ 无损验证失败：{verReport.ToSummary()} ({name})");
+                            $"?? 无损验证失败：{verReport.ToSummary()} ({name})");
                         SafeWriteLine(
                             $" [FAIL] [{name}] 无损验证失败，" +
                             $"{verReport.FailureType}，" +
@@ -804,11 +804,14 @@ namespace AvifEncoder
 
                 string firstChannel = firstChannelIdx switch
                 {
-                    0 => "R", 1 => "G", 2 => "B", _ => "A"
+                    0 => "R",
+                    1 => "G",
+                    2 => "B",
+                    _ => "A"
                 };
 
                 _logger.LogInfo(
-                    $"✘ 无损验证失败 ({name})：" +
+                    $"?? 无损验证失败 ({name})：" +
                     $"FailureType={failureType} " +
                     $"Mismatches={mismatchCount} MaxDelta={maxDelta} " +
                     $"FirstAt=({firstMismatchX},{firstMismatchY}) " +
@@ -1049,9 +1052,9 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
                 FinalGMSD = metrics?.GMSD,
 
-                SearchEvaluations = searchResult.SearchEvalCount
+                SearchEvaluations = searchResult.SearchEvalCount,
+                AdvancedMetricsCacheKey = advancedCacheKey
             };
-            result.AdvancedMetricsCacheKey = advancedCacheKey;
 
             // 标注 AOM 参数降级
             string expectedAom = _config.GetEffectiveAomParams();
