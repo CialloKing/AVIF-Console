@@ -383,7 +383,10 @@ namespace AvifEncoder
             }
             if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
             if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
-            if (config.MinCRF >= config.MaxCRF) throw new Exception("最小 CRF 必须小于最大 CRF");
+            if (config.MinCRF >= config.MaxCRF)
+                throw new Exception(
+                    $"CRF 范围无效：最小值 {config.MinCRF} 必须小于最大值 {config.MaxCRF}。" +
+                    " 示例: --crf 20:40 或 -crf 20:40");
             if (opts.Jobs.HasValue) { config.MaxJobs = opts.Jobs.Value; config.UserSpecifiedMaxJobs = true; }
             if (!string.IsNullOrEmpty(opts.OutputTemplate)) config.OutputNameFormat = opts.OutputTemplate;
             if (opts.MaxResolution.HasValue) config.MaxResolution = opts.MaxResolution.Value;

@@ -665,6 +665,14 @@ namespace AvifEncoder
 
             bool isHardwareEncoder = !Av1EncoderFactory.Get(config.Encoder).SupportsLossless;
 
+            // 防呆：硬件编码器不支持无损模式
+            if (config.Lossless && !Av1EncoderFactory.Get(config.Encoder).SupportsLossless)
+            {
+                throw new ArgumentException(
+                    $"编码器 {config.Encoder} 不支持无损模式。" +
+                    "请改用 libaom-av1 / libsvtav1 / librav1e 等软件编码器。");
+            }
+
             // 警告：非 libaom 编码器不支持 AOM 高级参数
             if (!Av1EncoderFactory.Get(config.Encoder).SupportsAomParams)
             {
@@ -1185,7 +1193,18 @@ namespace AvifEncoder
                 Console.OutputEncoding = Encoding.UTF8;
                 _progress.Start(DateTime.Now);
 
-                _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} SSIM={_config.TargetSSIM}");
+                _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} TargetSSIM={_config.TargetSSIM}");
+                _logger.LogInfo(
+                    $"Encoder={_config.Encoder} " +
+                    $"Lossless={_config.Lossless} " +
+                    $"PixelFmt={_config.PixelFormat ?? "auto"} " +
+                    $"BitDepth={_config.BitDepth} " +
+                    $"CRFSearch={_config.UseCRFSearch} " +
+                    $"MaxJobs={_config.MaxJobs}");
+                if (_config.Lossless)
+                {
+                    _logger.LogInfo("无损模式：编码后逐像素验证，失败文件隔离到 _failed_verification/");
+                }
 
                 await PrintStartupInfoAsync();
 
@@ -1362,7 +1381,20 @@ namespace AvifEncoder
             SafeWriteLine($"原始大小: {FormatSize(totalOriginal)}  输出大小: {FormatSize(totalOutput)}");
             SafeWriteLine($"整体压缩率: {overallRatio:P1}  总耗时: {FormatTimeSpan(totalTime)}");
             // 移除旧的缓存计数输出，因为 ICacheManager 未暴露计数属性
-            _logger.LogInfo($"Finished. 成功: {successCount}, 失败: {failCount}, 跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
+            _logger.LogInfo(
+                $"Finished. 成功: {successCount}, 失败: {failCount}, " +
+                $"跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
+            if (successCount > 0)
+            {
+                double avgEncode = allResults
+                    .Where(r => r.Success)
+                    .Select(r => r.EncodeTime.TotalSeconds)
+                    .DefaultIfEmpty(0).Average();
+                _logger.LogInfo(
+                    $"平均编码耗时: {avgEncode:F1}s, " +
+                    $"整体压缩率: {overallRatio:P1}, " +
+                    $"总输出: {FormatSize(totalOutput)}");
+            }
 
 
             // 从缓存回填高级指标

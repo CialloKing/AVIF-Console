@@ -119,6 +119,20 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             txtTemplate.Text = "covers-{index}.avif";
 
+            // 模板预设下拉框
+            cmbTemplate.Items.Clear();
+            cmbTemplate.Items.AddRange(new[]
+            {
+                "covers-{index}.avif",
+                "{name}.avif",
+                "{name}_CRF{crf}.avif",
+                "{name}_lossless.avif",
+                "{index:000}_{name}.avif",
+                "output-{index}.avif",
+                "自定义..."
+            });
+            cmbTemplate.SelectedIndex = 0;
+
             numCrfFix.Minimum = 0; numCrfFix.Maximum = 63;
             numCrfMin.Minimum = 0; numCrfMin.Maximum = 63;
             numCrfMax.Minimum = 0; numCrfMax.Maximum = 63;
@@ -186,6 +200,36 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             numSearchCpuUsed.ValueChanged += MarkCustom;
             numFinalCpuUsed.ValueChanged += MarkCustom;
             txtTemplate.TextChanged += MarkCustom;
+
+            // cmbTemplate 选择 → 同步到 txtTemplate
+            cmbTemplate.SelectedIndexChanged += (s, e) =>
+            {
+                if (cmbTemplate.SelectedIndex >= 0 &&
+                    cmbTemplate.SelectedIndex < cmbTemplate.Items.Count - 1)
+                {
+                    txtTemplate.Text = cmbTemplate.SelectedItem?.ToString() ?? "";
+                }
+            };
+
+            // 用户手动改 txtTemplate → 下拉自动切到"自定义..."
+            txtTemplate.TextChanged += (s, e) =>
+            {
+                string current = txtTemplate.Text.Trim();
+                bool found = false;
+                for (int i = 0; i < cmbTemplate.Items.Count - 1; i++)
+                {
+                    if (string.Equals(cmbTemplate.Items[i].ToString(), current,
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (cmbTemplate.SelectedIndex != i)
+                            cmbTemplate.SelectedIndex = i;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && cmbTemplate.SelectedIndex != cmbTemplate.Items.Count - 1)
+                    cmbTemplate.SelectedIndex = cmbTemplate.Items.Count - 1;
+            };
             chkSearch.CheckedChanged += MarkCustom;
             rbCrfFix.CheckedChanged += MarkCustom;
             rbCrfRange.CheckedChanged += MarkCustom;
@@ -566,6 +610,24 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 MessageBox.Show($"输入目录中没有支持的图片文件:\n{inputDir}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+
+            // 防呆：输出目录已有 avif 文件时确认
+            try
+            {
+                var existingAvif = Directory.EnumerateFiles(outputDir, "*.avif",
+                    SearchOption.TopDirectoryOnly).Take(1).ToList();
+                if (existingAvif.Count > 0)
+                {
+                    var existingCount = Directory.EnumerateFiles(outputDir, "*.avif",
+                        SearchOption.TopDirectoryOnly).Count();
+                    var confirm = MessageBox.Show(
+                        $"输出目录中已有 {existingCount} 个 avif 文件，\n" +
+                        "继续编码可能会覆盖同名文件。\n\n是否继续？",
+                        "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (confirm != DialogResult.Yes) return;
+                }
+            }
+            catch { }
 
             _isEncoding = true;
             btnStart.Enabled = false;

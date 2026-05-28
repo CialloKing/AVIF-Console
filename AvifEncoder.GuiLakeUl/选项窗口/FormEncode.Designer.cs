@@ -29,6 +29,7 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            cmbTemplate = new LakeUI.ModernComboBox();
             cmbPreset = new LakeUI.ModernComboBox();
             cmbEncoder = new LakeUI.ModernComboBox();
             cmbConflict = new LakeUI.ModernComboBox();
@@ -62,7 +63,6 @@
             label5 = new Label();
             rbCrfRange = new LakeUI.ModernCheckBox();
             label4 = new Label();
-            modernButton1 = new LakeUI.ModernButton();
             txtTemplate = new LakeUI.ModernTextBox();
             label3 = new Label();
             label2 = new Label();
@@ -88,6 +88,7 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(cmbTemplate);
             modernPanel1.Controls.Add(cmbPreset);
             modernPanel1.Controls.Add(cmbEncoder);
             modernPanel1.Controls.Add(cmbConflict);
@@ -114,7 +115,6 @@
             modernPanel1.Controls.Add(label6);
             modernPanel1.Controls.Add(cmbMetric);
             modernPanel1.Controls.Add(grpCrfMode);
-            modernPanel1.Controls.Add(modernButton1);
             modernPanel1.Controls.Add(txtTemplate);
             modernPanel1.Controls.Add(label3);
             modernPanel1.Controls.Add(label2);
@@ -136,6 +136,29 @@
             modernPanel1.ScrollBarMode = LakeUI.ModernPanel.ScrollMode.None;
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
+            // 
+            // cmbTemplate
+            // 
+            cmbTemplate.BackColor1 = Color.Transparent;
+            cmbTemplate.DropDownAnimationFPS = 0;
+            cmbTemplate.DropDownBackColor = Color.Transparent;
+            cmbTemplate.DropDownBackdropBlurPasses = 2;
+            cmbTemplate.DropDownBackdropBlurRadius = 5;
+            cmbTemplate.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbTemplate.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
+            cmbTemplate.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbTemplate.DropDownSelectedColor = Color.Transparent;
+            cmbTemplate.DropDownSelectedForeColor = Color.White;
+            cmbTemplate.ForeColor = Color.WhiteSmoke;
+            cmbTemplate.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            cmbTemplate.Location = new Point(37, 113);
+            cmbTemplate.Margin = new Padding(2, 2, 2, 2);
+            cmbTemplate.Name = "cmbTemplate";
+            cmbTemplate.SelectionColor = Color.Transparent;
+            cmbTemplate.Size = new Size(160, 32);
+            cmbTemplate.TabIndex = 65;
+            cmbTemplate.Text = "输出文件名模板";
+            cmbTemplate.ToolTipBackColor = Color.DimGray;
             // 
             // cmbPreset
             // 
@@ -453,7 +476,7 @@
             chkLossless.Name = "chkLossless";
             chkLossless.Size = new Size(150, 21);
             chkLossless.TabIndex = 42;
-            chkLossless.Text = "无损";
+            chkLossless.Text = "无损(目前有bug)";
             // 
             // label9
             // 
@@ -617,26 +640,14 @@
             label4.Text = "范围下限";
             label4.Click += label4_Click;
             // 
-            // modernButton1
-            // 
-            modernButton1.BackColor1 = Color.Transparent;
-            modernButton1.BorderRadius = 10;
-            modernButton1.ForeColor = Color.WhiteSmoke;
-            modernButton1.Location = new Point(37, 113);
-            modernButton1.Margin = new Padding(2);
-            modernButton1.Name = "modernButton1";
-            modernButton1.Size = new Size(97, 32);
-            modernButton1.TabIndex = 24;
-            modernButton1.Text = "输出文件名模板";
-            // 
             // txtTemplate
             // 
             txtTemplate.BackColor1 = Color.Transparent;
             txtTemplate.ForeColor = Color.WhiteSmoke;
-            txtTemplate.Location = new Point(156, 113);
+            txtTemplate.Location = new Point(230, 113);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
-            txtTemplate.Size = new Size(681, 32);
+            txtTemplate.Size = new Size(607, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
             // 
@@ -672,7 +683,6 @@
             // 
             // btnStop
             // 
-            btnStop.AnimationDuration = 0;
             btnStop.AnimationFPS = 0;
             btnStop.BackColor1 = Color.Transparent;
             btnStop.BorderRadius = 10;
@@ -744,6 +754,7 @@
             // 
             // btnBrowseOutput
             // 
+            btnBrowseOutput.AnimationFPS = 0;
             btnBrowseOutput.BackColor1 = Color.Transparent;
             btnBrowseOutput.BorderRadius = 10;
             btnBrowseOutput.ForeColor = Color.WhiteSmoke;
@@ -771,7 +782,6 @@
             // 
             // btnBrowseInput
             // 
-            btnBrowseInput.AnimationDuration = 0;
             btnBrowseInput.AnimationFPS = 0;
             btnBrowseInput.BackColor1 = Color.Transparent;
             btnBrowseInput.BorderRadius = 10;
@@ -788,7 +798,6 @@
             // 
             // btnStart
             // 
-            btnStart.AnimationDuration = 0;
             btnStart.AnimationFPS = 0;
             btnStart.BackColor1 = Color.Transparent;
             btnStart.BorderRadius = 10;
@@ -850,7 +859,6 @@
         private Label label2;
         private Label label3;
         private LakeUI.ModernTextBox txtTemplate;
-        private LakeUI.ModernButton modernButton1;
         private LakeUI.ModernCheckBox rbCrfFix;
         private LakeUI.ModernCheckBox rbCrfRange;
         private Label label4;
@@ -884,5 +892,6 @@
         private LakeUI.ModernComboBox cmbConflict;
         private LakeUI.ModernComboBox cmbEncoder;
         private LakeUI.ModernComboBox cmbPreset;
+        private LakeUI.ModernComboBox cmbTemplate;
     }
 }

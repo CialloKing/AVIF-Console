@@ -236,6 +236,7 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // modernPanel1
             // 
+            modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
             modernPanel1.Controls.Add(label1);
@@ -245,6 +246,7 @@ namespace AvifEncoder.GuiLakeUl
             modernPanel1.Controls.Add(btnLoadConfig);
             modernPanel1.Controls.Add(btnCheckUpdate);
             modernPanel1.Dock = DockStyle.Fill;
+            modernPanel1.ForeColor = Color.Transparent;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
             modernPanel1.Size = new Size(1114, 681);

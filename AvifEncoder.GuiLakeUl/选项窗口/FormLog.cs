@@ -68,6 +68,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             modernPanel1.BorderColor = Color.Transparent;
             modernPanel1.Controls.Add(txtLog);
             modernPanel1.Dock = DockStyle.Fill;
+            modernPanel1.ForeColor = Color.Transparent;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
             modernPanel1.Size = new Size(1114, 681);
