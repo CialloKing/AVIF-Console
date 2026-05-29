@@ -28,6 +28,10 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public FormLog? LogPage { get; set; }
 
+        /// <summary>缓存顶层 Form1 句柄用于任务栏进度（子 Form 的 Handle 不被任务栏识别）</summary>
+        private IntPtr _topLevelHandle;
+        public void SetTopLevelHandle(IntPtr h) => _topLevelHandle = h;
+
         private bool _isEncoding;
         private CancellationTokenSource? _cts;
         private bool _sweepPreviousCrfRangeMode;
@@ -630,7 +634,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             btnStop.Enabled = true;
             progressBar1.Value = 0;
             // 任务栏进度：初始 Normal 状态，进度 0/100
-            SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, 0u, 100u);
+            if (_topLevelHandle != IntPtr.Zero)
+                SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, 0u, 100u);
 
             try
             {
@@ -697,7 +702,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 _cts?.Dispose(); _cts = null;
                 progressBar1.Value = 100;
                 // 清除任务栏进度（恢复无进度状态）
-                SysTaskBarProgress.Clear(this.Handle);
+                if (_topLevelHandle != IntPtr.Zero)
+                    SysTaskBarProgress.Clear(_topLevelHandle);
             }
         }
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
@@ -716,7 +722,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 _cts.Cancel();
                 btnStop.Enabled = false;
                 // 任务栏进度设为暂停状态（可选）
-                SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
+                if (_topLevelHandle != IntPtr.Zero)
+                    SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
             }
         }
 
@@ -747,16 +754,17 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             config.RecurseSubdirectories = chkRecursive.Checked;
             config.Lossless = chkLossless.Checked;
 
-            config.UseCRFSearch = chkSearch.Checked;
+            // 固定CRF模式下搜索无效，范围模式下搜索才启用
             if (rbCrfFix.Checked)
             {
+                config.UseCRFSearch = false;
                 config.BaseCRF = (int)numCrfFix.Value;
             }
             else
             {
+                config.UseCRFSearch = chkSearch.Checked;
                 config.MinCRF = (int)numCrfMin.Value;
                 config.MaxCRF = (int)numCrfMax.Value;
-                config.UseCRFSearch = true;
             }
 
             if (chkSweep.Checked)
@@ -847,8 +855,9 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
             int clamped = Math.Max(0, Math.Min(percent, 100));
             progressBar1.Value = clamped;
-            // 同步任务栏进度（状态为 Normal，进度值 0~100）
-            SysTaskBarProgress.SetProgress(this.Handle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
+            // 同步任务栏进度
+            if (_topLevelHandle != IntPtr.Zero)
+                SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
         }
 
         private void label4_Click(object sender, EventArgs e)

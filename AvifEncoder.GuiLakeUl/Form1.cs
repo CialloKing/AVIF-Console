@@ -141,6 +141,7 @@ namespace AvifEncoder.GuiLakeUl
 
             _helpPage = new FormHelp();
             _encodePage = new FormEncode();
+            _encodePage.SetTopLevelHandle(this.Handle);
             _logPage = new FormLog();
             _otherOptionsPage = new FormOtherOptions();          // ★ 新增
 

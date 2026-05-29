@@ -161,6 +161,7 @@ namespace AvifEncoder
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
+        private readonly ConcurrentDictionary<string, byte> _allocatedOutputs = new();
 
 
         private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
@@ -549,14 +550,14 @@ namespace AvifEncoder
             switch (_config.FileConflictStrategy)
             {
                 case PresetConfig.ConflictStrategy.Overwrite:
-                    // 直接返回原路径，允许覆盖
-                    return candidate;
                 case PresetConfig.ConflictStrategy.Skip:
-                    // 跳过模式：不重命名，直接返回候选路径（后续会判断跳过）
+                    _allocatedOutputs.TryAdd(
+                        NormalizePathForExternalTool(candidate).ToLowerInvariant(), 0);
                     return candidate;
                 default: // Rename
-                    // 自动追加序号以避免同名冲突
-                    if (_fs.FileExists(candidate))
+                    // 自动追加序号以避免同名冲突（内存+磁盘双重检测）
+                    string allocatedKey = NormalizePathForExternalTool(candidate).ToLowerInvariant();
+                    if (_allocatedOutputs.ContainsKey(allocatedKey) || _fs.FileExists(candidate))
                     {
                         string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
                         string ext = Path.GetExtension(fileName);
@@ -566,8 +567,13 @@ namespace AvifEncoder
                             fileName = $"{nameNoExt}_{counter}{ext}";
                             candidate = Path.Combine(targetDir, fileName);
                             counter++;
-                        } while (_fs.FileExists(candidate));
+                        } while (_fs.FileExists(candidate) ||
+                                 _allocatedOutputs.ContainsKey(
+                                     NormalizePathForExternalTool(Path.Combine(targetDir, fileName)).ToLowerInvariant()));
                     }
+                    // 标记已分配，防止同批次同名覆盖
+                    _allocatedOutputs.TryAdd(
+                        NormalizePathForExternalTool(candidate).ToLowerInvariant(), 0);
                     return candidate;
             }
         }
@@ -1419,6 +1425,9 @@ namespace AvifEncoder
 
             SafeWriteLine($"\n[RETRY] 开始重试 {failures.Count} 个失败文件...");
 
+            // 调整总数避免进度超过 100%
+            _progress.SetTotalFiles(_progress.TotalFiles + failures.Count);
+
             // 使用 Result 中保存的完整输入路径，不再拼接
             var retryFiles = failures.Select(f => (filePath: f!.InputPath, index: f.Index)).ToList();
 
@@ -1509,6 +1518,9 @@ namespace AvifEncoder
                     // r.FinalADM = updated?.ADM;       // 暂不可用
                 }
             }
+
+            // ★ 全部流程真正完成 → 报告 100% 给 GUI
+            _guiProgress?.Report(100);
 
             // 标注外部工具缺失导致的高级指标空缺
             bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;

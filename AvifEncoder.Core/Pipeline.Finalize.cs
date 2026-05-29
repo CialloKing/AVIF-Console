@@ -567,11 +567,11 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 AppendCsvRow(r);
             }
 
-            // ★ 向 GUI 报告进度（0 ~ 100）
+            // ★ 向 GUI 报告进度（0 ~ 95%，剩余 5% 等后台指标完成后补齐）
             if (_progress.TotalFiles > 0)
             {
-                int pct = _progress.ProcessedCount * 100 / _progress.TotalFiles;
-                _guiProgress?.Report(Math.Min(pct, 100));
+                int pct = _progress.ProcessedCount * 95 / _progress.TotalFiles;
+                _guiProgress?.Report(Math.Min(pct, 95));
             }
         }
     }

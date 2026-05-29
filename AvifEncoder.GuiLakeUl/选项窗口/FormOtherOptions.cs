@@ -286,12 +286,15 @@ namespace AvifEncoder.GuiLakeUl
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
-            label1 = new Label();
+            modernButton1 = new ModernButton();
             btnSelectFont2 = new ModernButton();
             btnSelectFont = new ModernButton();
             btnSaveConfig = new ModernButton();
             btnLoadConfig = new ModernButton();
             btnCheckUpdate = new ModernButton();
+            btnOpenOutput = new ModernButton();
+            btnSysInfo = new ModernButton();
+            btnResetDefault = new ModernButton();
             modernPanel1.SuspendLayout();
             SuspendLayout();
             // 
@@ -300,12 +303,15 @@ namespace AvifEncoder.GuiLakeUl
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
-            modernPanel1.Controls.Add(label1);
+            modernPanel1.Controls.Add(modernButton1);
             modernPanel1.Controls.Add(btnSelectFont2);
             modernPanel1.Controls.Add(btnSelectFont);
             modernPanel1.Controls.Add(btnSaveConfig);
             modernPanel1.Controls.Add(btnLoadConfig);
             modernPanel1.Controls.Add(btnCheckUpdate);
+            modernPanel1.Controls.Add(btnOpenOutput);
+            modernPanel1.Controls.Add(btnSysInfo);
+            modernPanel1.Controls.Add(btnResetDefault);
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.ForeColor = Color.Transparent;
             modernPanel1.Location = new Point(0, 0);
@@ -313,16 +319,19 @@ namespace AvifEncoder.GuiLakeUl
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
             // 
-            // label1
+            // modernButton1
             // 
-            label1.AutoSize = true;
-            label1.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
-            label1.ForeColor = SystemColors.Highlight;
-            label1.Location = new Point(20, 36);
-            label1.Name = "label1";
-            label1.Size = new Size(376, 21);
-            label1.TabIndex = 4;
-            label1.Text = "该页选项大部分功能为测试版，如遇bug为正常情况";
+            modernButton1.AnimationFPS = 0;
+            modernButton1.BackColor1 = Color.Transparent;
+            modernButton1.Dock = DockStyle.Top;
+            modernButton1.Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            modernButton1.ForeColor = Color.DodgerBlue;
+            modernButton1.Location = new Point(1, 1);
+            modernButton1.Margin = new Padding(2);
+            modernButton1.Name = "modernButton1";
+            modernButton1.Size = new Size(1111, 52);
+            modernButton1.TabIndex = 9;
+            modernButton1.Text = "该页选项大部分功能为测试版，如遇bug为正常情况";
             // 
             // btnSelectFont2
             // 
@@ -387,7 +396,6 @@ namespace AvifEncoder.GuiLakeUl
             // 
             // btnOpenOutput
             // 
-            btnOpenOutput = new ModernButton();
             btnOpenOutput.BackColor1 = Color.Transparent;
             btnOpenOutput.ForeColor = Color.WhiteSmoke;
             btnOpenOutput.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -398,11 +406,9 @@ namespace AvifEncoder.GuiLakeUl
             btnOpenOutput.TabIndex = 6;
             btnOpenOutput.Text = "打开输出/日志目录";
             btnOpenOutput.Click += BtnOpenOutput_Click;
-            modernPanel1.Controls.Add(btnOpenOutput);
             // 
             // btnSysInfo
             // 
-            btnSysInfo = new ModernButton();
             btnSysInfo.BackColor1 = Color.Transparent;
             btnSysInfo.ForeColor = Color.WhiteSmoke;
             btnSysInfo.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -413,11 +419,9 @@ namespace AvifEncoder.GuiLakeUl
             btnSysInfo.TabIndex = 7;
             btnSysInfo.Text = "系统信息";
             btnSysInfo.Click += BtnSysInfo_Click;
-            modernPanel1.Controls.Add(btnSysInfo);
             // 
             // btnResetDefault
             // 
-            btnResetDefault = new ModernButton();
             btnResetDefault.BackColor1 = Color.Transparent;
             btnResetDefault.ForeColor = Color.WhiteSmoke;
             btnResetDefault.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
@@ -428,7 +432,6 @@ namespace AvifEncoder.GuiLakeUl
             btnResetDefault.TabIndex = 8;
             btnResetDefault.Text = "重置为默认设置";
             btnResetDefault.Click += BtnResetDefault_Click;
-            modernPanel1.Controls.Add(btnResetDefault);
             // 
             // FormOtherOptions
             // 
@@ -437,7 +440,6 @@ namespace AvifEncoder.GuiLakeUl
             Controls.Add(modernPanel1);
             Name = "FormOtherOptions";
             modernPanel1.ResumeLayout(false);
-            modernPanel1.PerformLayout();
             ResumeLayout(false);
         }
 
@@ -445,11 +447,16 @@ namespace AvifEncoder.GuiLakeUl
         private ModernButton btnSelectFont = null!;
         private ModernButton btnSaveConfig = null!;
         private ModernButton btnSelectFont2 = null!;
-        private Label label1 = null!;
         private ModernButton btnLoadConfig = null!;
         private ModernButton btnCheckUpdate = null!;
         private ModernButton btnOpenOutput = null!;
         private ModernButton btnSysInfo = null!;
+        private ModernButton modernButton1;
         private ModernButton btnResetDefault = null!;
+
+        private void label1_Click(object sender, EventArgs e)
+        {
+
+        }
     }
 }
