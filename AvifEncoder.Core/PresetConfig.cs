@@ -84,21 +84,9 @@ namespace AvifEncoder
         public bool? MetricLowerIsBetter { get; set; }
 
         /// <summary> 判断给定指标模式是否属于高级指标（SSIMU2/Butter3/GMSD） </summary>
-        public static bool IsAdvancedMetricMode(string? metricMode)
-        {
-            return metricMode is "ssimu2" or "butter3" or "gmsd";
-        }
+        public static bool IsAdvancedMetricMode(string? metricMode) => MetricRegistry.IsAdvanced(metricMode);
 
-        /// <summary> 返回指定指标模式是否越低越好（对 But3 / GMSD 为 true，SSIMU2 / VMAF / PSNR 等为 false） </summary>
-        public static bool IsMetricLowerBetter(string? metricMode)
-        {
-            return metricMode switch
-            {
-                "butter3" => true,
-                "gmsd" => true,
-                _ => false
-            };
-        }
+        public static bool IsMetricLowerBetter(string? metricMode) => MetricRegistry.IsLowerBetter(metricMode);
 
         // 用户是否通过 -t 手动指定了 MaxJobs
         public bool UserSpecifiedMaxJobs { get; set; } = false;
@@ -188,7 +176,7 @@ namespace AvifEncoder
             }
 
             // 高级指标：使用独立原生字段
-            if (metricMode is "ssimu2" or "butter3" or "gmsd")
+            if (MetricRegistry.IsAdvanced(metricMode))
             {
                 MetricLowerIsBetter = IsMetricLowerBetter(metricMode);
                 switch (metricMode)

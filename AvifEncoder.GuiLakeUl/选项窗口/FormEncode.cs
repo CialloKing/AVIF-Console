@@ -142,13 +142,14 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             chkSearch.Checked = false;
 
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(new string[] { "vmaf", "xpsnr", "ssim", "psnr", "msssim", "mix",
-                                                     "ssimu2", "butter3", "gmsd" });
+            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.AddRange(new string[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
-                                                          "SSIMULACRA2", "Butteraugli 3-norm", "GMSD","Mix" });
+            cmbQualityMode.Items.Add("无");
+            cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
+                .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
+                .Where(n => n.Length > 0).ToArray());
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
             numQualityValue.Value = 0.95; numQualityValue.DecimalPlaces = 4;

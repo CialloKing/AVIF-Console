@@ -56,13 +56,14 @@ namespace AvifEncoder.Gui
             txtTemplate.Text = "covers-{index}.avif";
 
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(new[] { "vmaf", "xpsnr", "ssim", "psnr", "msssim", "mix",
-                                             "ssimu2", "butter3", "gmsd" });
+            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.AddRange(new[] { "无", "VMAF", "XPSNR", "SSIM", "PSNR-Y", "MS-SSIM",
-                                                  "Mix", "SSIMULACRA2", "Butteraugli 3-norm", "GMSD" });
+            cmbQualityMode.Items.Add("无");
+            cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
+                .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
+                .Where(n => n.Length > 0).ToArray());
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0;
             numQualityValue.Maximum = 1;
@@ -153,16 +154,7 @@ namespace AvifEncoder.Gui
                 cmbMetric.SelectedItem = metricMode;
                 if (!string.IsNullOrEmpty(metricMode))
                 {
-                    string qMode = metricMode switch
-                    {
-                        "vmaf" => "VMAF",
-                        "ssim" => "SSIM",
-                        "psnr" => "PSNR-Y",
-                        "msssim" => "MS-SSIM",
-                        "mix" => "Mix",
-                        "xpsnr" => "XPSNR",
-                        _ => "无"
-                    };
+                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "无";
                     cmbQualityMode.SelectedItem = qMode;
 
                     // 确保质量数值范围正确，防止越界
@@ -304,21 +296,12 @@ namespace AvifEncoder.Gui
             // 联动：搜索度量自动跟随目标类型
             if (mode != "无")
             {
-                string metricMode = mode.ToLower() switch
-                {
-                    "vmaf" => "vmaf",
-                    "ssim" => "ssim",
-                    "psnr-y" => "psnr",
-                    "ms-ssim" => "msssim",
-                    "mix" => "mix",
-                    "xpsnr" => "xpsnr",
-                    "ssimulacra2" => "ssimu2",
-                    "butteraugli 3-norm" => "butter3",
-                    "gmsd" => "gmsd",
-                    _ => ""
-                };
-                if (!string.IsNullOrEmpty(metricMode))
-                    cmbMetric.SelectedItem = metricMode;
+                var def = MetricRegistry.AllKeys
+                    .Select(k => MetricRegistry.Get(k))
+                    .FirstOrDefault(d => d != null &&
+                        string.Equals(d.DisplayName, mode, StringComparison.OrdinalIgnoreCase));
+                if (def != null)
+                    cmbMetric.SelectedItem = def.Key;
             }
         }
 
@@ -397,21 +380,15 @@ namespace AvifEncoder.Gui
             if (!string.IsNullOrEmpty(qualityMode) && qualityMode != "无")
             {
                 double rawValue = (double)numQualityValue.Value;
-                string metricMode = qualityMode.ToLower() switch
+                var def = MetricRegistry.AllKeys
+                    .Select(k => MetricRegistry.Get(k))
+                    .FirstOrDefault(d => d != null &&
+                        string.Equals(d.DisplayName, qualityMode, StringComparison.OrdinalIgnoreCase));
+                if (def != null)
                 {
-                    "vmaf" => "vmaf",
-                    "ssim" => "ssim",
-                    "psnr-y" => "psnr",
-                    "ms-ssim" => "msssim",
-                    "mix" => "mix",
-                    "xpsnr" => "xpsnr",
-                    "ssimulacra2" => "ssimu2",
-                    "butteraugli 3-norm" => "butter3",
-                    "gmsd" => "gmsd",
-                    _ => "vmaf"
-                };
-                config.MetricMode = metricMode;
-                config.SetQualityTarget(rawValue, metricMode);
+                    config.MetricMode = def.Key;
+                    config.SetQualityTarget(rawValue, def.Key);
+                }
             }
             else
             {

@@ -204,10 +204,13 @@ namespace AvifEncoder
             string normalizedInput = GetNormalizedPathForCache(input);
             string effectiveAom = cfg.GetEffectiveAomParams();
 
+            string metricMode = cfg.MetricMode ?? "vmaf";
+
             var (metricsW, metricsH) = await GetResolutionAsync(input);
             string rowMtArg = EncodeHelpers.GetRowMtArg(cfg);
             string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg,
-                                         effectiveAom, actualDepth, metricsW, metricsH, rowMtArg);
+                                         effectiveAom, actualDepth, metricsW, metricsH, rowMtArg)
+                         + $"|metric={metricMode}";
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {
@@ -249,10 +252,34 @@ namespace AvifEncoder
                             return null;
                         }
 
-                        QualityMetrics? metrics = await ComputeAllMetricsAsync(input, tmp);
+                        // ★ 按需计算：搜索阶段只算目标指标，跳过无关项
+                        QualityMetrics? metrics = null;
+
+                        if (metricMode == "ssim")
+                        {
+                            double s = await SSIMDirect(input, tmp);
+                            if (s >= 0)
+                                metrics = new QualityMetrics { SSIM = s };
+                        }
+                        else if (metricMode == "psnr")
+                        {
+                            var psnr = await ComputePsnrUncappedAsync(input, tmp);
+                            if (psnr.HasValue)
+                                metrics = new QualityMetrics { PSNR_Y = psnr.Value, SSIM = -1 };
+                        }
+                        else if (metricMode == "vmaf" || metricMode == "msssim" || metricMode == "mix")
+                        {
+                            metrics = await ComputeAllMetricsAsync(input, tmp);
+                        }
+                        else
+                        {
+                            // XPSNR / 高级指标 等 → 先用 libvmaf 获取基础指标
+                            metrics = await ComputeAllMetricsAsync(input, tmp);
+                        }
+
                         if (metrics != null)
                         {
-                            // XPSNR 补算（保持原有逻辑）
+                            // XPSNR 补算
                             if (cfg.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
                             {
                                 try
@@ -334,9 +361,7 @@ namespace AvifEncoder
 
                             _cache.SetMetrics(key, metrics);
                             _logger.LogSearch($"新指标: CRF={crf} [{Path.GetFileName(input)}] " +
-                                             $"SSIM={metrics.SSIM:F4}, PSNR-Y={metrics.PSNR_Y:F4}dB, " +
-                                             $"MS-SSIM={metrics.MS_SSIM:F4}, VMAF={metrics.VMAF:F4}" +
-                                             (metrics.XPSNR_Y.HasValue ? $", XPSNR Y={metrics.XPSNR_Y:F2}" : ""));
+                                             $"mode={metricMode} score={MetricRegistry.GetScore(metrics, metricMode):F4}");
                         }
                         else
                         {
@@ -392,28 +417,7 @@ namespace AvifEncoder
         /// </summary>
         internal static double GetSearchScore(QualityMetrics m, string metricMode)
         {
-            switch (metricMode?.ToLower())
-            {
-                case "ssim": return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
-                case "psnr": return double.IsNaN(m.PSNR_Y) ? -1 : m.PSNR_Y;
-                case "msssim": return double.IsNaN(m.MS_SSIM) ? -1 : m.MS_SSIM;
-                case "vmaf":
-                    return double.IsNaN(m.VMAF) ? -1 : m.VMAF;
-                case "mix":
-                    if (double.IsNaN(m.VMAF)) return -1;
-                    double vmafNorm = m.VMAF / 100.0;
-                    double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-                    return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
-                case "xpsnr_y": return m.XPSNR_Y.HasValue && !double.IsNaN(m.XPSNR_Y.Value) ? m.XPSNR_Y.Value : -1;
-                case "xpsnr_u": return m.XPSNR_U.HasValue && !double.IsNaN(m.XPSNR_U.Value) ? m.XPSNR_U.Value : -1;
-                case "xpsnr_v": return m.XPSNR_V.HasValue && !double.IsNaN(m.XPSNR_V.Value) ? m.XPSNR_V.Value : -1;
-                case "xpsnr_w": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
-                case "xpsnr": return m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value) ? m.W_XPSNR.Value : -1;
-                case "ssimu2": return m.SSIMULACRA2.HasValue && !double.IsNaN(m.SSIMULACRA2.Value) ? m.SSIMULACRA2.Value : -1;
-                case "butter3": return m.Butteraugli_3norm.HasValue && !double.IsNaN(m.Butteraugli_3norm.Value) ? m.Butteraugli_3norm.Value : -1;
-                case "gmsd": return m.GMSD.HasValue && !double.IsNaN(m.GMSD.Value) ? m.GMSD.Value : -1;
-                default: return double.IsNaN(m.SSIM) ? -1 : m.SSIM;
-            }
+            return MetricRegistry.GetScore(m, metricMode);
         }
 
         /// <summary>

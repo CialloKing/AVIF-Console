@@ -799,22 +799,7 @@ namespace AvifEncoder
         }
         private static double ComputeMixScore(QualityMetrics m)
         {
-            // NaN 守卫：任何核心指标缺失时返回 NaN
-            if (double.IsNaN(m.VMAF) || double.IsNaN(m.PSNR_Y) ||
-                double.IsNaN(m.SSIM) || double.IsNaN(m.MS_SSIM))
-            {
-                return double.NaN;
-            }
-
-            double vmafNorm = m.VMAF / 100.0;
-            double psnrNorm = Math.Clamp((m.PSNR_Y - 30) / 20.0, 0, 1);
-
-            if (m.W_XPSNR.HasValue && !double.IsNaN(m.W_XPSNR.Value))
-            {
-                double xpsnrNorm = Math.Clamp((m.W_XPSNR.Value - 40) / 20.0, 0, 1);
-                return 0.50 * vmafNorm + 0.05 * m.SSIM + 0.08 * m.MS_SSIM + 0.05 * psnrNorm + 0.32 * xpsnrNorm;
-            }
-            return 0.80 * vmafNorm + 0.05 * m.SSIM + 0.10 * m.MS_SSIM + 0.05 * psnrNorm;
+            return MetricRegistry.ComputeMixScore(m);
         }
 
         private async Task<string> RunProbeAsync(string file, string args)
