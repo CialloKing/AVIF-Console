@@ -14,6 +14,7 @@ namespace AvifEncoder.GuiLakeUl
     {
         private const float AspectRatio = 16f / 9f;    // ★ 设定 16:9 比例
         private FormEncode? _encodePage;
+        private FormOptions? _optionsPage;
         private FormLog? _logPage;
         private FormHelp? _helpPage;
 
@@ -142,27 +143,30 @@ namespace AvifEncoder.GuiLakeUl
             _helpPage = new FormHelp();
             _encodePage = new FormEncode();
             _encodePage.SetTopLevelHandle(this.Handle);
+            _optionsPage = new FormOptions();
             _logPage = new FormLog();
-            _otherOptionsPage = new FormOtherOptions();          // ★ 新增
+            _otherOptionsPage = new FormOtherOptions();
 
             MakePanelTransparent(_encodePage.modernPanel1);
+            MakePanelTransparent(_optionsPage.modernPanel1);
             MakePanelTransparent(_logPage.modernPanel1);
             MakePanelTransparent(_helpPage.modernPanel1);
             MakePanelTransparent(_otherOptionsPage.modernPanel1); // ★ 新增透明处理
 
-            // ★ 标签页数量改为 4
-            while (modernTabListControl1.Items.Count < 4)
+            // ★ 标签页数量改为 5
+            while (modernTabListControl1.Items.Count < 5)
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
 
             modernTabListControl1.Items[0].Text = "编码";
             modernTabListControl1.Items[0].BoundControl = _encodePage;
-            modernTabListControl1.Items[1].Text = "日志";
-            modernTabListControl1.Items[1].BoundControl = _logPage;
-            modernTabListControl1.Items[2].Text = "使用说明";
-            modernTabListControl1.Items[2].BoundControl = _helpPage;
-            // ★ 新增第四个标签页
-            modernTabListControl1.Items[3].Text = "其他选项";
-            modernTabListControl1.Items[3].BoundControl = _otherOptionsPage;
+            modernTabListControl1.Items[1].Text = "选项";
+            modernTabListControl1.Items[1].BoundControl = _optionsPage;
+            modernTabListControl1.Items[2].Text = "日志";
+            modernTabListControl1.Items[2].BoundControl = _logPage;
+            modernTabListControl1.Items[3].Text = "使用说明";
+            modernTabListControl1.Items[3].BoundControl = _helpPage;
+            modernTabListControl1.Items[4].Text = "其他功能";
+            modernTabListControl1.Items[4].BoundControl = _otherOptionsPage;
 
             modernTabListControl1.SelectedIndex = 0;
             _encodePage.LogPage = _logPage!;
@@ -352,6 +356,7 @@ namespace AvifEncoder.GuiLakeUl
         }
 
         public FormEncode? GetEncodePage() => _encodePage;
+        public FormOptions? GetOptionsPage() => _optionsPage;
 
         public void ResetToDefaults()
         {

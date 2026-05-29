@@ -100,6 +100,13 @@ namespace AvifEncoder
         // 是否递归遍历输入目录的子文件夹
         public bool RecurseSubdirectories { get; set; } = false;
 
+        /// <summary>用户指定的输入文件扩展名（逗号分隔，如 ".jpg,.png"）。null 时使用全部默认 12 种格式。</summary>
+        public string? InputExtensions { get; set; }
+
+        /// <summary>默认支持的图片扩展名全集（12 种）</summary>
+        public static readonly string[] DefaultInputExtensions =
+            { ".jpg", ".jpeg", ".png", ".webp" };
+
         // 在 PresetConfig 类中添加
         public bool SerialEncode { get; set; } = false;
 
@@ -111,6 +118,8 @@ namespace AvifEncoder
 
         /// <summary> 是否开启遍历模式（对 MinCRF～MaxCRF 逐个编码并保存结果） </summary>
         public bool SweepMode { get; set; } = false;
+        public bool DryRun { get; set; } = false;
+        public bool Verbose { get; set; } = false;
 
 
 

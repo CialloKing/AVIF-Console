@@ -229,7 +229,8 @@ namespace AvifEncoder
             IntPtr tempJob = CreateJobObject(IntPtr.Zero, null);
             if (tempJob == IntPtr.Zero)
             {
-                Trace.TraceError($"无法创建全局 Job Object。Win32 错误码: {Marshal.GetLastWin32Error()}");
+                int err = Marshal.GetLastWin32Error();
+                Console.Error.WriteLine($"[Job] 创建失败 (Win32={err})，将使用内存进程列表兜底");
                 return;
             }
 
@@ -249,7 +250,8 @@ namespace AvifEncoder
             {
                 if (!SetInformationJobObject(tempJob, JOBOBJECTINFOCLASS.ExtendedLimitInformation, ptr, (uint)size))
                 {
-                    Trace.TraceError($"无法设置 Job Object 的 KILL_ON_JOB_CLOSE 标志。Win32 错误码: {Marshal.GetLastWin32Error()}");
+                    int err = Marshal.GetLastWin32Error();
+                    Console.Error.WriteLine($"[Job] 设置 KILL_ON_JOB_CLOSE 失败 (Win32={err})，将使用内存进程列表兜底");
                     CloseHandle(tempJob);
                     return;
                 }
@@ -261,12 +263,16 @@ namespace AvifEncoder
 
             // 3. 设置成功后才赋值给静态字段
             hJob = tempJob;
-            Trace.WriteLine("全局 Job Object 已创建并配置完成。");
+            // 输出到 stderr 确保控制台可见（Trace 默认写入调试输出，用户看不到）
+            Console.Error.WriteLine("[Job] 全局 Job Object 就绪 — 主进程退出时自动终止所有 ffmpeg 子进程");
         }
+
+        /// <summary>返回 Job Object 是否已激活，供启动诊断使用</summary>
+        public static bool IsActive => isSupported && hJob != IntPtr.Zero;
 
         /// <summary>
         /// 将 <paramref name="process"/> 分配至全局 Job Object。
-        /// 失败时会记录错误，但不影响正常流程（仅表示无法启用额外保护）。
+        /// 失败时会记录到 stderr，但不影响正常流程（内存进程列表提供兜底）。
         /// </summary>
         public static bool AssignProcess(Process process)
         {
@@ -276,7 +282,9 @@ namespace AvifEncoder
             if (!ok)
             {
                 int err = Marshal.GetLastWin32Error();
-                Trace.TraceWarning($"AssignProcessToJobObject 失败，PID={process.Id}，Win32 错误码: {err}");
+                // ERROR_ACCESS_DENIED (5) 常见于调试器或已嵌套 Job 的场景
+                string hint = err == 5 ? " (进程可能已在调试器或其他 Job 中)" : "";
+                Console.Error.WriteLine($"[Job] 添加子进程 PID={process.Id} 失败 (Win32={err}){hint}");
             }
             return ok;
         }

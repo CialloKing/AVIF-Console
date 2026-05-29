@@ -601,7 +601,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 }
             }
 
-            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".jp2", ".j2k", ".jpx", ".avif" };
+            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
             var files = Directory.EnumerateFiles(inputDir, "*.*", SearchOption.AllDirectories)
                                  .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                                  .ToList();
@@ -831,6 +831,29 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 !chkOutputFullRes.Checked;
 
             config.SerialEncode = chkSerialEncode.Checked;
+            // 从选项页读取自定义后缀、超时等
+            if (Application.OpenForms["Form1"] is Form1 mainForm)
+            {
+                var optsPage = mainForm.GetOptionsPage();
+                if (optsPage != null)
+                {
+                    string ext = optsPage.GetExtensions();
+                    if (!string.IsNullOrWhiteSpace(ext))
+                        config.InputExtensions = ext;
+
+                    if (optsPage.EncodeTimeout >= 0)
+                        config.EncodeTimeoutMinutes = optsPage.EncodeTimeout == 0 ? -1 : optsPage.EncodeTimeout;
+                    if (optsPage.SearchTimeout > 0)
+                        config.SearchTimeoutMinutes = optsPage.SearchTimeout;
+                    if (optsPage.SafeTimeout > 0)
+                        config.SafeTimeoutMinutes = optsPage.SafeTimeout;
+                    if (optsPage.SsimTimeout > 0)
+                        config.SsimTimeoutMinutes = optsPage.SsimTimeout;
+
+                    config.DryRun = optsPage.DryRun;
+                    config.Verbose = optsPage.VerboseOutput;
+                }
+            }
             config.UsePriorSearch = chkPriorSearch.Checked;
             config.UseProxySearch = chkProxy.Checked;
             config.SearchCpuUsed =

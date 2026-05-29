@@ -75,6 +75,7 @@ namespace AvifEncoder
             public int? FinalCpuUsed;
             public bool SweepMode { get; set; } = false;
             public bool RecomputeMetrics { get; set; } = false;
+            public string? Extensions { get; set; }
         }
 
         // ========== 参数解析 ==========
@@ -222,6 +223,9 @@ namespace AvifEncoder
                         case "recompute-metrics":
                             opts.RecomputeMetrics = true;
                             break;
+                        case "extensions":
+                            opts.Extensions = GetValue();
+                            break;
                         default:
                             if (key.StartsWith("timeout-"))
                             {
@@ -249,7 +253,7 @@ namespace AvifEncoder
                 {
                     string flags = arg[1..];
                     if (flags == "i" || flags == "o" || flags == "p" || flags == "c" || flags == "b" ||
-                        flags == "t" || flags == "e" || flags == "j")
+                        flags == "t" || flags == "e" || flags == "j" || flags == "x")
                     {
                         if (++i >= args.Length) throw new Exception($"选项 -{flags} 缺少值");
                         string val = args[i];
@@ -289,6 +293,7 @@ namespace AvifEncoder
                                 if (int.TryParse(val, out int j) && j > 0) opts.Jobs = j;
                                 else throw new Exception("-j 需要正整数");
                                 break;
+                            case "x": opts.Extensions = val; break;
                         }
                         i++;
                         continue;
@@ -411,6 +416,8 @@ namespace AvifEncoder
                 config.SweepMode = true;
                 config.UseCRFSearch = false;
             }
+            if (!string.IsNullOrWhiteSpace(opts.Extensions))
+                config.InputExtensions = opts.Extensions;
             return config;
         }
 

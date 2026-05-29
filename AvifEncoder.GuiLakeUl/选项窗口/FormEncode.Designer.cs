@@ -768,6 +768,7 @@
             // 
             // progressBar1
             // 
+            progressBar1.AnimationFPS = 0;
             progressBar1.BorderColor = Color.White;
             progressBar1.BorderSize = 1;
             progressBar1.DisabledOverlayColor = Color.White;
@@ -777,6 +778,7 @@
             progressBar1.Name = "progressBar1";
             progressBar1.Size = new Size(800, 20);
             progressBar1.TabIndex = 7;
+            progressBar1.TabStop = false;
             progressBar1.TextPadding = new Padding(0);
             progressBar1.TrackColor = Color.Transparent;
             // 

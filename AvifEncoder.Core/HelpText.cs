@@ -9,11 +9,13 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   AvifEncoder --input <目录> --output <目录> [选项]
   AvifEncoder -i <目录> -o <目录> [选项]
 
-支持的输入格式:
-    "".jpg"", "".jpeg"", "".png"", "".webp"",
-    "".bmp"", "".tif"", "".tiff"", "".gif"",
-    "".jp2"", "".j2k"", "".jpx""
-注:测试环节只测试了jpg/png/webp，其他格式理论上支持但可能存在兼容性问题
+支持的输入格式（默认）:
+    "".jpg"", "".jpeg"", "".png"", "".webp""
+    如需其他格式请使用 --extensions 指定
+
+输入过滤:
+  -x, --extensions <.ext,.ext> 限制输入图片格式，逗号分隔 (例: "".jpg,.png"")
+                               默认 4 种，可选: bmp tif tiff gif jp2 j2k jpx avif
 
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
@@ -99,6 +101,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --sweep                 遍历模式：对每张图片在 MinCRF～MaxCRF 范围内逐个编码并保存所有结果。
                               文件名自动附加 _CRF数字，CSV 包含完整统计数据
                               使用此选项可用于生成 RD 曲线数据，或分析不同 CRF 设置下的质量/文件大小关系
+
+      --recompute-metrics      强制重新计算所有质量指标（忽略缓存）
 
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)

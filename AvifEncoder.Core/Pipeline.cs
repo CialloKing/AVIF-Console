@@ -162,6 +162,7 @@ namespace AvifEncoder
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
         private readonly ConcurrentDictionary<string, byte> _allocatedOutputs = new();
+        private readonly ConcurrentBag<System.Diagnostics.Process> _spawnedProcesses = new();
 
 
         private readonly ConcurrentQueue<Task> _advancedMetricTasks = new();
@@ -767,6 +768,22 @@ namespace AvifEncoder
 
             _csvPath = Path.Combine(_outputDir, "avif_stats.csv");
 
+            // ★ 跨平台兜底：进程退出时（Ctrl+C、窗口关闭、Environment.Exit）强制清理子进程
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            {
+                foreach (var p in _spawnedProcesses)
+                {
+                    try
+                    {
+                        if (!p.HasExited)
+                        {
+                            p.Kill(entireProcessTree: true);
+                        }
+                    }
+                    catch { }
+                }
+            };
+
         }
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
@@ -984,6 +1001,9 @@ namespace AvifEncoder
                 };
 
                 process.Start();
+
+                // ★ 内存兜底追踪（Job Object 失败时备用）
+                _spawnedProcesses.Add(process);
 
                 // ★ 仅在 Windows 平台将子进程加入全局 Job Object
                 if (OperatingSystem.IsWindows())
@@ -1273,6 +1293,15 @@ namespace AvifEncoder
                 Console.OutputEncoding = Encoding.UTF8;
                 _progress.Start(DateTime.Now);
 
+                // 启动诊断：Job Object 状态
+                if (OperatingSystem.IsWindows())
+                {
+                    if (JobObjectHelper.IsActive)
+                        _logger.LogInfo("[Job] 子进程保护已激活 — 主进程退出时自动终止所有 ffmpeg");
+                    else
+                        _logger.LogInfo("[Job] 子进程保护未激活 — 使用内存进程列表兜底终止");
+                }
+
                 _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} TargetSSIM={_config.TargetSSIM}");
                 _logger.LogInfo(
                     $"Encoder={_config.Encoder} " +
@@ -1364,12 +1393,19 @@ namespace AvifEncoder
             }
             _fs.CreateDirectory(_outputDir);
 
-            var extensions = new[]
-{
-    ".jpg", ".jpeg", ".png", ".webp",
-    ".bmp", ".tif", ".tiff", ".gif",
-    ".jp2", ".j2k", ".jpx", ".avif"
-};
+            // 根据配置构建扩展名列表：用户未指定则使用 12 种默认全部格式
+            string[] extensions;
+            if (!string.IsNullOrWhiteSpace(_config.InputExtensions))
+            {
+                extensions = _config.InputExtensions
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(x => x.StartsWith('.') ? x.ToLower() : $".{x}".ToLower())
+                    .ToArray();
+            }
+            else
+            {
+                extensions = PresetConfig.DefaultInputExtensions;
+            }
 
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             // ★ 修复：去除可能的 \\?\ 长路径前缀，否则 Directory.EnumerateFiles 无法递归子目录
@@ -1554,6 +1590,21 @@ namespace AvifEncoder
         /// <summary> 清理编码缓存及临时文件 </summary>
         private void FinalCleanup()
         {
+            // ★ 兜底：强制杀掉所有曾启动的 ffmpeg 子进程（Job Object 失败时保底）
+            foreach (var p in _spawnedProcesses)
+            {
+                try
+                {
+                    if (!p.HasExited)
+                    {
+                        p.Kill(entireProcessTree: true);
+                        _logger.LogInfo($"强制终止残留进程 PID={p.Id}");
+                    }
+                }
+                catch { }
+            }
+            _spawnedProcesses.Clear();
+
             // 清理编码缓存目录
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
 

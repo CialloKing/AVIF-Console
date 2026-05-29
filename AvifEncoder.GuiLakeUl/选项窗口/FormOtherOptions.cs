@@ -451,7 +451,7 @@ namespace AvifEncoder.GuiLakeUl
         private ModernButton btnCheckUpdate = null!;
         private ModernButton btnOpenOutput = null!;
         private ModernButton btnSysInfo = null!;
-        private ModernButton modernButton1;
+        private ModernButton modernButton1 = null!;
         private ModernButton btnResetDefault = null!;
 
         private void label1_Click(object sender, EventArgs e)
