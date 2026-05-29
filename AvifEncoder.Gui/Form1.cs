@@ -203,6 +203,8 @@ namespace AvifEncoder.Gui
                 case "GMSD":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
                     numQualityValue.DecimalPlaces = 4; break;
+                // case "CAMBI": ...  // 暂不可用
+                // case "ADM": ...    // 暂不可用
                 default:
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
                     numQualityValue.DecimalPlaces = 4; break;
@@ -288,8 +290,10 @@ namespace AvifEncoder.Gui
                 "PSNR-Y" => 40,
                 "XPSNR" => 45,
                 "SSIMULACRA2" => 90,
-                "Butteraugli 3-norm" => 1,
+                "Butteraugli 3norm" => 1,
                 "GMSD" => 0.2m,
+                // "CAMBI" => 2,    // 暂不可用
+                // "ADM" => 1,      // 暂不可用
                 _ => 0.95m,
             };
 

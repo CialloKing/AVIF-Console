@@ -350,5 +350,12 @@ namespace AvifEncoder.GuiLakeUl
             _encodePage?.ApplyConfig(cfg);
         }
 
+        public FormEncode? GetEncodePage() => _encodePage;
+
+        public void ResetToDefaults()
+        {
+            _encodePage?.ResetToDefaults();
+        }
+
     }
 }

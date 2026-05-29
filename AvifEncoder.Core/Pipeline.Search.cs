@@ -669,8 +669,8 @@ namespace AvifEncoder
         FormatMetric(r.FinalButteraugli_Raw),
         FormatMetric(r.FinalButteraugli_3norm),
         FormatMetric(r.FinalGMSD),
-        FormatMetric(r.FinalCAMBI),
-        FormatMetric(r.FinalADM),
+        // FormatMetric(r.FinalCAMBI),   // 暂不可用
+        // FormatMetric(r.FinalADM),     // 暂不可用
 
         FormatMetric(r.EncodeTime.TotalSeconds),
         FormatMetric(r.SearchTime.TotalSeconds),

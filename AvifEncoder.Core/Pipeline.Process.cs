@@ -234,8 +234,8 @@ namespace AvifEncoder
                                 FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
                                 FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
                                 FinalGMSD = metrics?.GMSD,
-                                FinalCAMBI = metrics?.CAMBI,
-                                FinalADM = metrics?.ADM,
+                                // FinalCAMBI = metrics?.CAMBI,   // 暂不可用
+                                // FinalADM = metrics?.ADM,       // 暂不可用
                                 AomParamsUsed = actualAom ?? config.GetEffectiveAomParams(),
                                 AdvancedMetricsCacheKey = sweepCacheKey,
                                 SearchEvaluations = 0
@@ -1053,8 +1053,8 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 FinalButteraugli_Raw = metrics?.Butteraugli_Raw,
                 FinalButteraugli_3norm = metrics?.Butteraugli_3norm,
                 FinalGMSD = metrics?.GMSD,
-                FinalCAMBI = metrics?.CAMBI,
-                FinalADM = metrics?.ADM,
+                // FinalCAMBI = metrics?.CAMBI,   // 暂不可用
+                // FinalADM = metrics?.ADM,       // 暂不可用
 
                 SearchEvaluations = searchResult.SearchEvalCount,
                 AdvancedMetricsCacheKey = advancedCacheKey

@@ -44,8 +44,9 @@ namespace AvifEncoder
         public double? FinalButteraugli_Raw { get; set; }
         public double? FinalButteraugli_3norm { get; set; }
         public double? FinalGMSD { get; set; }
-        public double? FinalCAMBI { get; set; }
-        public double? FinalADM { get; set; }
+        // CAMBI/ADM 暂不可用，择机恢复
+        // public double? FinalCAMBI { get; set; }
+        // public double? FinalADM { get; set; }
 
         public int SearchEvaluations { get; set; }
         public string InputPath { get; set; } = "";

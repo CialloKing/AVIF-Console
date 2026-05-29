@@ -222,6 +222,67 @@ namespace AvifEncoder.GuiLakeUl
             }
         }
 
+        private void BtnOpenOutput_Click(object? sender, EventArgs e)
+        {
+            string? outputDir = null;
+            if (Application.OpenForms["Form1"] is Form1 mainForm)
+            {
+                var encodePage = mainForm.GetEncodePage();
+                if (encodePage != null)
+                    outputDir = encodePage.GetOutputDir();
+            }
+            if (string.IsNullOrEmpty(outputDir))
+            {
+                MessageBox.Show("请先在编码页面设置输出目录。", "提示",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try { System.Diagnostics.Process.Start("explorer.exe", outputDir); }
+            catch (Exception ex) { MessageBox.Show($"无法打开: {ex.Message}"); }
+        }
+
+        private async void BtnSysInfo_Click(object? sender, EventArgs e)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($".NET 版本: {Environment.Version}");
+            sb.AppendLine($"OS: {Environment.OSVersion}");
+            sb.AppendLine($"处理器核心数: {Environment.ProcessorCount}");
+            sb.AppendLine($"工作集内存: {Environment.WorkingSet / 1024 / 1024} MB");
+            sb.AppendLine();
+
+            string? ffmpeg = EncoderUtils.FindExecutable("ffmpeg");
+            sb.AppendLine($"ffmpeg: {(ffmpeg ?? "未找到")}");
+            if (ffmpeg != null)
+            {
+                var v = await AvifEnvironmentChecker.GetEncoderVersionInfoAsync(ffmpeg);
+                sb.AppendLine($"  ffmpeg 版本: {v.FfmpegVersion}");
+                foreach (var kv in v.EncoderVersions)
+                    sb.AppendLine($"  {kv.Key}: {kv.Value}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"ssimulacra2: {(EncoderUtils.FindExecutable("ssimulacra2") ?? "未找到")}");
+            sb.AppendLine($"butteraugli_main: {(EncoderUtils.FindExecutable("butteraugli_main") ?? "未找到")}");
+
+            MessageBox.Show(sb.ToString(), "系统信息",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void BtnResetDefault_Click(object? sender, EventArgs e)
+        {
+            var result = MessageBox.Show(
+                "确定要重置所有设置到出厂默认值吗？\n此操作不可撤销。",
+                "确认重置", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (result != DialogResult.Yes) return;
+
+            if (Application.OpenForms["Form1"] is Form1 mainForm)
+            {
+                mainForm.ResetToDefaults();
+            }
+            MessageBox.Show("已重置为默认设置。", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
@@ -324,6 +385,51 @@ namespace AvifEncoder.GuiLakeUl
             btnCheckUpdate.TabIndex = 5;
             btnCheckUpdate.Text = "检查更新";
             // 
+            // btnOpenOutput
+            // 
+            btnOpenOutput = new ModernButton();
+            btnOpenOutput.BackColor1 = Color.Transparent;
+            btnOpenOutput.ForeColor = Color.WhiteSmoke;
+            btnOpenOutput.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnOpenOutput.Location = new Point(20, 367);
+            btnOpenOutput.Margin = new Padding(2);
+            btnOpenOutput.Name = "btnOpenOutput";
+            btnOpenOutput.Size = new Size(416, 40);
+            btnOpenOutput.TabIndex = 6;
+            btnOpenOutput.Text = "打开输出/日志目录";
+            btnOpenOutput.Click += BtnOpenOutput_Click;
+            modernPanel1.Controls.Add(btnOpenOutput);
+            // 
+            // btnSysInfo
+            // 
+            btnSysInfo = new ModernButton();
+            btnSysInfo.BackColor1 = Color.Transparent;
+            btnSysInfo.ForeColor = Color.WhiteSmoke;
+            btnSysInfo.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnSysInfo.Location = new Point(20, 419);
+            btnSysInfo.Margin = new Padding(2);
+            btnSysInfo.Name = "btnSysInfo";
+            btnSysInfo.Size = new Size(416, 40);
+            btnSysInfo.TabIndex = 7;
+            btnSysInfo.Text = "系统信息";
+            btnSysInfo.Click += BtnSysInfo_Click;
+            modernPanel1.Controls.Add(btnSysInfo);
+            // 
+            // btnResetDefault
+            // 
+            btnResetDefault = new ModernButton();
+            btnResetDefault.BackColor1 = Color.Transparent;
+            btnResetDefault.ForeColor = Color.WhiteSmoke;
+            btnResetDefault.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnResetDefault.Location = new Point(20, 471);
+            btnResetDefault.Margin = new Padding(2);
+            btnResetDefault.Name = "btnResetDefault";
+            btnResetDefault.Size = new Size(416, 40);
+            btnResetDefault.TabIndex = 8;
+            btnResetDefault.Text = "重置为默认设置";
+            btnResetDefault.Click += BtnResetDefault_Click;
+            modernPanel1.Controls.Add(btnResetDefault);
+            // 
             // FormOtherOptions
             // 
             BackColor = Color.Black;
@@ -342,6 +448,8 @@ namespace AvifEncoder.GuiLakeUl
         private Label label1 = null!;
         private ModernButton btnLoadConfig = null!;
         private ModernButton btnCheckUpdate = null!;
-        // 设计器生成的代码区域（此处略，但应包括：modernPanel1、btnSelectFont、lblFontPreview 等控件）
+        private ModernButton btnOpenOutput = null!;
+        private ModernButton btnSysInfo = null!;
+        private ModernButton btnResetDefault = null!;
     }
 }

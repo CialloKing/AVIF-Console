@@ -952,12 +952,12 @@ namespace AvifEncoder
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
-                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=cambi|name=adm:" +
+                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
                              $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=cambi|name=adm:" +
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
                              $"model='version=vmaf_float_v0.6.1':" +
                              $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
@@ -1169,8 +1169,11 @@ namespace AvifEncoder
                                 ? e.GetProperty("mean").GetDouble()
                                 : double.NaN;
                 double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                double cambi = TryGetPooledDouble(pooled, "cambi", "cambi");
-                double adm = TryGetPooledDouble(pooled, "adm", "adm");
+                // CAMBI/ADM 暂不可用，择机恢复
+                // double cambi = TryGetPooledDouble(pooled, "cambi", "cambi");
+                // if (double.IsNaN(cambi)) cambi = TryGetPooledDouble(pooled, "cambi", "score");
+                // double adm = TryGetPooledDouble(pooled, "adm", "adm");
+                // if (double.IsNaN(adm)) adm = TryGetPooledDouble(pooled, "adm", "score");
 
                 return new QualityMetrics
                 {
@@ -1178,8 +1181,6 @@ namespace AvifEncoder
                     PSNR_Y = psnr_y,
                     MS_SSIM = ms_ssim,
                     VMAF = vmaf,
-                    CAMBI = double.IsNaN(cambi) ? null : cambi,
-                    ADM = double.IsNaN(adm) ? null : adm,
                 };
             }
             catch (Exception ex)
@@ -1500,6 +1501,12 @@ namespace AvifEncoder
                     r.FinalButteraugli_Raw = updated?.Butteraugli_Raw;
                     r.FinalButteraugli_3norm = updated?.Butteraugli_3norm;
                     r.FinalGMSD = updated?.GMSD;
+                    r.FinalXPSNR_Y = updated?.XPSNR_Y;
+                    r.FinalXPSNR_U = updated?.XPSNR_U;
+                    r.FinalXPSNR_V = updated?.XPSNR_V;
+                    r.FinalWXPSNR = updated?.W_XPSNR;
+                    // r.FinalCAMBI = updated?.CAMBI;   // 暂不可用
+                    // r.FinalADM = updated?.ADM;       // 暂不可用
                 }
             }
 

@@ -148,7 +148,7 @@ namespace AvifEncoder
     "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
     "XPSNR-Y", "XPSNR-U", "XPSNR-V", "W-XPSNR",
     "SSIMULACRA2", "Butteraugli_Raw", "Butteraugli_3norm", "GMSD",
-    "CAMBI", "ADM",
+    // "CAMBI", "ADM",  // 暂不可用
     "编码耗时(秒)", "搜索耗时(秒)", "总耗时(秒)", "重试次数",
     "像素格式", "源像素格式", "模式", "安全模式",
     "AOM参数", "完整命令行",

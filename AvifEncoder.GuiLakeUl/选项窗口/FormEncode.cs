@@ -123,14 +123,22 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             cmbTemplate.Items.Clear();
             cmbTemplate.Items.AddRange(new[]
             {
+                // 简洁模式
                 "covers-{index}.avif",
                 "{name}.avif",
+                "{index:000}_{name}.avif",
+                // 含编码参数
+                "{name}_{crf}.avif",
                 "{name}_{encoder}_crf{crf}.avif",
                 "{name}_{encoder}_crf{crf}_s{speed}.avif",
-                "{name}_lossless.avif",
-                "{name}_{encoder}_{pixfmt}.avif",
-                "{date}/{name}_{crf}.avif",
                 "{name}_{encoder}_crf{crf}_{pixfmt}.avif",
+                "{name}_{encoder}_crf{crf}_s{speed}_{pixfmt}.avif",
+                // 目录归档
+                "{date}/{name}_{crf}.avif",
+                "{dir}/{name}.avif",
+                // 特殊模式
+                "{name}_lossless.avif",
+                "{name}_{bitdepth}bit.avif",
                 "自定义..."
             });
             cmbTemplate.SelectedIndex = 0;
@@ -311,6 +319,8 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 0.001;
                     break;
+                // case "CAMBI": ...  // 暂不可用
+                // case "ADM": ...    // 暂不可用
                 default:
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
                     numQualityValue.DecimalPlaces = 15;
@@ -356,16 +366,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 // --- 质量目标 ---
                 if (!string.IsNullOrEmpty(metricMode))
                 {
-                    string qMode = metricMode switch
-                    {
-                        "vmaf" => "VMAF",
-                        "ssim" => "SSIM",
-                        "psnr" => "PSNR-Y",
-                        "msssim" => "MS-SSIM",
-                        "mix" => "Mix",
-                        "xpsnr" => "XPSNR",
-                        _ => "无"
-                    };
+                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "无";
                     SetComboBoxItem(cmbQualityMode, qMode);
                     // ★ 手动同步范围，防止 combo 事件延迟导致越界
                     SetQualityRange(qMode);
@@ -422,25 +423,19 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 "PSNR-Y" => 40,
                 "XPSNR" => 45,
                 "SSIMULACRA2" => 90,
-                "Butteraugli 3-norm" => 1,
+                "Butteraugli 3norm" => 1,
                 "GMSD" => 0.2,
+                // "CAMBI" => 2,    // 暂不可用
+                // "ADM" => 1,      // 暂不可用
                 _ => 0.95,
             };
-            string metric = mode.ToLower() switch
-            {
-                "vmaf" => "vmaf",
-                "ssim" => "ssim",
-                "psnr-y" => "psnr",
-                "ms-ssim" => "msssim",
-                "mix" => "mix",
-                "xpsnr" => "xpsnr",
-                "ssimulacra2" => "ssimu2",
-                "butteraugli 3-norm" => "butter3",
-                "gmsd" => "gmsd",
-                _ => ""
-            };
-            if (!string.IsNullOrEmpty(metric))
-                SetComboBoxItem(cmbMetric, metric);
+            // 通过注册表反向查找 → 自动同步搜索度量
+            var def = MetricRegistry.AllKeys
+                .Select(k => MetricRegistry.Get(k))
+                .FirstOrDefault(d => d != null &&
+                    string.Equals(d.DisplayName, mode, StringComparison.OrdinalIgnoreCase));
+            if (def != null)
+                SetComboBoxItem(cmbMetric, def.Key);
         }
 
         private void ChkLossless_CheckedChanged(object? sender, EventArgs e)
@@ -469,8 +464,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         {
             bool lossless = chkLossless.Checked;
             chkSearch.Enabled = !lossless && !sweepEnabled;
-            rbCrfFix.Enabled = !lossless && !sweepEnabled;
-            rbCrfRange.Enabled = !lossless && !sweepEnabled;
+            grpCrfMode.Enabled = !lossless && !sweepEnabled;
 
             if (sweepEnabled)
             {
@@ -813,21 +807,15 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             if (!string.IsNullOrEmpty(qMode) && qMode != "无")
             {
                 double rawValue = (double)numQualityValue.Value;
-                string metricMode = qMode.ToLower() switch
+                var def = MetricRegistry.AllKeys
+                    .Select(k => MetricRegistry.Get(k))
+                    .FirstOrDefault(d => d != null &&
+                        string.Equals(d.DisplayName, qMode, StringComparison.OrdinalIgnoreCase));
+                if (def != null)
                 {
-                    "vmaf" => "vmaf",
-                    "ssim" => "ssim",
-                    "psnr-y" => "psnr",
-                    "ms-ssim" => "msssim",
-                    "mix" => "mix",
-                    "xpsnr" => "xpsnr",
-                    "ssimulacra2" => "ssimu2",
-                    "butteraugli 3-norm" => "butter3",
-                    "gmsd" => "gmsd",
-                    _ => "vmaf"
-                };
-                config.MetricMode = metricMode;
-                config.SetQualityTarget(rawValue, metricMode);
+                    config.MetricMode = def.Key;
+                    config.SetQualityTarget(rawValue, def.Key);
+                }
             }
 
             config.MaxResolution = (int)numMaxRes.Value;
@@ -973,6 +961,14 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         /// <summary>
         /// 从 UI 控件收集编码设置到 AppConfig。
         /// </summary>
+        public string GetOutputDir() => txtOutput.Text.Trim();
+
+        public void ResetToDefaults()
+        {
+            ApplyPresetToUI(CliPreset.Balanced);
+            SetComboBoxItem(cmbPreset, "balanced");
+        }
+
         public void BuildConfig(AppConfig cfg)
         {
             cfg.EncodePreset =

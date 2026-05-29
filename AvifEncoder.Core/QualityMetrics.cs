@@ -22,9 +22,8 @@ namespace AvifEncoder
         public double? Butteraugli_3norm { get; set; }
         public double? GMSD { get; set; }
 
-        /// <summary>CAMBI 色带检测 (越小越好, &lt;1极好, &gt;6严重)</summary>
-        public double? CAMBI { get; set; }
-        /// <summary>ADM 细节损失 (越小越好)</summary>
-        public double? ADM { get; set; }
+        // CAMBI/ADM 暂不可用，择机恢复
+        // public double? CAMBI { get; set; }
+        // public double? ADM { get; set; }
     }
 }
