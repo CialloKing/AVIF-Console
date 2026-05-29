@@ -54,6 +54,8 @@ namespace AvifEncoder
             Register(new MetricDef("ssimu2",  "SSIMULACRA2",       false, true,  m => m.SSIMULACRA2 ?? double.NaN));
             Register(new MetricDef("butter3", "Butteraugli 3norm", true,  true,  m => m.Butteraugli_3norm ?? double.NaN));
             Register(new MetricDef("gmsd",    "GMSD",              true,  true,  m => m.GMSD ?? double.NaN));
+            Register(new MetricDef("cambi",   "CAMBI",             true,  false, m => m.CAMBI ?? double.NaN));
+            Register(new MetricDef("adm",     "ADM",               true,  false, m => m.ADM ?? double.NaN));
             // XPSNR 子通道（较少使用）
             Register(new MetricDef("xpsnr_y", "XPSNR-Y",           false, false, m => m.XPSNR_Y ?? double.NaN));
             Register(new MetricDef("xpsnr_u", "XPSNR-U",           false, false, m => m.XPSNR_U ?? double.NaN));

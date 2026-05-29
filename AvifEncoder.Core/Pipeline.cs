@@ -952,12 +952,12 @@ namespace AvifEncoder
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
                     filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
-                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
+                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=cambi|name=adm:" +
                              $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
+                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim|name=cambi|name=adm:" +
                              $"model='version=vmaf_float_v0.6.1':" +
                              $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
@@ -1122,6 +1122,18 @@ namespace AvifEncoder
             }
         }
 
+        private static double TryGetPooledDouble(JsonElement pooled, string key, string subKey)
+        {
+            try
+            {
+                if (pooled.TryGetProperty(key, out var e) &&
+                    e.TryGetProperty(subKey, out var v))
+                    return v.GetDouble();
+            }
+            catch { }
+            return double.NaN;
+        }
+
         private static double? TryExtractVmaf(string combinedOutput)
         {
             // 适配不同 FFmpeg 版本的输出格式
@@ -1157,13 +1169,17 @@ namespace AvifEncoder
                                 ? e.GetProperty("mean").GetDouble()
                                 : double.NaN;
                 double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
+                double cambi = TryGetPooledDouble(pooled, "cambi", "cambi");
+                double adm = TryGetPooledDouble(pooled, "adm", "adm");
 
                 return new QualityMetrics
                 {
                     SSIM = ssim,
                     PSNR_Y = psnr_y,
                     MS_SSIM = ms_ssim,
-                    VMAF = vmaf
+                    VMAF = vmaf,
+                    CAMBI = double.IsNaN(cambi) ? null : cambi,
+                    ADM = double.IsNaN(adm) ? null : adm,
                 };
             }
             catch (Exception ex)
