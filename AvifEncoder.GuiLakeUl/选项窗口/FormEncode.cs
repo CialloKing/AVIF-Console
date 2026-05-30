@@ -35,6 +35,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         private bool _isEncoding;
         private CancellationTokenSource? _cts;
         private bool _sweepPreviousCrfRangeMode;
+        private bool _isResumeDetected;
 
         public FormEncode()
         {
@@ -187,6 +188,12 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             chkProxy.Checked = false;
             // 遍历模式开关
             chkSweep.Checked = false;
+
+            // 恢复任务按钮（初始隐藏）
+            btnResume.Visible = false;
+            btnResume.Enabled = false;
+            btnAbandon.Visible = false;
+            btnAbandon.Enabled = false;
         }
 
         private void AttachAllEvents()
@@ -206,6 +213,9 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 numCrfFix.Enabled = !rbCrfRange.Checked;
             };
             chkSweep.CheckedChanged += ChkSweep_CheckedChanged;
+            btnResume.Click += BtnResume_Click;
+            btnAbandon.Click += BtnAbandon_Click;
+            txtOutput.TextChanged += TxtOutput_TextChanged;
         }
 
         private void AttachCustomMarkEvents()
@@ -831,6 +841,9 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 !chkOutputFullRes.Checked;
 
             config.SerialEncode = chkSerialEncode.Checked;
+            // 恢复模式
+            config.Resume = _isResumeDetected;
+
             // 从选项页读取自定义后缀、超时等
             if (Application.OpenForms["Form1"] is Form1 mainForm)
             {
@@ -1069,9 +1082,200 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 }
             }
         }
+
+        #region 断点续传 UI
+
+        private void TxtOutput_TextChanged(object? sender, EventArgs e)
+        {
+            if (_isEncoding) return;
+            string outputDir = txtOutput.Text.Trim('"').Trim();
+            if (string.IsNullOrEmpty(outputDir)) return;
+
+            string snapshot = Path.Combine(outputDir, ".session", "snapshot.json");
+            if (File.Exists(snapshot))
+            {
+                var (_, configJson) = LoadConfigFromSnapshot(snapshot);
+                if (configJson != null)
+                {
+                    EnterResumeMode(configJson);
+                    return;
+                }
+            }
+            ExitResumeMode();
+        }
+
+        private static (HashSet<string>?, string?) LoadConfigFromSnapshot(string path)
+        {
+            try
+            {
+                string json = File.ReadAllText(path);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                string? cfgJson = null;
+                if (root.TryGetProperty("config", out var cfgEl))
+                    cfgJson = cfgEl.GetRawText();
+                return (null, cfgJson);
+            }
+            catch { return (null, null); }
+        }
+
+        private void EnterResumeMode(string configJson)
+        {
+            if (_isResumeDetected) return;
+
+            try
+            {
+                // 从 JSON 回填所有控件
+                using var doc = System.Text.Json.JsonDocument.Parse(configJson);
+                var cfg = doc.RootElement;
+
+                _isApplyingPreset = true;
+                if (cfg.TryGetProperty("Encoder", out var enc)) SetComboBoxItem(cmbEncoder, enc.GetString()!);
+                if (cfg.TryGetProperty("Lossless", out var ll)) chkLossless.Checked = ll.GetBoolean();
+                if (cfg.TryGetProperty("BaseCRF", out var bcrf)) numCrfFix.Value = bcrf.GetInt32();
+                if (cfg.TryGetProperty("MinCRF", out var mn)) numCrfMin.Value = mn.GetInt32();
+                if (cfg.TryGetProperty("MaxCRF", out var mx)) numCrfMax.Value = mx.GetInt32();
+                if (cfg.TryGetProperty("UseCRFSearch", out var sr))
+                {
+                    if (sr.GetBoolean()) { rbCrfRange.Checked = true; }
+                    else { rbCrfFix.Checked = true; }
+                }
+                if (cfg.TryGetProperty("MetricMode", out var mm)) SetComboBoxItem(cmbMetric, mm.GetString()!);
+                if (cfg.TryGetProperty("PixelFormat", out var pf))
+                {
+                    string pfStr = pf.GetString() ?? "";
+                    if (pfStr.Contains("444")) SetComboBoxItem(cmbChroma, "444");
+                    else if (pfStr.Contains("422")) SetComboBoxItem(cmbChroma, "422");
+                    else if (pfStr == "") SetComboBoxItem(cmbChroma, "auto");
+                    else SetComboBoxItem(cmbChroma, "420");
+                }
+                if (cfg.TryGetProperty("BitDepth", out var bd))
+                    SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 10 ? "10" : "8");
+                if (cfg.TryGetProperty("OutputNameFormat", out var ot)) txtTemplate.Text = ot.GetString()!;
+                if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) chkRecursive.Checked = rc.GetBoolean();
+                if (cfg.TryGetProperty("SerialEncode", out var se)) chkSerialEncode.Checked = se.GetBoolean();
+                if (cfg.TryGetProperty("UsePriorSearch", out var ps)) chkPriorSearch.Checked = ps.GetBoolean();
+                if (cfg.TryGetProperty("UseProxySearch", out var px)) chkProxy.Checked = px.GetBoolean();
+                if (cfg.TryGetProperty("SearchCpuUsed", out var sc)) numSearchCpuUsed.Value = sc.GetInt32();
+                if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) numFinalCpuUsed.Value = fc.GetInt32();
+                if (cfg.TryGetProperty("MaxResolution", out var mr)) numMaxRes.Value = mr.GetInt32();
+                if (cfg.TryGetProperty("MaxJobs", out var mj)) numJobs.Value = mj.GetInt32();
+                if (cfg.TryGetProperty("InputExtensions", out var ie))
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    optsPage?.SetExtensions(ie.GetString() ?? "");
+                }
+                if (cfg.TryGetProperty("EncodeTimeoutMinutes", out var et))
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    optsPage?.SetEncodeTimeout(et.GetInt32());
+                }
+                if (cfg.TryGetProperty("SearchTimeoutMinutes", out var st))
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    optsPage?.SetSearchTimeout(st.GetInt32());
+                }
+                if (cfg.TryGetProperty("SafeTimeoutMinutes", out var sf))
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    optsPage?.SetSafeTimeout(sf.GetInt32());
+                }
+                if (cfg.TryGetProperty("SsimTimeoutMinutes", out var ss))
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    optsPage?.SetSsimTimeout(ss.GetInt32());
+                }
+                if (cfg.TryGetProperty("SweepMode", out var sw)) chkSweep.Checked = sw.GetBoolean();
+                _isApplyingPreset = false;
+            }
+            catch { _isApplyingPreset = false; }
+
+            // 锁定所有控件
+            SetEncodingControlsEnabled(false);
+
+            // 按钮切换
+            btnStart.Enabled = false;
+            btnResume.Visible = true;
+            btnResume.Enabled = true;
+            btnAbandon.Visible = true;
+            btnAbandon.Enabled = true;
+
+            _isResumeDetected = true;
+            LogPage?.AppendLog("[RESUME] 检测到中断任务，已恢复编码配置，点击 [恢复任务] 继续");
+        }
+
+        private void ExitResumeMode()
+        {
+            if (!_isResumeDetected) return;
+
+            SetEncodingControlsEnabled(true);
+            btnStart.Enabled = true;
+            btnResume.Visible = false;
+            btnResume.Enabled = false;
+            btnAbandon.Visible = false;
+            btnAbandon.Enabled = false;
+
+            _isResumeDetected = false;
+        }
+
+        private void SetEncodingControlsEnabled(bool enabled)
+        {
+            cmbPreset.Enabled = enabled;
+            cmbEncoder.Enabled = enabled;
+            numJobs.Enabled = enabled;
+            chkSearch.Enabled = enabled;
+            numCrfFix.Enabled = enabled && rbCrfFix.Checked;
+            numCrfMin.Enabled = enabled && rbCrfRange.Checked;
+            numCrfMax.Enabled = enabled && rbCrfRange.Checked;
+            rbCrfFix.Enabled = enabled;
+            rbCrfRange.Enabled = enabled;
+            cmbMetric.Enabled = enabled;
+            cmbQualityMode.Enabled = enabled;
+            numQualityValue.Enabled = enabled;
+            cmbChroma.Enabled = enabled;
+            cmbBitDepth.Enabled = enabled;
+            chkLossless.Enabled = enabled;
+            txtTemplate.Enabled = enabled;
+            cmbTemplate.Enabled = enabled;
+            chkRecursive.Enabled = enabled;
+            chkSerialEncode.Enabled = enabled;
+            chkPriorSearch.Enabled = enabled;
+            chkProxy.Enabled = enabled;
+            numSearchCpuUsed.Enabled = enabled;
+            numFinalCpuUsed.Enabled = enabled;
+            numMaxRes.Enabled = enabled;
+            chkOutputFullRes.Enabled = enabled;
+            cmbConflict.Enabled = enabled;
+            chkSweep.Enabled = enabled;
+        }
+
+        private void BtnResume_Click(object? sender, EventArgs e)
+        {
+            btnStart_Click(sender, e);
+        }
+
+        private void BtnAbandon_Click(object? sender, EventArgs e)
+        {
+            if (MessageBox.Show(
+                "确定放弃上次中断的任务吗？\n这将删除恢复数据并重新开始。",
+                "确认放弃", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            {
+                string outputDir = txtOutput.Text.Trim('"').Trim();
+                string sessionDir = Path.Combine(outputDir, ".session");
+                try
+                {
+                    if (Directory.Exists(sessionDir))
+                        Directory.Delete(sessionDir, true);
+                }
+                catch { }
+                ExitResumeMode();
+                LogPage?.AppendLog("[RESUME] 已放弃中断任务，恢复数据已删除");
+            }
+        }
+
+        #endregion
+
     }
-
-
 
     // ========== 日志适配器 ==========
     public class GuiLogger : ILogger

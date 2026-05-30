@@ -933,9 +933,39 @@ namespace AvifEncoder
             {
                 var snapshot = new
                 {
-                    v = 1,
+                    v = 2,
                     ts = DateTime.UtcNow.ToString("o"),
-                    completed = completed.ToArray()
+                    completed = completed.ToArray(),
+                    config = new
+                    {
+                        _config.Encoder,
+                        _config.Lossless,
+                        _config.UseCRFSearch,
+                        _config.BaseCRF,
+                        _config.MinCRF,
+                        _config.MaxCRF,
+                        _config.MetricMode,
+                        _config.PixelFormat,
+                        _config.BitDepth,
+                        _config.OutputNameFormat,
+                        _config.RecurseSubdirectories,
+                        _config.SerialEncode,
+                        _config.UsePriorSearch,
+                        _config.UseProxySearch,
+                        _config.SearchCpuUsed,
+                        _config.FinalCpuUsed,
+                        _config.MaxResolution,
+                        _config.MaxJobs,
+                        FileConflictStrategy = _config.FileConflictStrategy.ToString(),
+                        _config.InputExtensions,
+                        _config.EncodeTimeoutMinutes,
+                        _config.SearchTimeoutMinutes,
+                        _config.SafeTimeoutMinutes,
+                        _config.SsimTimeoutMinutes,
+                        _config.SweepMode,
+                        _config.DryRun,
+                        _config.Verbose
+                    }
                 };
                 string tmp = _snapshotPath + ".tmp";
                 File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(snapshot), Encoding.UTF8);
@@ -948,24 +978,27 @@ namespace AvifEncoder
             catch { }
         }
 
-        private HashSet<string> LoadSnapshot()
+        private (HashSet<string> completed, string? configJson) LoadSnapshot()
         {
-            if (!_fs.FileExists(_snapshotPath)) return new HashSet<string>();
+            if (!_fs.FileExists(_snapshotPath)) return (new HashSet<string>(), null);
             try
             {
                 string json = File.ReadAllText(_snapshotPath, Encoding.UTF8);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
+                string? cfgJson = null;
+                if (root.TryGetProperty("config", out var cfgEl))
+                    cfgJson = cfgEl.GetRawText();
                 if (root.TryGetProperty("completed", out var arr))
                 {
                     var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var el in arr.EnumerateArray())
                         set.Add(el.GetString() ?? "");
-                    return set;
+                    return (set, cfgJson);
                 }
             }
             catch { }
-            return new HashSet<string>();
+            return (new HashSet<string>(), null);
         }
 
         private void CloseJournal()
@@ -1483,7 +1516,48 @@ namespace AvifEncoder
 
                     // 加载快照并回放日志
                     // ★ 保守策略：三个数据源取交集（全部确认完成才算完成）
-                    var snapshotDone = LoadSnapshot();
+                    var (snapshotDone, savedConfigJson) = LoadSnapshot();
+
+                    // 从快照恢复编码配置（--resume 时无需重新指定参数）
+                    if (savedConfigJson != null)
+                    {
+                        try
+                        {
+                            using var cfgDoc = JsonDocument.Parse(savedConfigJson);
+                            var cfg = cfgDoc.RootElement;
+                            if (cfg.TryGetProperty("Encoder", out var enc)) _config.Encoder = enc.GetString()!;
+                            if (cfg.TryGetProperty("Lossless", out var ll)) _config.Lossless = ll.GetBoolean();
+                            if (cfg.TryGetProperty("UseCRFSearch", out var sr)) _config.UseCRFSearch = sr.GetBoolean();
+                            if (cfg.TryGetProperty("BaseCRF", out var bcrf)) _config.BaseCRF = bcrf.GetInt32();
+                            if (cfg.TryGetProperty("MinCRF", out var mn)) _config.MinCRF = mn.GetInt32();
+                            if (cfg.TryGetProperty("MaxCRF", out var mx)) _config.MaxCRF = mx.GetInt32();
+                            if (cfg.TryGetProperty("MetricMode", out var mm)) _config.MetricMode = mm.GetString()!;
+                            if (cfg.TryGetProperty("PixelFormat", out var pf)) _config.PixelFormat = pf.GetString();
+                            if (cfg.TryGetProperty("BitDepth", out var bd)) _config.BitDepth = bd.GetInt32();
+                            if (cfg.TryGetProperty("OutputNameFormat", out var ot)) _config.OutputNameFormat = ot.GetString()!;
+                            if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) _config.RecurseSubdirectories = rc.GetBoolean();
+                            if (cfg.TryGetProperty("SerialEncode", out var se)) _config.SerialEncode = se.GetBoolean();
+                            if (cfg.TryGetProperty("UsePriorSearch", out var ps)) _config.UsePriorSearch = ps.GetBoolean();
+                            if (cfg.TryGetProperty("UseProxySearch", out var px)) _config.UseProxySearch = px.GetBoolean();
+                            if (cfg.TryGetProperty("SearchCpuUsed", out var sc)) _config.SearchCpuUsed = sc.GetInt32();
+                            if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) _config.FinalCpuUsed = fc.GetInt32();
+                            if (cfg.TryGetProperty("MaxResolution", out var mr)) _config.MaxResolution = mr.GetInt32();
+                            if (cfg.TryGetProperty("MaxJobs", out var mj)) _config.MaxJobs = mj.GetInt32();
+                            if (cfg.TryGetProperty("InputExtensions", out var ie)) _config.InputExtensions = ie.GetString();
+                            if (cfg.TryGetProperty("EncodeTimeoutMinutes", out var et)) _config.EncodeTimeoutMinutes = et.GetInt32();
+                            if (cfg.TryGetProperty("SearchTimeoutMinutes", out var st)) _config.SearchTimeoutMinutes = st.GetInt32();
+                            if (cfg.TryGetProperty("SafeTimeoutMinutes", out var sf)) _config.SafeTimeoutMinutes = sf.GetInt32();
+                            if (cfg.TryGetProperty("SsimTimeoutMinutes", out var ss)) _config.SsimTimeoutMinutes = ss.GetInt32();
+                            if (cfg.TryGetProperty("SweepMode", out var sw)) _config.SweepMode = sw.GetBoolean();
+                            if (cfg.TryGetProperty("DryRun", out var dr)) _config.DryRun = dr.GetBoolean();
+                            if (cfg.TryGetProperty("Verbose", out var vb)) _config.Verbose = vb.GetBoolean();
+                            _logger.LogInfo($"[RESUME] 已从快照恢复编码配置: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogInfo($"[RESUME] 配置恢复失败: {ex.Message}，使用当前参数");
+                        }
+                    }
                     var journalDone = ReplayJournal(null);  // 回放全部日志（不限时间戳）
                     var csvDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

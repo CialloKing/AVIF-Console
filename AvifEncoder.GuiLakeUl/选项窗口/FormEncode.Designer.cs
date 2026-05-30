@@ -78,6 +78,8 @@
             btnBrowseInput = new LakeUI.ModernButton();
             btnStart = new LakeUI.ModernButton();
             txtInput = new LakeUI.ModernTextBox();
+            btnResume = new LakeUI.ModernButton();
+            btnAbandon = new LakeUI.ModernButton();
             modernPanel1.SuspendLayout();
             grpCrfMode.SuspendLayout();
             SuspendLayout();
@@ -88,6 +90,8 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(btnAbandon);
+            modernPanel1.Controls.Add(btnResume);
             modernPanel1.Controls.Add(cmbTemplate);
             modernPanel1.Controls.Add(cmbPreset);
             modernPanel1.Controls.Add(cmbEncoder);
@@ -859,6 +863,38 @@
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径，支持拖入文件夹";
             // 
+            // btnResume
+            // 
+            btnResume.AnimationFPS = 0;
+            btnResume.BackColor1 = Color.Transparent;
+            btnResume.BorderColor = Color.White;
+            btnResume.BorderRadius = 10;
+            btnResume.ForeColor = Color.WhiteSmoke;
+            btnResume.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnResume.Location = new Point(432, 489);
+            btnResume.Margin = new Padding(2);
+            btnResume.Name = "btnResume";
+            btnResume.PressedBackColor1 = Color.White;
+            btnResume.Size = new Size(120, 35);
+            btnResume.TabIndex = 66;
+            btnResume.Text = "恢复任务";
+            // 
+            // btnAbandon
+            // 
+            btnAbandon.AnimationFPS = 0;
+            btnAbandon.BackColor1 = Color.Transparent;
+            btnAbandon.BorderColor = Color.White;
+            btnAbandon.BorderRadius = 10;
+            btnAbandon.ForeColor = Color.WhiteSmoke;
+            btnAbandon.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnAbandon.Location = new Point(639, 489);
+            btnAbandon.Margin = new Padding(2);
+            btnAbandon.Name = "btnAbandon";
+            btnAbandon.PressedBackColor1 = Color.White;
+            btnAbandon.Size = new Size(120, 35);
+            btnAbandon.TabIndex = 67;
+            btnAbandon.Text = "放弃任务";
+            // 
             // FormEncode
             // 
             AllowDrop = true;
@@ -928,5 +964,7 @@
         private LakeUI.ModernComboBox cmbEncoder;
         private LakeUI.ModernComboBox cmbPreset;
         private LakeUI.ModernComboBox cmbTemplate;
+        private LakeUI.ModernButton btnResume;
+        private LakeUI.ModernButton btnAbandon;
     }
 }
