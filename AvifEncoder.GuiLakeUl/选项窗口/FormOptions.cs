@@ -22,13 +22,20 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         }
 
         public string GetExtensions() => txtExtensions.Text.Trim();
+        public void SetExtensions(string v) => txtExtensions.Text = v ?? "";
 
         public int EncodeTimeout => (int)numTimeoutEncode.Value;
+        public void SetEncodeTimeout(int v) => numTimeoutEncode.Value = v;
         public int SearchTimeout => (int)numTimeoutSearch.Value;
+        public void SetSearchTimeout(int v) => numTimeoutSearch.Value = v;
         public int SafeTimeout => (int)numTimeoutSafe.Value;
+        public void SetSafeTimeout(int v) => numTimeoutSafe.Value = v;
         public int SsimTimeout => (int)numTimeoutSsim.Value;
+        public void SetSsimTimeout(int v) => numTimeoutSsim.Value = v;
         public bool DryRun => chkDryRun.Checked;
+        public void SetDryRun(bool v) => chkDryRun.Checked = v;
         public bool VerboseOutput => chkVerbose.Checked;
+        public void SetVerboseOutput(bool v) => chkVerbose.Checked = v;
 
         private void InitializeComponent()
         {

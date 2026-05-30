@@ -50,6 +50,15 @@ namespace AvifEncoder
         public bool EncodePriorSearch { get; set; }
         public bool EncodeProxy { get; set; }
         public bool EncodeSweep { get; set; }
+
+        // ===== 选项页 =====
+        public string? EncodeExtensions { get; set; }
+        public int EncodeTimeoutEncode { get; set; }
+        public int EncodeTimeoutSearch { get; set; }
+        public int EncodeTimeoutSafe { get; set; }
+        public int EncodeTimeoutSsim { get; set; }
+        public bool EncodeDryRun { get; set; }
+        public bool EncodeVerbose { get; set; }
     }
 
     public static class AppConfigHelper

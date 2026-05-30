@@ -983,6 +983,20 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 {
                     txtOutput.Text = cfg.EncodeOutput;
                 }
+
+                // 选项页数据回填
+                var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                if (optsPage != null)
+                {
+                    if (cfg.EncodeExtensions != null)
+                        optsPage.SetExtensions(cfg.EncodeExtensions);
+                    optsPage.SetEncodeTimeout(cfg.EncodeTimeoutEncode);
+                    optsPage.SetSearchTimeout(cfg.EncodeTimeoutSearch);
+                    optsPage.SetSafeTimeout(cfg.EncodeTimeoutSafe);
+                    optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
+                    optsPage.SetDryRun(cfg.EncodeDryRun);
+                    optsPage.SetVerboseOutput(cfg.EncodeVerbose);
+                }
             }
             finally
             {
@@ -1038,6 +1052,22 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             cfg.EncodeInput = txtInput.Text;
             cfg.EncodeOutput = txtOutput.Text;
+
+            // 选项页数据
+            if (Application.OpenForms["Form1"] is Form1 mainForm)
+            {
+                var optsPage = mainForm.GetOptionsPage();
+                if (optsPage != null)
+                {
+                    cfg.EncodeExtensions = optsPage.GetExtensions();
+                    cfg.EncodeTimeoutEncode = optsPage.EncodeTimeout;
+                    cfg.EncodeTimeoutSearch = optsPage.SearchTimeout;
+                    cfg.EncodeTimeoutSafe = optsPage.SafeTimeout;
+                    cfg.EncodeTimeoutSsim = optsPage.SsimTimeout;
+                    cfg.EncodeDryRun = optsPage.DryRun;
+                    cfg.EncodeVerbose = optsPage.VerboseOutput;
+                }
+            }
         }
     }
 

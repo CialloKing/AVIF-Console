@@ -224,10 +224,10 @@ namespace AvifEncoder.GuiLakeUl
         }
         private void TryLoadDefaultConfig()
         {
-            // 优先读程序所在目录，再读工作目录，使用第一个合法 json
+            // 优先 app_settings.json，再扫描其他 *.json 文件，按修改时间取最新
             string exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
             string workDir = Environment.CurrentDirectory;
-            string jsonName = "app_settings.json";
+            string preferredName = "app_settings.json";
 
             AppConfig? config = null;
 
@@ -238,15 +238,30 @@ namespace AvifEncoder.GuiLakeUl
                     Path.GetFullPath(workDir),
                     StringComparison.OrdinalIgnoreCase))
                 {
-                    continue; // 同一个目录，跳过第二次读
+                    continue;
                 }
 
-                string candidate = Path.Combine(dir, jsonName);
-                config = AppConfigHelper.LoadFromFile(candidate);
-                if (config != null)
+                // 1) 优先 app_settings.json
+                string preferred = Path.Combine(dir, preferredName);
+                config = AppConfigHelper.LoadFromFile(preferred);
+                if (config != null) break;
+
+                // 2) 扫描所有 *.json（按修改时间降序，取最新的合法文件）
+                try
                 {
-                    break;
+                    var jsonFiles = Directory.GetFiles(dir, "*.json")
+                        .OrderByDescending(f => File.GetLastWriteTimeUtc(f));
+                    foreach (var f in jsonFiles)
+                    {
+                        if (string.Equals(f, preferred, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        config = AppConfigHelper.LoadFromFile(f);
+                        if (config != null) break;
+                    }
                 }
+                catch { }
+
+                if (config != null) break;
             }
 
             if (config == null)

@@ -67,6 +67,7 @@ namespace AvifEncoder.GuiLakeUl
             {
                 Filter = "JSON文件|*.json|所有文件|*.*",
                 DefaultExt = "json",
+                FileName = "app_settings.json",
                 Title = "保存配置文件"
             };
             if (sfd.ShowDialog(this) == DialogResult.OK)
@@ -454,9 +455,6 @@ namespace AvifEncoder.GuiLakeUl
         private ModernButton modernButton1 = null!;
         private ModernButton btnResetDefault = null!;
 
-        private void label1_Click(object sender, EventArgs e)
-        {
 
-        }
     }
 }
