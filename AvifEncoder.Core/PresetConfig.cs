@@ -120,6 +120,7 @@ namespace AvifEncoder
         public bool SweepMode { get; set; } = false;
         public bool DryRun { get; set; } = false;
         public bool Verbose { get; set; } = false;
+        public bool Resume { get; set; } = false;
 
 
 

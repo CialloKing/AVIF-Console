@@ -179,6 +179,14 @@ namespace AvifEncoder
         private string _csvPath = "";
         private bool _csvHeaderWritten;
 
+        // Journal 断点续传
+        private string _journalPath = "";
+        private string _snapshotPath = "";
+        private StreamWriter? _journalWriter;
+        private readonly object _journalLock = new();
+        private int _journalCountSinceSnapshot;
+        private DateTime _lastSnapshotTime;
+
 
 
 
@@ -768,6 +776,12 @@ namespace AvifEncoder
 
             _csvPath = Path.Combine(_outputDir, "avif_stats.csv");
 
+            // Journal 断点续传
+            string sessionDir = Path.Combine(_outputDir, ".session");
+            _fs.CreateDirectory(sessionDir);
+            _journalPath = Path.Combine(sessionDir, "journal.ndjson");
+            _snapshotPath = Path.Combine(sessionDir, "snapshot.json");
+
             // ★ 跨平台兜底：进程退出时（Ctrl+C、窗口关闭、Environment.Exit）强制清理子进程
             AppDomain.CurrentDomain.ProcessExit += (_, _) =>
             {
@@ -834,9 +848,142 @@ namespace AvifEncoder
 
 
 
+        #region Journal 断点续传
+
+        private void InitJournal()
+        {
+            lock (_journalLock)
+            {
+                _journalWriter?.Dispose();
+                _journalWriter = new StreamWriter(_journalPath, append: true, Encoding.UTF8)
+                {
+                    AutoFlush = false
+                };
+                _lastSnapshotTime = DateTime.UtcNow;
+                _journalCountSinceSnapshot = 0;
+            }
+        }
+
+        private void AppendJournal(string file, string evt, object? extra = null)
+        {
+            lock (_journalLock)
+            {
+                if (_journalWriter == null) return;
+                var obj = new Dictionary<string, object>
+                {
+                    ["v"] = 1,
+                    ["ts"] = DateTime.UtcNow.ToString("o"),
+                    ["file"] = file,
+                    ["evt"] = evt
+                };
+                if (extra != null)
+                {
+                    foreach (var prop in extra.GetType().GetProperties())
+                        obj[prop.Name.ToLower()] = prop.GetValue(extra) ?? "";
+                }
+                string line = System.Text.Json.JsonSerializer.Serialize(obj);
+                _journalWriter.WriteLine(line);
+                _journalWriter.Flush();  // 逐行刷盘
+                _journalCountSinceSnapshot++;
+            }
+        }
+
+        private HashSet<string> ReplayJournal(DateTime? since)
+        {
+            var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!_fs.FileExists(_journalPath)) return completed;
+
+            try
+            {
+                var lines = File.ReadAllLines(_journalPath);
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("ts", out var tsEl) &&
+                            root.TryGetProperty("evt", out var evtEl) &&
+                            root.TryGetProperty("file", out var fileEl))
+                        {
+                            if (since.HasValue &&
+                                DateTime.TryParse(tsEl.GetString(), out var ts) &&
+                                ts < since.Value)
+                                continue;
+                            if (evtEl.GetString() == "success")
+                                completed.Add(fileEl.GetString() ?? "");
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // 损坏行：截断并退出
+                        break;
+                    }
+                }
+            }
+            catch { }
+            return completed;
+        }
+
+        private void SaveSnapshot(IEnumerable<string> completed)
+        {
+            if (string.IsNullOrEmpty(_snapshotPath)) return;
+            try
+            {
+                var snapshot = new
+                {
+                    v = 1,
+                    ts = DateTime.UtcNow.ToString("o"),
+                    completed = completed.ToArray()
+                };
+                string tmp = _snapshotPath + ".tmp";
+                File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(snapshot), Encoding.UTF8);
+                if (_fs.FileExists(_snapshotPath))
+                    _fs.DeleteFile(_snapshotPath);
+                File.Move(tmp, _snapshotPath);
+                _journalCountSinceSnapshot = 0;
+                _lastSnapshotTime = DateTime.UtcNow;
+            }
+            catch { }
+        }
+
+        private HashSet<string> LoadSnapshot()
+        {
+            if (!_fs.FileExists(_snapshotPath)) return new HashSet<string>();
+            try
+            {
+                string json = File.ReadAllText(_snapshotPath, Encoding.UTF8);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("completed", out var arr))
+                {
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var el in arr.EnumerateArray())
+                        set.Add(el.GetString() ?? "");
+                    return set;
+                }
+            }
+            catch { }
+            return new HashSet<string>();
+        }
+
+        private void CloseJournal()
+        {
+            lock (_journalLock)
+            {
+                _journalWriter?.Flush();
+                _journalWriter?.Dispose();
+                _journalWriter = null;
+            }
+        }
+
+        #endregion
+
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            CloseJournal();
             FinalCleanup();
             _globalCts?.Cancel();
             _globalCts?.Dispose();
@@ -1320,8 +1467,110 @@ namespace AvifEncoder
                 var files = await ScanAndPrepareFilesAsync();
                 if (files == null || files.Count == 0) return;
 
+                // ★ 断点续传：清理草稿 + 回放日志 + 过滤已完成
+                if (_config.Resume)
+                {
+                    _logger.LogInfo("[RESUME] 断点续传模式：清理临时文件...");
+                    // 清理编码草稿
+                    foreach (var f in _fs.GetFiles(_outputDir, "_tmp_*.avif"))
+                        try { _fs.DeleteFile(f); } catch { }
+                    foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
+                        try { _fs.DeleteFile(f); } catch { }
+                    // 清理搜索临时目录
+                    foreach (var dir in _fs.GetFiles(_outputDir, "_search_advanced_*").Union(
+                                     _fs.GetFiles(_outputDir, "_advanced_metrics_*")))
+                        try { if (_fs.DirectoryExists(dir)) _fs.DeleteDirectory(dir, true); } catch { }
+
+                    // 加载快照并回放日志
+                    // ★ 保守策略：三个数据源取交集（全部确认完成才算完成）
+                    var snapshotDone = LoadSnapshot();
+                    var journalDone = ReplayJournal(null);  // 回放全部日志（不限时间戳）
+                    var csvDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    // CSV：提取 "成功" 行对应的输入文件
+                    if (_fs.FileExists(_csvPath))
+                    {
+                        try
+                        {
+                            var csvLines = File.ReadAllLines(_csvPath);
+                            int statusIdx = -1, fileIdx = -1;
+                            for (int i = 0; i < csvLines.Length; i++)
+                            {
+                                var cols = csvLines[i].Split(',');
+                                if (i == 0)
+                                {
+                                    for (int c = 0; c < cols.Length; c++)
+                                    {
+                                        if (cols[c].Trim('"') == "状态") statusIdx = c;
+                                        if (cols[c].Trim('"') == "文件名") fileIdx = c;
+                                    }
+                                    continue;
+                                }
+                                if (statusIdx >= 0 && fileIdx >= 0 &&
+                                    statusIdx < cols.Length && fileIdx < cols.Length &&
+                                    cols[statusIdx].Trim('"') == "成功")
+                                {
+                                    string csvFileName = cols[fileIdx].Trim('"');
+                                    foreach (var (path, _) in files)
+                                    {
+                                        string outPath = GetOutputPath(path, -1);
+                                        if (Path.GetFileName(outPath) == csvFileName)
+                                        {
+                                            csvDone.Add(path);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    // 交集：三源全部确认 → 才视为完成
+                    var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
+                    completed.IntersectWith(journalDone);
+                    if (csvDone.Count > 0) completed.IntersectWith(csvDone);  // CSV 存在才参与交集
+
+                    _logger.LogInfo(
+                        $"[RESUME] 快照:{snapshotDone.Count} 日志:{journalDone.Count} " +
+                        $"CSV:{csvDone.Count} → 交集:{completed.Count}");
+
+                    // 文件系统交叉验证：仅日志缺失时记录，不自动标记完成（避免参数变更误判）
+                    foreach (var (path, idx) in files)
+                    {
+                        if (completed.Contains(path)) continue;
+                        string outPath = GetOutputPath(path, idx);
+                        if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
+                            _logger.LogInfo(
+                                $"[RESUME] 输出文件存在但日志无记录: {Path.GetFileName(outPath)}，将重新编码");
+                    }
+
+                    // 过滤已完成
+                    var remaining = files.Where(f => !completed.Contains(f.path)).ToList();
+                    int skipped = files.Count - remaining.Count;
+                    _logger.LogInfo($"[RESUME] {skipped}/{files.Count} 已完成，剩余 {remaining.Count} 待处理");
+                    if (remaining.Count == 0)
+                    {
+                        _logger.LogInfo("[RESUME] 全部已完成，无需处理");
+                        return;
+                    }
+                    files = remaining;
+                    _progress.SetTotalFiles(files.Count);
+                }
+
+                // 初始化 Journal
+                InitJournal();
+
                 var results = await ProcessInitialBatchAsync(files);
                 results = await RetryFailuresAsync(results);
+
+                // 退出前保存最终快照
+                if (_config.Resume && results != null)
+                {
+                    var completedPaths = results.Where(r => r != null && (r.Success || r.Skipped))
+                        .Select(r => r!.InputPath);
+                    SaveSnapshot(completedPaths);
+                }
 
                 await PrintSummaryAndExport(results);
             }
@@ -1617,6 +1866,8 @@ namespace AvifEncoder
 
             // 清理带 _p_ 前缀的临时 AVIF 文件
             foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
+                try { _fs.DeleteFile(f); } catch { }
+            foreach (var f in _fs.GetFiles(_outputDir, "_tmp_*.avif"))
                 try { _fs.DeleteFile(f); } catch { }
 
             // ★ 新增：清理 ComputeAllMetrics 生成的临时 JSON 目录

@@ -75,6 +75,7 @@ namespace AvifEncoder
             public int? FinalCpuUsed;
             public bool SweepMode { get; set; } = false;
             public bool RecomputeMetrics { get; set; } = false;
+            public bool Resume { get; set; } = false;
             public string? Extensions { get; set; }
         }
 
@@ -225,6 +226,9 @@ namespace AvifEncoder
                             break;
                         case "extensions":
                             opts.Extensions = GetValue();
+                            break;
+                        case "resume":
+                            opts.Resume = true;
                             break;
                         default:
                             if (key.StartsWith("timeout-"))
@@ -418,6 +422,8 @@ namespace AvifEncoder
             }
             if (!string.IsNullOrWhiteSpace(opts.Extensions))
                 config.InputExtensions = opts.Extensions;
+            if (opts.Resume)
+                config.Resume = true;
             return config;
         }
 

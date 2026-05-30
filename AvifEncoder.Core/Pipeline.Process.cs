@@ -332,6 +332,7 @@ namespace AvifEncoder
                 if (skipResult != null) return skipResult;
 
                 _logger.LogInfo($"开始: {name}");
+                if (_config.Resume) AppendJournal(inputPath, "start");
 
                 // 准备编码信息
                 var encInfo = await PrepareEncodingInfoAsync(workingInputPath, config);
@@ -440,9 +441,12 @@ namespace AvifEncoder
                  workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
 
                 // 组装结果（传递 cacheKey 以便最终回填高级指标）
-                return BuildResult(index, Path.GetFileName(outputPath), name,
+                var finalResult = BuildResult(index, Path.GetFileName(outputPath), name,
                                        inputPath, outputPath,
                                        encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey);
+                if (_config.Resume && finalResult.Success)
+                    AppendJournal(inputPath, "success", new { crf = finalResult.UsedCRF, size = finalResult.OutputSize });
+                return finalResult;
             }
             finally
             {

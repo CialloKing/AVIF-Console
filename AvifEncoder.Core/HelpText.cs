@@ -104,6 +104,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
       --recompute-metrics      强制重新计算所有质量指标（忽略缓存）
 
+      --resume                 断点续传：跳过已完成的文件，从中断处继续
+
       --timeout-encode <分钟>  单次最终编码超时 (默认自动计算)
       --timeout-search <分钟>  搜索阶段全局超时 (默认 60)
       --timeout-safe <分钟>    安全模式全扫描超时 (默认 180)

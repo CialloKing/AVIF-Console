@@ -272,10 +272,13 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 _logger.LogSearch($"  ? [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
 
+                // ★ 原子重命名：先写到临时文件，成功后再 rename 到最终路径
+                string outputDir = Path.GetDirectoryName(output) ?? ".";
+                string tmpOutput = Path.Combine(outputDir, $"_tmp_{Guid.NewGuid():N}.avif");
+
                 for (int attempt = 0; attempt <= _maxRetries; attempt++)
                 {
-                    string ffArgs = await BuildFfmpegArgsAsync(input, output, crf, currentPixFmt, param, cfg, isTrueLossless);
-                    // ... 后续编码逻辑保持不变 ...
+                    string ffArgs = await BuildFfmpegArgsAsync(input, tmpOutput, crf, currentPixFmt, param, cfg, isTrueLossless);
                     var sw = Stopwatch.StartNew();
                     (bool success, string stderrLastLine) = await RunFfmpegExAsync(_ffmpegPath, ffArgs,
                         TimeSpan.FromMinutes(timeoutMinutes));
@@ -283,27 +286,34 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                     if (success)
                     {
-                        if (_fs.GetFileLength(output) < 100)
+                        if (_fs.GetFileLength(tmpOutput) < 100)
                         {
-                            _logger.LogSearch($"编码输出文件过小 ({_fs.GetFileLength(output)} 字节)，丢弃并重试");
-                            if (_fs.FileExists(output)) _fs.DeleteFile(output);
+                            _logger.LogSearch($"编码输出文件过小 ({_fs.GetFileLength(tmpOutput)} 字节)，丢弃并重试");
+                            if (_fs.FileExists(tmpOutput)) _fs.DeleteFile(tmpOutput);
                             if (attempt < _maxRetries) { await Task.Delay(1000); continue; }
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
                         }
 
-                        // 成功，保存缓存
+                        // 原子重命名 tmp → final
+                        if (_fs.FileExists(output)) _fs.DeleteFile(output);
+                        File.Move(tmpOutput, output);
+
+                        // 成功，保存缓存（也用原子写入）
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
-                        _fs.CopyFile(output, cacheFile, true);
+                        string tmpCache = cacheFile + ".tmp";
+                        _fs.CopyFile(output, tmpCache, true);
+                        if (_fs.FileExists(cacheFile)) _fs.DeleteFile(cacheFile);
+                        File.Move(tmpCache, cacheFile);
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
-                        _logger.LogSearch($"? 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F4}s");
+                        _logger.LogSearch($"[OK] 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F4}s");
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
                     }
 
                     string error = $"CRF={crf}, {stderrLastLine}";
-                    _logger.LogSearch($"? 编码失败: {input} 尝试{attempt + 1}/{_maxRetries + 1} - {error}");
+                    _logger.LogSearch($"[FAIL] 编码失败: {input} 尝试{attempt + 1}/{_maxRetries + 1} - {error}");
 
                     // 清理失败输出
-                    if (_fs.FileExists(output)) _fs.DeleteFile(output);
+                    if (_fs.FileExists(tmpOutput)) _fs.DeleteFile(tmpOutput);
 
                     // 致命错误：立即停止重试
                     if (stderrLastLine.Contains("Nothing was written", StringComparison.OrdinalIgnoreCase))
