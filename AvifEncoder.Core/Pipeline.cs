@@ -886,12 +886,12 @@ namespace AvifEncoder
                 _journalWriter.Flush();  // 逐行刷盘
                 _journalCountSinceSnapshot++;
 
-                // ★ 周期性快照：每 50 个文件 或 距上次快照 > 5 分钟
+                // ★ 周期性快照：合并旧快照完成列表 + 本次新增
                 if (_config.Resume && _journalCountSinceSnapshot >= 50)
                 {
-                    // 合并 journal 中所有 success 文件
-                    var allDone = ReplayJournal(null);
-                    SaveSnapshot(allDone);
+                    var (oldDone, _, _) = LoadSnapshot();
+                    var newDone = ReplayJournal(null);
+                    SaveSnapshot(oldDone.Union(newDone));
                 }
             }
         }
@@ -984,16 +984,14 @@ namespace AvifEncoder
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
 
-                // 截断 Journal：快照已包含全部状态，旧日志无保留价值
+                // 截断 Journal：原子替换，避免 AppendJournal 在窗口期丢失条目
                 lock (_journalLock)
                 {
                     _journalWriter?.Flush();
                     _journalWriter?.Dispose();
-                    _journalWriter = null;
+                    try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
+                    _journalWriter = new StreamWriter(_journalPath, append: false, Encoding.UTF8) { AutoFlush = false };
                 }
-                try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
-                // 重新打开空 journal
-                _journalWriter = new StreamWriter(_journalPath, append: false, Encoding.UTF8) { AutoFlush = false };
             }
             catch { }
         }
@@ -1561,10 +1559,15 @@ namespace AvifEncoder
                         try { _fs.DeleteFile(f); } catch { }
                     foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
                         try { _fs.DeleteFile(f); } catch { }
-                    // 清理搜索临时目录
-                    foreach (var dir in _fs.GetFiles(_outputDir, "_search_advanced_*").Union(
-                                     _fs.GetFiles(_outputDir, "_advanced_metrics_*")))
-                        try { if (_fs.DirectoryExists(dir)) _fs.DeleteDirectory(dir, true); } catch { }
+                    // 清理搜索临时目录（用 Directory.GetDirectories 而非 GetFiles）
+                    try
+                    {
+                        foreach (var dir in Directory.GetDirectories(_outputDir, "_search_advanced_*"))
+                            try { if (_fs.DirectoryExists(dir)) _fs.DeleteDirectory(dir, true); } catch { }
+                        foreach (var dir in Directory.GetDirectories(_outputDir, "_advanced_metrics_*"))
+                            try { if (_fs.DirectoryExists(dir)) _fs.DeleteDirectory(dir, true); } catch { }
+                    }
+                    catch { }
 
                     // 加载快照并回放日志
                     // ★ 保守策略：三个数据源取交集（全部确认完成才算完成）
@@ -1637,9 +1640,10 @@ namespace AvifEncoder
                                     cols[statusIdx] == "成功")
                                 {
                                     string csvFileName = cols[fileIdx];
-                                    foreach (var (path, _) in files)
+                                    // 用实际 index 反向映射（而非 -1，避免索引模板错位）
+                                    foreach (var (path, idx) in files)
                                     {
-                                        string outPath = GetOutputPath(path, -1);
+                                        string outPath = GetOutputPath(path, idx);
                                         if (Path.GetFileName(outPath) == csvFileName)
                                         {
                                             csvDone.Add(path);
@@ -1681,8 +1685,7 @@ namespace AvifEncoder
                         return;
                     }
                     files = remaining;
-                    _progress.SetTotalFiles(files.Count);
-                    // 让进度条从中断处开始（而非从 0 开始）
+                    // 总文件数不变（ScanAndPrepareFilesAsync 已设），只调整已完成计数
                     _progress.SetInitialProcessed(skipped);
                 }
 
@@ -1697,14 +1700,16 @@ namespace AvifEncoder
                 var results = await ProcessInitialBatchAsync(files);
                 results = await RetryFailuresAsync(results);
 
-                // 退出前保存最终快照；全部成功则清除 Journal（快照已包含全部信息）
+                // 退出前合并旧已完成 + 新完成 → 保存最终快照
                 if (_config.Resume && results != null)
                 {
-                    var completedPaths = results.Where(r => r != null && (r.Success || r.Skipped))
-                        .Select(r => r!.InputPath).ToList();
-                    SaveSnapshot(completedPaths);
+                    // 合并快照中已有的完成列表
+                    var (oldCompleted, _, _) = LoadSnapshot();
+                    var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
+                        .Select(r => r!.InputPath);
+                    SaveSnapshot(oldCompleted.Union(newCompleted));
                     int totalNonSkipped = results.Count(r => r != null && !r.Skipped);
-                    if (completedPaths.Count == totalNonSkipped)
+                    if (newCompleted.Count() == totalNonSkipped)
                     {
                         CloseJournal();
                         try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
@@ -1991,6 +1996,11 @@ namespace AvifEncoder
                 }
                 catch { }
             }
+            // 释放所有 Process 对象
+            foreach (var p in _spawnedProcesses)
+            {
+                try { if (p.HasExited) p.Dispose(); } catch { }
+            }
             _spawnedProcesses.Clear();
 
             // 清理编码缓存目录
@@ -2008,6 +2018,16 @@ namespace AvifEncoder
                 try { _fs.DeleteFile(f); } catch { }
             foreach (var f in _fs.GetFiles(_outputDir, "_tmp_*.avif"))
                 try { _fs.DeleteFile(f); } catch { }
+
+            // ★ 清理残留的指标临时目录
+            try
+            {
+                foreach (var dir in Directory.GetDirectories(_outputDir, "_search_advanced_*"))
+                    try { Directory.Delete(dir, true); } catch { }
+                foreach (var dir in Directory.GetDirectories(_outputDir, "_advanced_metrics_*"))
+                    try { Directory.Delete(dir, true); } catch { }
+            }
+            catch { }
 
             // ★ 新增：清理 ComputeAllMetrics 生成的临时 JSON 目录
             string metricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");

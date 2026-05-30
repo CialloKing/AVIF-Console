@@ -424,6 +424,8 @@ namespace AvifEncoder
                 config.InputExtensions = opts.Extensions;
             if (opts.Resume)
                 config.Resume = true;
+            config.DryRun = opts.DryRun;
+            config.Verbose = opts.Verbose;
             return config;
         }
 

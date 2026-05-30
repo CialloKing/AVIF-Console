@@ -115,6 +115,7 @@ namespace AvifEncoder
                 string name = Path.GetFileName(inputPath);
 
                 // 1. 准备编码基础信息（复用缓存）
+                if (_config.Resume) AppendJournal(inputPath, "start");
                 var encInfo = await PrepareEncodingInfoAsync(inputPath, config);
                 if (encInfo == null)
                 {

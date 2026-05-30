@@ -37,6 +37,12 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         private bool _sweepPreviousCrfRangeMode;
         private bool _isResumeDetected;
 
+        private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
+        private static readonly string[] _encoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
+        private static readonly string[] _chromaNames = ["auto", "420", "422", "444"];
+        private static readonly string[] _bitDepthNames = ["auto", "8", "10"];
+        private static readonly string[] _conflictNames = ["自动重命名", "覆盖已存在文件", "跳过已存在文件"];
+
         public FormEncode()
         {
             InitializeComponent();
@@ -97,7 +103,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         }
 
         /// <summary>辅助：根据字符串设置 ModernComboBox 选中项</summary>
-        private void SetComboBoxItem(ModernComboBox combo, string item)
+        private static void SetComboBoxItem(ModernComboBox combo, string item)
         {
             int idx = combo.Items.IndexOf(item);
             combo.SelectedIndex = idx >= 0 ? idx : -1;
@@ -106,11 +112,10 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
         private void InitializeAllControls()
         {
             cmbPreset.Items.Clear();
-            cmbPreset.Items.AddRange(new string[] { CustomPresetName, "fast", "balanced", "best", "extreme" });
+            cmbPreset.Items.AddRange(_presetNames);
 
             cmbEncoder.Items.Clear();
-            cmbEncoder.Items.AddRange(new string[] { "libaom-av1", "libsvtav1", "librav1e",
-                                                      "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" });
+            cmbEncoder.Items.AddRange(_encoderNames);
             SetComboBoxItem(cmbEncoder, "libaom-av1");
             UpdateCpuUsedLimits();   // 添加此行，使初始上限与编码器匹配
 
@@ -169,11 +174,11 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             numQualityValue.Enabled = false;
 
             cmbChroma.Items.Clear();
-            cmbChroma.Items.AddRange(new string[] { "auto", "420", "422", "444" });
+            cmbChroma.Items.AddRange(_chromaNames);
             cmbChroma.SelectedIndex = 0;
 
             cmbBitDepth.Items.Clear();
-            cmbBitDepth.Items.AddRange(new string[] { "auto", "8", "10" });
+            cmbBitDepth.Items.AddRange(_bitDepthNames);
             cmbBitDepth.SelectedIndex = 0;
 
             chkLossless.Checked = false;
@@ -181,7 +186,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             numMaxRes.Minimum = 0; numMaxRes.Maximum = 10000; numMaxRes.Value = 0;
             chkOutputFullRes.Checked = false;
             cmbConflict.Items.Clear();
-            cmbConflict.Items.AddRange(new string[] { "自动重命名", "覆盖已存在文件", "跳过已存在文件" });
+            cmbConflict.Items.AddRange(_conflictNames);
             cmbConflict.SelectedIndex = 0;
             chkSerialEncode.Checked = false;
             chkPriorSearch.Checked = false;
@@ -707,6 +712,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             finally
             {
                 _isEncoding = false;
+                _isResumeDetected = false;  // 编码完成后清除恢复状态
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
@@ -1097,8 +1103,14 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
                 var (_, configJson, inputPath) = LoadConfigFromSnapshot(snapshot);
                 if (configJson != null)
                 {
-                    if (!string.IsNullOrEmpty(inputPath) && string.IsNullOrEmpty(txtInput.Text.Trim()))
-                        txtInput.Text = inputPath;
+                    if (!string.IsNullOrEmpty(inputPath))
+                    {
+                        txtInput.Text = inputPath;  // 总是恢复输入路径（用户可覆盖）
+                    }
+                    else
+                    {
+                        LogPage?.AppendLog("[RESUME] 快照中无输入路径（可能是旧版本快照，请重新运行一次 --resume 以更新）");
+                    }
                     EnterResumeMode(configJson);
                     return;
                 }

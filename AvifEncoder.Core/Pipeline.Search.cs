@@ -711,8 +711,15 @@ namespace AvifEncoder
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
             string p = Path.Combine(_outputDir, "avif_stats.csv");
-            var sb = new StringBuilder();
 
+            // 恢复模式：CSV 已通过 AppendCsvRow 增量写入，无需覆盖（避免丢失旧条目）
+            if (_config.Resume)
+            {
+                SafeWriteLine($"CSV 已更新: {p} (增量模式，保留历史记录)");
+                return;
+            }
+
+            var sb = new StringBuilder();
             sb.AppendLine(string.Join(",", CsvColumnNames));
 
             foreach (var r in results)
