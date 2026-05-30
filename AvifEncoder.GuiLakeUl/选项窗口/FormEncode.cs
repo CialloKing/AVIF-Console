@@ -189,10 +189,10 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             // 遍历模式开关
             chkSweep.Checked = false;
 
-            // 恢复任务按钮（初始隐藏）
-            btnResume.Visible = false;
+            // 恢复任务按钮（初始可见但不可用，检测到中断时才启用）
+            btnResume.Visible = true;
             btnResume.Enabled = false;
-            btnAbandon.Visible = false;
+            btnAbandon.Visible = true;
             btnAbandon.Enabled = false;
         }
 
@@ -1094,9 +1094,11 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             string snapshot = Path.Combine(outputDir, ".session", "snapshot.json");
             if (File.Exists(snapshot))
             {
-                var (_, configJson) = LoadConfigFromSnapshot(snapshot);
+                var (_, configJson, inputPath) = LoadConfigFromSnapshot(snapshot);
                 if (configJson != null)
                 {
+                    if (!string.IsNullOrEmpty(inputPath) && string.IsNullOrEmpty(txtInput.Text.Trim()))
+                        txtInput.Text = inputPath;
                     EnterResumeMode(configJson);
                     return;
                 }
@@ -1104,19 +1106,21 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             ExitResumeMode();
         }
 
-        private static (HashSet<string>?, string?) LoadConfigFromSnapshot(string path)
+        private static (HashSet<string>?, string?, string?) LoadConfigFromSnapshot(string path)
         {
             try
             {
                 string json = File.ReadAllText(path);
                 using var doc = System.Text.Json.JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                string? cfgJson = null;
+                string? cfgJson = null, inputPath = null;
                 if (root.TryGetProperty("config", out var cfgEl))
                     cfgJson = cfgEl.GetRawText();
-                return (null, cfgJson);
+                if (root.TryGetProperty("inputDir", out var idEl))
+                    inputPath = idEl.GetString();
+                return (null, cfgJson, inputPath);
             }
-            catch { return (null, null); }
+            catch { return (null, null, null); }
         }
 
         private void EnterResumeMode(string configJson)
@@ -1195,9 +1199,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             // 按钮切换
             btnStart.Enabled = false;
-            btnResume.Visible = true;
             btnResume.Enabled = true;
-            btnAbandon.Visible = true;
             btnAbandon.Enabled = true;
 
             _isResumeDetected = true;
@@ -1210,9 +1212,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
 
             SetEncodingControlsEnabled(true);
             btnStart.Enabled = true;
-            btnResume.Visible = false;
             btnResume.Enabled = false;
-            btnAbandon.Visible = false;
             btnAbandon.Enabled = false;
 
             _isResumeDetected = false;
@@ -1235,6 +1235,7 @@ namespace AvifEncoder.GuiLakeUl.选项窗口
             cmbChroma.Enabled = enabled;
             cmbBitDepth.Enabled = enabled;
             chkLossless.Enabled = enabled;
+            grpCrfMode.Enabled = enabled;
             txtTemplate.Enabled = enabled;
             cmbTemplate.Enabled = enabled;
             chkRecursive.Enabled = enabled;

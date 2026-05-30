@@ -885,6 +885,14 @@ namespace AvifEncoder
                 _journalWriter.WriteLine(line);
                 _journalWriter.Flush();  // 逐行刷盘
                 _journalCountSinceSnapshot++;
+
+                // ★ 周期性快照：每 50 个文件 或 距上次快照 > 5 分钟
+                if (_config.Resume && _journalCountSinceSnapshot >= 50)
+                {
+                    // 合并 journal 中所有 success 文件
+                    var allDone = ReplayJournal(null);
+                    SaveSnapshot(allDone);
+                }
             }
         }
 
@@ -933,9 +941,10 @@ namespace AvifEncoder
             {
                 var snapshot = new
                 {
-                    v = 2,
+                    v = 3,
                     ts = DateTime.UtcNow.ToString("o"),
                     completed = completed.ToArray(),
+                    inputDir = _inputDir,
                     config = new
                     {
                         _config.Encoder,
@@ -974,31 +983,44 @@ namespace AvifEncoder
                 File.Move(tmp, _snapshotPath);
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
+
+                // 截断 Journal：快照已包含全部状态，旧日志无保留价值
+                lock (_journalLock)
+                {
+                    _journalWriter?.Flush();
+                    _journalWriter?.Dispose();
+                    _journalWriter = null;
+                }
+                try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
+                // 重新打开空 journal
+                _journalWriter = new StreamWriter(_journalPath, append: false, Encoding.UTF8) { AutoFlush = false };
             }
             catch { }
         }
 
-        private (HashSet<string> completed, string? configJson) LoadSnapshot()
+        private (HashSet<string> completed, string? configJson, string? inputDir) LoadSnapshot()
         {
-            if (!_fs.FileExists(_snapshotPath)) return (new HashSet<string>(), null);
+            if (!_fs.FileExists(_snapshotPath)) return (new HashSet<string>(), null, null);
             try
             {
                 string json = File.ReadAllText(_snapshotPath, Encoding.UTF8);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                string? cfgJson = null;
+                string? cfgJson = null, inputDir = null;
                 if (root.TryGetProperty("config", out var cfgEl))
                     cfgJson = cfgEl.GetRawText();
+                if (root.TryGetProperty("inputDir", out var idEl))
+                    inputDir = idEl.GetString();
                 if (root.TryGetProperty("completed", out var arr))
                 {
                     var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var el in arr.EnumerateArray())
                         set.Add(el.GetString() ?? "");
-                    return (set, cfgJson);
+                    return (set, cfgJson, inputDir);
                 }
             }
             catch { }
-            return (new HashSet<string>(), null);
+            return (new HashSet<string>(), null, null);
         }
 
         private void CloseJournal()
@@ -1009,6 +1031,36 @@ namespace AvifEncoder
                 _journalWriter?.Dispose();
                 _journalWriter = null;
             }
+        }
+
+        /// <summary>按逗号分割 CSV 行，正确处理双引号包裹的字段（引号内逗号不分割）</summary>
+        private static string[] SplitCsvLine(string line)
+        {
+            var result = new List<string>();
+            bool inQuotes = false;
+            int start = 0;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (line[i] == ',' && !inQuotes)
+                {
+                    result.Add(Unquote(line[start..i]));
+                    start = i + 1;
+                }
+            }
+            result.Add(Unquote(line[start..]));
+            return result.ToArray();
+        }
+
+        private static string Unquote(string s)
+        {
+            s = s.Trim();
+            if (s.StartsWith('"') && s.EndsWith('"') && s.Length >= 2)
+                return s[1..^1].Replace("\"\"", "\"");
+            return s;
         }
 
         #endregion
@@ -1516,7 +1568,7 @@ namespace AvifEncoder
 
                     // 加载快照并回放日志
                     // ★ 保守策略：三个数据源取交集（全部确认完成才算完成）
-                    var (snapshotDone, savedConfigJson) = LoadSnapshot();
+                    var (snapshotDone, savedConfigJson, savedInputDir) = LoadSnapshot();
 
                     // 从快照恢复编码配置（--resume 时无需重新指定参数）
                     if (savedConfigJson != null)
@@ -1561,7 +1613,7 @@ namespace AvifEncoder
                     var journalDone = ReplayJournal(null);  // 回放全部日志（不限时间戳）
                     var csvDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                    // CSV：提取 "成功" 行对应的输入文件
+                    // CSV：提取 "成功" 行对应的输入文件（正确处理引号内逗号）
                     if (_fs.FileExists(_csvPath))
                     {
                         try
@@ -1570,21 +1622,21 @@ namespace AvifEncoder
                             int statusIdx = -1, fileIdx = -1;
                             for (int i = 0; i < csvLines.Length; i++)
                             {
-                                var cols = csvLines[i].Split(',');
+                                var cols = SplitCsvLine(csvLines[i]);
                                 if (i == 0)
                                 {
                                     for (int c = 0; c < cols.Length; c++)
                                     {
-                                        if (cols[c].Trim('"') == "状态") statusIdx = c;
-                                        if (cols[c].Trim('"') == "文件名") fileIdx = c;
+                                        if (cols[c] == "状态") statusIdx = c;
+                                        if (cols[c] == "文件名") fileIdx = c;
                                     }
                                     continue;
                                 }
                                 if (statusIdx >= 0 && fileIdx >= 0 &&
                                     statusIdx < cols.Length && fileIdx < cols.Length &&
-                                    cols[statusIdx].Trim('"') == "成功")
+                                    cols[statusIdx] == "成功")
                                 {
-                                    string csvFileName = cols[fileIdx].Trim('"');
+                                    string csvFileName = cols[fileIdx];
                                     foreach (var (path, _) in files)
                                     {
                                         string outPath = GetOutputPath(path, -1);
@@ -1630,20 +1682,33 @@ namespace AvifEncoder
                     }
                     files = remaining;
                     _progress.SetTotalFiles(files.Count);
+                    // 让进度条从中断处开始（而非从 0 开始）
+                    _progress.SetInitialProcessed(skipped);
                 }
 
-                // 初始化 Journal
+                // 初始化 Journal；非恢复模式先清理旧快照避免混淆
+                if (!_config.Resume)
+                {
+                    try { if (_fs.FileExists(_snapshotPath)) _fs.DeleteFile(_snapshotPath); } catch { }
+                    try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
+                }
                 InitJournal();
 
                 var results = await ProcessInitialBatchAsync(files);
                 results = await RetryFailuresAsync(results);
 
-                // 退出前保存最终快照
+                // 退出前保存最终快照；全部成功则清除 Journal（快照已包含全部信息）
                 if (_config.Resume && results != null)
                 {
                     var completedPaths = results.Where(r => r != null && (r.Success || r.Skipped))
-                        .Select(r => r!.InputPath);
+                        .Select(r => r!.InputPath).ToList();
                     SaveSnapshot(completedPaths);
+                    int totalNonSkipped = results.Count(r => r != null && !r.Skipped);
+                    if (completedPaths.Count == totalNonSkipped)
+                    {
+                        CloseJournal();
+                        try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
+                    }
                 }
 
                 await PrintSummaryAndExport(results);

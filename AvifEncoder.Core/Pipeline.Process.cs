@@ -248,6 +248,9 @@ namespace AvifEncoder
                                 result.ErrorMessage = "AOM参数已降级（编码器未使用完整参数）";
                             }
 
+                            if (_config.Resume && result.Success)
+                                AppendJournal(inputPath, "success", new { crf = capturedCrf, size = result.OutputSize });
+
                             MarkProcessed(result);
                             results.Add(result);
                         }

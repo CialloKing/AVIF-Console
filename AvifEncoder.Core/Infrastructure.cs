@@ -91,6 +91,12 @@ namespace AvifEncoder
             Interlocked.Increment(ref _processedCount);
         }
 
+        /// <summary>设置初始已完成计数（断点续传时从中断处开始）</summary>
+        public void SetInitialProcessed(int count)
+        {
+            Interlocked.Exchange(ref _processedCount, count);
+        }
+
         public string GetProgressLine(EncodeResult? r)
         {
             int done = ProcessedCount, total = TotalFiles;
