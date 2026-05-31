@@ -20,7 +20,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
   -o, --output <目录>          输出目录 (默认: Avifoutput)
-  -p, --preset <预设>          预设模式: fast, balanced, best, extreme (默认: extreme)
+  -p, --preset <预设>          预设模式: fast, balanced, best, extreme (默认: balanced)
   -e, --encoder <名称>         指定 AV1 编码器 (默认: libaom-av1)
   -j, --jobs <数量>            并行任务数 (默认: 根据 CPU 自动计算)
 
@@ -41,7 +41,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-mix <0-1>       直接设置多指标加权混合评分目标
 
 
-      --crf <整数>            手动指定固定 CRF (1-50，同时禁用搜索)
+      --crf <整数>            手动指定固定 CRF (0-63，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)
 
 像素格式:

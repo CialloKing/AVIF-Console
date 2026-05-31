@@ -197,7 +197,7 @@ namespace AvifEncoder.Gui
                 case "SSIMULACRA2":
                     numQualityValue.Minimum = -100; numQualityValue.Maximum = 100;
                     numQualityValue.DecimalPlaces = 2; break;
-                case "Butteraugli 3-norm":
+                case "Butteraugli 3norm":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 50;
                     numQualityValue.DecimalPlaces = 4; break;
                 case "GMSD":
@@ -417,9 +417,20 @@ namespace AvifEncoder.Gui
                 _ => PresetConfig.ConflictStrategy.Rename
             };
 
+            // 如果已有编码正在运行，点击 btnStart 作为取消按钮
+            if (_pipeline != null)
+            {
+                _globalCts?.Cancel();
+                AppendLog("正在请求取消编码...");
+                btnStart.Enabled = false;
+                btnStart.Text = "正在停止...";
+                return;
+            }
+
             SetControlsEnabled(false);
             progressBar1.Style = ProgressBarStyle.Marquee;
             progressBar1.Value = 0;
+            btnStart.Text = "停止转换";
 
             try
             {
@@ -451,7 +462,11 @@ namespace AvifEncoder.Gui
 
                 try
                 {
-                    await _pipeline.RunAsync();
+                    await _pipeline.RunAsync(_globalCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    AppendLog("编码已被取消。");
                 }
                 finally
                 {
@@ -471,6 +486,8 @@ namespace AvifEncoder.Gui
             {
                 SetControlsEnabled(true);
                 progressBar1.Style = ProgressBarStyle.Blocks;
+                btnStart.Text = "开始转换";
+                btnStart.Enabled = true;
             }
         }
 

@@ -123,28 +123,28 @@ namespace AvifEncoder
         {
             foreach (var l in _loggers)
             {
-                l.LogInfo(m);
+                try { l.LogInfo(m); } catch { }
             }
         }
         public void LogError(string m)
         {
             foreach (var l in _loggers)
             {
-                l.LogError(m);
+                try { l.LogError(m); } catch { }
             }
         }
         public void LogMetric(string mt, string m)
         {
             foreach (var l in _loggers)
             {
-                l.LogMetric(mt, m);
+                try { l.LogMetric(mt, m); } catch { }
             }
         }
         public void LogSearch(string m)
         {
             foreach (var l in _loggers)
             {
-                l.LogSearch(m);
+                try { l.LogSearch(m); } catch { }
             }
         }
     }

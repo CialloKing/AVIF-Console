@@ -328,7 +328,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 1;
                     break;
-                case "Butteraugli 3-norm":
+                case "Butteraugli 3norm":
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 50;
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 0.01;
@@ -617,7 +617,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
 
             var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
-            var files = Directory.EnumerateFiles(inputDir, "*.*", SearchOption.AllDirectories)
+            var searchOption = chkRecursive.Checked ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var files = Directory.EnumerateFiles(inputDir, "*.*", searchOption)
                                  .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                                  .ToList();
             if (files.Count == 0)

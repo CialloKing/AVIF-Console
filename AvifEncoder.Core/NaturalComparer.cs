@@ -41,9 +41,9 @@ namespace AvifEncoder
                 }
                 else
                 {
-                    if (x[xi] != y[yi])
+                    if (char.ToLowerInvariant(x[xi]) != char.ToLowerInvariant(y[yi]))
                     {
-                        return x[xi].CompareTo(y[yi]);
+                        return char.ToLowerInvariant(x[xi]).CompareTo(char.ToLowerInvariant(y[yi]));
                     }
                     xi++;
                     yi++;

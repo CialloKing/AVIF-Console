@@ -62,12 +62,13 @@ namespace AvifEncoder
             try
             {
                 _globalCts = new CancellationTokenSource();
-                Console.CancelKeyPress += (s, e) =>
+                _cancelKeyHandler = (s, e) =>
                 {
                     e.Cancel = true;
                     SafeWriteLine("\n[WARN] 正在安全停止...");
-                    _globalCts.Cancel();
+                    _globalCts?.Cancel();
                 };
+                Console.CancelKeyPress += _cancelKeyHandler;
 
                 string csvPath = Path.Combine(_outputDir, "avif_stats.csv");
                 if (!_fs.FileExists(csvPath))

@@ -89,7 +89,10 @@ namespace AvifEncoder
             }
             string json = JsonSerializer.Serialize(
                 config, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(path, json);
+            // 先写入临时文件再原子替换，防止断电/崩溃导致配置文件损坏
+            string tmpPath = path + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            try { File.Move(tmpPath, path, overwrite: true); } catch { File.Copy(tmpPath, path, overwrite: true); File.Delete(tmpPath); }
         }
     }
 }

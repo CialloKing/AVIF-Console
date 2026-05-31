@@ -153,7 +153,8 @@ namespace AvifEncoder
             SafeWriteLine($"  [{name}] [SEARCH] 混合搜索开始 (目标={targetDisplay})");
 
             using var searchCts = new CancellationTokenSource(TimeSpan.FromMinutes(cfg.SearchTimeoutMinutes));
-            var token = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default).Token;
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token, _globalCts?.Token ?? default);
+            var token = linkedCts.Token;
 
             Func<int, Task<double>> getScore = BuildGetScoreFunc(input, tileCols, cfg, pixFmt, jpeg, name, token);
 
@@ -755,15 +756,15 @@ namespace AvifEncoder
         private static string FormatMetric(double value)
         {
             if (double.IsNaN(value)) return "";
-            if (double.IsPositiveInfinity(value)) return int.MaxValue.ToString();
+            if (double.IsPositiveInfinity(value)) return "";  // +Inf 输出空字符串，避免污染 CSV 统计
             return value.ToString("G", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>格式化 dB 值，正无穷显示为 int.MaxValue 哨兵值，否则保留完整精度</summary>
+        /// <summary>格式化 dB 值，+Inf 时输出空字符串避免污染 CSV 统计</summary>
         private static string FormatDbValue(double? value)
         {
             if (!value.HasValue) return "";
-            if (double.IsPositiveInfinity(value.Value)) return int.MaxValue.ToString();
+            if (double.IsPositiveInfinity(value.Value)) return "";  // +Inf 输出空字符串
             if (double.IsNaN(value.Value)) return "";
             return value.Value.ToString("G", CultureInfo.InvariantCulture);
         }

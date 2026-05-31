@@ -145,7 +145,8 @@ namespace AvifEncoder
         public string BuildFullTuneArg(string? metricMode)
         {
             string tune = BuildTuneArg(metricMode);
-            return tune.Length > 0 ? $"--tune {tune}" : "";
+            // ffmpeg 中 librav1e 使用 -rav1e-params 传递参数，而非独立 CLI 的 --tune
+            return tune.Length > 0 ? $"-rav1e-params tune={tune}" : "";
         }
     }
 

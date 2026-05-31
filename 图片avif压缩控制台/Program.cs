@@ -41,7 +41,7 @@ namespace AvifEncoder
         {
             public string InputDir = "input";
             public string OutputDir = "Avifoutput";
-            public CliPreset Preset = CliPreset.Extreme;
+            public CliPreset Preset = CliPreset.Balanced;
             public bool EnableSearch = true;
             public bool ForceNoSearch = false;
             public double? QualityTarget;
@@ -158,7 +158,7 @@ namespace AvifEncoder
                             }
                             else
                             {
-                                if (int.TryParse(crfVal, out int r) && r >= 1 && r <= 50)
+                                if (int.TryParse(crfVal, out int r) && r >= 0 && r <= 63)
                                 { opts.ManualCrf = r; opts.ForceNoSearch = true; }
                                 else throw new Exception("CRF 应为 1-50 的整数");
                             }

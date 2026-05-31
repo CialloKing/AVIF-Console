@@ -91,11 +91,23 @@ namespace AvifEncoder
             return path;
         }
 
-        /// <summary>外部工具不接受 \\?\ 前缀，需要剥离</summary>
+        /// <summary>为外部工具参数转义文件名中的特殊字符（双引号）</summary>
+        public static string EscapeArg(string path)
+        {
+            return path.Replace("\"", "\\\"");
+        }
+
+        /// <summary>外部工具不接受 \\?\ 前缀，需要剥离。正确处理 UNC 路径 \\?\UNC\... → \\... </summary>
         public static string NormalizePathForExternalTool(string path)
         {
             if (OperatingSystem.IsWindows() && path.StartsWith(@"\\?\"))
+            {
+                // \\?\UNC\server\share\path → \\server\share\path (UNC)
+                if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                    return @"\" + path[7..];  // "\\?\UNC\" 是 7 字符，加回前导 \
+                // \\?\C:\path → C:\path (普通路径)
                 return path[4..];
+            }
             return path;
         }
 

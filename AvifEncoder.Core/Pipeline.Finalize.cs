@@ -154,8 +154,9 @@ namespace AvifEncoder
 RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow, int scanHigh)
         {
             using var safeCts = new CancellationTokenSource(TimeSpan.FromMinutes(config.SafeTimeoutMinutes));
-            var safeToken = CancellationTokenSource.CreateLinkedTokenSource(
-                safeCts.Token, _globalCts?.Token ?? default).Token;
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                safeCts.Token, _globalCts?.Token ?? default);
+            var safeToken = linkedCts.Token;
 
             double target = config.GetEffectiveTarget() + SSIMMargin;
             int bestSafeCRF = -1;

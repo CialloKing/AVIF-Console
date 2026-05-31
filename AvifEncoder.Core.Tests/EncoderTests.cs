@@ -149,10 +149,10 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
-        public void Rav1e_BuildFullTuneArg_IncludesDashDashTune()
+        public void Rav1e_BuildFullTuneArg_UsesRav1eParams()
         {
             string result = Av1EncoderFactory.Get("librav1e").BuildFullTuneArg("vmaf");
-            Assert.Contains("--tune psychovisual", result);
+            Assert.Contains("-rav1e-params tune=psychovisual", result);
         }
 
         #endregion

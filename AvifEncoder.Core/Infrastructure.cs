@@ -173,11 +173,11 @@ namespace AvifEncoder
         /// <summary>在 PATH 环境变量中查找可执行文件</summary>
         public static string? FindExecutable(string name)
         {
-            // 若 Windows 且传入名称已带 .exe，去除以避免重复追加
             bool isWindows = OperatingSystem.IsWindows();
-            string cleanName = name;
-            if (isWindows && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                cleanName = name[..^4];  // 去掉 .exe
+            // 统一去掉 .exe 后缀（Linux 上也可能传入带 .exe 的名称）
+            string cleanName = name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? name[..^4]
+                : name;
 
             // 1. 优先在应用程序所在目录中查找
             string? appDir = AppContext.BaseDirectory;

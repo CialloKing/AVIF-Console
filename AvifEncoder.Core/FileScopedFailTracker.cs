@@ -4,55 +4,72 @@ namespace AvifEncoder
 {
     internal sealed class FileScopedFailTracker
     {
-        public HashSet<int> KnownBadCrfs { get; } = [];
-        public Dictionary<int, int> CrfFailCount { get; } = [];
+        private readonly HashSet<int> _knownBadCrfs = [];
+        private readonly Dictionary<int, int> _crfFailCount = [];
+        private readonly object _lock = new();
         public const int HardFailThreshold = 2;
         public const int AvoidRadius = 2;
 
         public void Reset()
         {
-            KnownBadCrfs.Clear();
-            CrfFailCount.Clear();
+            lock (_lock)
+            {
+                _knownBadCrfs.Clear();
+                _crfFailCount.Clear();
+            }
         }
 
-        public bool IsBlacklisted(int crf)
+        private bool IsBlacklistedLocked(int crf)
         {
             for (int offset = -AvoidRadius; offset <= AvoidRadius; offset++)
             {
-                if (KnownBadCrfs.Contains(crf + offset))
-                {
+                if (_knownBadCrfs.Contains(crf + offset))
                     return true;
-                }
             }
             return false;
         }
 
-        public void RecordFailedAttempt(int crf)
+        public bool IsBlacklisted(int crf)
         {
-            CrfFailCount.TryGetValue(crf, out int count);
-            count++;
-            CrfFailCount[crf] = count;
-            if (count >= HardFailThreshold)
+            lock (_lock)
             {
-                KnownBadCrfs.Add(crf);
+                return IsBlacklistedLocked(crf);
             }
         }
 
-        public void ClearCrf(int crf) => CrfFailCount.Remove(crf);
+        public void RecordFailedAttempt(int crf)
+        {
+            lock (_lock)
+            {
+                _crfFailCount.TryGetValue(crf, out int count);
+                count++;
+                _crfFailCount[crf] = count;
+                if (count >= HardFailThreshold)
+                    _knownBadCrfs.Add(crf);
+            }
+        }
+
+        public void ClearCrf(int crf)
+        {
+            lock (_lock)
+            {
+                _crfFailCount.Remove(crf);
+            }
+        }
 
         public int FindSafeCrfInInterval(int center, int xMin, int xMax)
         {
-            for (int offset = 0; offset <= xMax - xMin; offset++)
+            lock (_lock)
             {
-                int tryCrf = center + offset;
-                if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
+                for (int offset = 0; offset <= xMax - xMin; offset++)
                 {
-                    return tryCrf;
-                }
-                tryCrf = center - offset;
-                if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklisted(tryCrf))
-                {
-                    return tryCrf;
+                    int tryCrf = center + offset;
+                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklistedLocked(tryCrf))
+                        return tryCrf;
+
+                    tryCrf = center - offset;
+                    if (tryCrf >= xMin && tryCrf <= xMax && !IsBlacklistedLocked(tryCrf))
+                        return tryCrf;
                 }
             }
             return -1;

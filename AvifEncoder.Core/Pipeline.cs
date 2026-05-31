@@ -126,6 +126,8 @@ namespace AvifEncoder
 
         private readonly SemaphoreSlim _ssimConcurrency;
         private readonly SemaphoreSlim _ffmpegSlots;
+        private readonly string _instanceId = Guid.NewGuid().ToString("N");
+        private ConsoleCancelEventHandler? _cancelKeyHandler;
 
         private static readonly object _consoleLock = new();
         private CancellationTokenSource? _globalCts;
@@ -150,11 +152,7 @@ namespace AvifEncoder
 
         private readonly PresetConfig.IFileSystem _fs;   // 改为完整限定名
 
-        // 删除原有字段：
-        // private HashSet<int> _knownBadCrfs = new HashSet<int>();
-        // private Dictionary<int, int> _crfFailCount = new Dictionary<int, int>();
-
-        // 新增文件级隔离字典
+        // 文件级失败跟踪器（当前未使用，保留以供将来扩展）
         private readonly ConcurrentDictionary<string, FileScopedFailTracker> _failTrackers = new();
 
 
@@ -350,7 +348,7 @@ namespace AvifEncoder
         // ===== SSIMULACRA2 =====
         private async Task<double?> ComputeSSIMULACRA2Async(string refPath, string distPath)
         {
-            string exe = EncoderUtils.FindExecutable("ssimulacra2.exe") ?? "ssimulacra2.exe";
+            string exe = EncoderUtils.FindExecutable("ssimulacra2") ?? "ssimulacra2";
             string cleanRef = NormalizePathForExternalTool(refPath);
             string cleanDist = NormalizePathForExternalTool(distPath);
             string args = $"\"{cleanRef}\" \"{cleanDist}\"";
@@ -368,7 +366,7 @@ namespace AvifEncoder
         // ===== Butteraugli =====
         private async Task<(double? raw, double? p3)> ComputeButteraugliAsync(string refPath, string distPath, string tempDir)
         {
-            string exe = EncoderUtils.FindExecutable("butteraugli_main.exe") ?? "butteraugli_main.exe";
+            string exe = EncoderUtils.FindExecutable("butteraugli_main") ?? "butteraugli_main";
             string diffPng = Path.Combine(tempDir, $"_butteraugli_diff_{Guid.NewGuid():N}.png");
             string cleanRef = NormalizePathForExternalTool(refPath);
             string cleanDist = NormalizePathForExternalTool(distPath);
@@ -587,11 +585,16 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary> 外部工具（ffmpeg 等）不接受 \\?\ 长路径，需要剥离 </summary>
+        /// <summary> 外部工具（ffmpeg 等）不接受 \\?\ 长路径，需要剥离。正确处理 UNC 路径 </summary>
         private static string NormalizePathForExternalTool(string path)
         {
             if (OperatingSystem.IsWindows() && path.StartsWith(@"\\?\"))
+            {
+                // \\?\UNC\server\share\path → \\server\share\path
+                if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                    return @"\" + path.Substring(7);
                 return path.Substring(4);
+            }
             return path;
         }
 
@@ -1073,6 +1076,8 @@ namespace AvifEncoder
             _globalCts = null;
             _ssimConcurrency?.Dispose();
             _ffmpegSlots?.Dispose();
+            if (_cancelKeyHandler != null)
+                Console.CancelKeyPress -= _cancelKeyHandler;
             _advancedMetricSemaphore?.Dispose();
             _lockStream?.Dispose();
             GC.SuppressFinalize(this);
@@ -1187,7 +1192,7 @@ namespace AvifEncoder
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
             string workDir = Environment.CurrentDirectory;
-            string metricsDir = Path.Combine(workDir, "avif_metrics_tmp");
+            string metricsDir = Path.Combine(workDir, $"avif_metrics_tmp_{_instanceId}");
             Directory.CreateDirectory(metricsDir);
 
             string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
@@ -1513,12 +1518,13 @@ namespace AvifEncoder
             try
             {
                 _globalCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
-                Console.CancelKeyPress += (s, e) =>
+                _cancelKeyHandler = (s, e) =>
                 {
                     e.Cancel = true;
                     SafeWriteLine("\n[WARN] 正在安全停止，请稍候...");
-                    _globalCts.Cancel();
+                    _globalCts?.Cancel();
                 };
+                Console.CancelKeyPress += _cancelKeyHandler;
 
                 Console.OutputEncoding = Encoding.UTF8;
                 _progress.Start(DateTime.Now);
@@ -1701,7 +1707,7 @@ namespace AvifEncoder
                 results = await RetryFailuresAsync(results);
 
                 // 退出前合并旧已完成 + 新完成 → 保存最终快照
-                if (_config.Resume && results != null)
+                if (_config.Resume)
                 {
                     // 合并快照中已有的完成列表
                     var (oldCompleted, _, _) = LoadSnapshot();
@@ -2029,11 +2035,18 @@ namespace AvifEncoder
             }
             catch { }
 
-            // ★ 新增：清理 ComputeAllMetrics 生成的临时 JSON 目录
-            string metricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");
+            // 清理本实例生成的 ComputeAllMetrics 临时 JSON 目录
+            string metricsDir = Path.Combine(Environment.CurrentDirectory, $"avif_metrics_tmp_{_instanceId}");
             if (Directory.Exists(metricsDir))
             {
                 try { Directory.Delete(metricsDir, true); } catch { }
+            }
+
+            // 兼容旧版：清理无实例后缀的遗留目录（过渡期后移除）
+            string legacyMetricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");
+            if (Directory.Exists(legacyMetricsDir))
+            {
+                try { Directory.Delete(legacyMetricsDir, true); } catch { }
             }
         }
 

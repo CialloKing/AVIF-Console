@@ -28,14 +28,14 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Best);
             Assert.AreEqual(34, cfg.BaseCRF);
-            Assert.AreEqual(0.97, cfg.TargetSSIM, 0.001);
+            Assert.AreEqual(0.985, cfg.TargetSSIM, 0.001);
         }
 
         [TestMethod]
         public void CreateFromPreset_Extreme_ReturnsExpectedConfig()
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Extreme);
-            Assert.AreEqual(35, cfg.BaseCRF);
+            Assert.AreEqual(32, cfg.BaseCRF);
             Assert.AreEqual(0.99, cfg.TargetSSIM, 0.001);
         }
 

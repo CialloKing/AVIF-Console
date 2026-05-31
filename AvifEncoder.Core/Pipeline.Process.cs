@@ -23,7 +23,7 @@ namespace AvifEncoder
                 return await ProcessFilesSweepAsync(files, config);
             }
             var results = new ConcurrentDictionary<int, EncodeResult>();
-            var semaphore = new SemaphoreSlim(config.MaxJobs);
+            using var semaphore = new SemaphoreSlim(config.MaxJobs);
             var tasks = files.Select(async file =>
                 {
                     try
@@ -128,7 +128,7 @@ namespace AvifEncoder
                 string workingInput = scaling.WorkingPath;
 
                 // 3. 为当前文件创建所有 CRF 任务，用信号量控制文件内并发
-                var semaphore = new SemaphoreSlim(config.MaxJobs);
+                using var semaphore = new SemaphoreSlim(config.MaxJobs);
                 var crfTasks = new List<Task>();
 
                 for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
