@@ -438,10 +438,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             string colorMeta = $"-color_primaries {primaries} -color_trc {trc} -colorspace {space}";
 
-            return $"{logLevel} -i \"{input}\" " +
+            return $"{logLevel} -i \"{EncodeHelpers.EscapeArg(input)}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {actualPixFmt} {rangeArg} {colorMeta} " +
                    $"{crfPart} {bitrateGuard} {encoderSpecific} " +
-                   $"{stillPic} -frames:v 1 {aomCombined} {threadsArg} -y \"{output}\"";
+                   $"{stillPic} -frames:v 1 {aomCombined} {threadsArg} -y \"{EncodeHelpers.EscapeArg(output)}\"";
         }
 
         private static string CsvEscape(string field)

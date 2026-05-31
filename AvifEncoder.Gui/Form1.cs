@@ -106,8 +106,6 @@ namespace AvifEncoder.Gui
             cmbPreset.SelectedIndexChanged += cmbPreset_SelectedIndexChanged;
             AttachCustomMarkEvents();
 
-            AttachCustomMarkEvents();
-
             // 初始化遍历模式控件（需在设计器已添加名为 chkSweep 的 CheckBox）
             chkSweep.Checked = false;
 
