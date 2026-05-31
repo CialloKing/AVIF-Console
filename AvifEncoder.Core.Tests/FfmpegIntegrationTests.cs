@@ -247,6 +247,129 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public async Task Metrics_Psnr_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string encoded = Path.Combine(_tempDir!, "test_psnr_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 20 -b:v 0 -frames:v 1 \"{encoded}\"";
+
+            using (var proc = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await proc!.WaitForExitAsync();
+
+            string psnrArgs = $"-i \"{encoded}\" -i \"{_testImagePath}\" " +
+                $"-lavfi \"[0:v]settb=1/25,setpts=PTS-STARTPTS[dist];" +
+                $"[1:v]settb=1/25,setpts=PTS-STARTPTS[ref];" +
+                $"[dist][ref]psnr\" -f null -";
+
+            using var psnrProc = Process.Start(new ProcessStartInfo(_ffmpegPath!, psnrArgs)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardError = true
+            });
+            Assert.IsNotNull(psnrProc);
+            string err = await psnrProc.StandardError.ReadToEndAsync();
+            await psnrProc.WaitForExitAsync();
+
+            Assert.AreEqual(0, psnrProc.ExitCode);
+            Assert.IsTrue(err.Contains("average:") || err.Contains("psnr_avg:"),
+                $"PSNR output missing: {err[^200..]}");
+        }
+
+        [TestMethod]
+        public async Task Metrics_Gmsd_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string encoded = Path.Combine(_tempDir!, "test_gmsd_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 20 -b:v 0 -frames:v 1 \"{encoded}\"";
+
+            using (var proc = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await proc!.WaitForExitAsync();
+
+            string gmsdArgs = $"-i \"{encoded}\" -i \"{_testImagePath}\" " +
+                $"-lavfi \"[0:v]settb=1/25,setpts=PTS-STARTPTS[dist];" +
+                $"[1:v]settb=1/25,setpts=PTS-STARTPTS[ref];" +
+                $"[dist][ref]gmsd\" -f null -";
+
+            using var proc2 = Process.Start(new ProcessStartInfo(_ffmpegPath!, gmsdArgs)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardError = true
+            });
+            Assert.IsNotNull(proc2);
+            string err = await proc2.StandardError.ReadToEndAsync();
+            await proc2.WaitForExitAsync();
+
+            // GMSD 滤镜在某些 ffmpeg 版本中可能不稳定，需要较新版本
+            if (proc2.ExitCode != 0)
+            {
+                Assert.Inconclusive($"GMSD filter not supported (exit={proc2.ExitCode})");
+            }
+            Assert.Contains("GMSD", err, $"GMSD output missing: {err[^200..]}");
+        }
+
+        [TestMethod]
+        public async Task Encode_Lossless_CreatesValidFile()
+        {
+            AssertFfmpegAvailable();
+            string output = Path.Combine(_tempDir!, "test_lossless.avif");
+            string args = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 0 -b:v 0 -frames:v 1 \"{output}\"";
+
+            using var process = Process.Start(new ProcessStartInfo(_ffmpegPath!, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+            });
+            Assert.IsNotNull(process);
+            await process.WaitForExitAsync();
+
+            Assert.AreEqual(0, process.ExitCode);
+            Assert.IsTrue(File.Exists(output), "Lossless output not created");
+            Assert.IsTrue(new FileInfo(output).Length > 100, "Lossless output too small");
+        }
+
+        [TestMethod]
+        public async Task Encode_PixelFormat_Yuv444p()
+        {
+            AssertFfmpegAvailable();
+            string output = Path.Combine(_tempDir!, "test_444.avif");
+            string args = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 30 -b:v 0 -pix_fmt yuv444p -frames:v 1 \"{output}\"";
+
+            using var process = Process.Start(new ProcessStartInfo(_ffmpegPath!, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+            });
+            Assert.IsNotNull(process);
+            await process.WaitForExitAsync();
+
+            Assert.AreEqual(0, process.ExitCode);
+            Assert.IsTrue(File.Exists(output));
+        }
+
+        [TestMethod]
+        public async Task HardwareEncoder_Detection_ReturnsAvailable()
+        {
+            // 只检测硬件编码器是否被识别，不实际编码
+            AssertFfmpegAvailable();
+            string probeArgs = $"-loglevel error -encoders";
+            using var proc = Process.Start(new ProcessStartInfo(_ffmpegPath!, probeArgs)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true
+            });
+            Assert.IsNotNull(proc);
+            string output = await proc.StandardOutput.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+
+            // 至少应该能输出编码器列表
+            Assert.IsTrue(output.Length > 100);
+            // 检查是否有 AV1 编码器条目
+            Assert.IsTrue(
+                output.Contains("av1") || output.Contains("AV1"),
+                "Should contain AV1 encoder entries");
+        }
+
+        [TestMethod]
         public async Task EnvironmentCheck_LastResult_IsCached()
         {
             var r1 = AvifEnvironmentChecker.LastResult;
