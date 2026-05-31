@@ -237,5 +237,27 @@ namespace AvifEncoder.Core.Tests
         }
 
         #endregion
+
+        #region EscapeArg
+
+        [TestMethod]
+        public void EscapeArg_NoQuote_ReturnsOriginal()
+        {
+            Assert.AreEqual(@"C:\path\to\file.png", EncodeHelpers.EscapeArg(@"C:\path\to\file.png"));
+        }
+
+        [TestMethod]
+        public void EscapeArg_DoubleQuote_EscapesBackslash()
+        {
+            Assert.AreEqual(@"file\"".png", EncodeHelpers.EscapeArg("file\".png"));
+        }
+
+        [TestMethod]
+        public void EscapeArg_EmptyString_ReturnsEmpty()
+        {
+            Assert.AreEqual("", EncodeHelpers.EscapeArg(""));
+        }
+
+        #endregion
     }
 }

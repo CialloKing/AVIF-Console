@@ -78,6 +78,23 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public async Task BinarySearch_InvalidRange_ReturnsNegative()
+        {
+            // MinCRF > MaxCRF — 应在输入验证或搜索逻辑中安全降级
+            Func<int, Task<double>> getScore = _ =>
+                Task.FromResult(0.99);
+
+            var cfg = new PresetConfig { MetricMode = "ssim" };
+
+            var (bestCrf, _) = await AvifPipeline.StandardBinarySearch(
+                "test.png", 0, cfg, "yuv420p", false,
+                "test", 0.95, getScore,
+                CancellationToken.None, 40, 20);
+            // 无效区间应返回 -1 而非崩溃
+            Assert.AreEqual(-1, bestCrf);
+        }
+
+        [TestMethod]
         public async Task BinarySearch_Cancellation_Throws()
         {
             using var cts = new CancellationTokenSource();

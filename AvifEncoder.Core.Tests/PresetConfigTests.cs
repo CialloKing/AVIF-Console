@@ -49,6 +49,60 @@ namespace AvifEncoder.Core.Tests
             Assert.IsFalse(PresetConfig.IsAdvancedMetricMode("ssim"));
         }
 
+        #region Validate
+
+        [TestMethod]
+        public void Validate_DefaultConfig_ReturnsEmpty()
+        {
+            var cfg = PresetConfig.CreateFromPreset(CliPreset.Balanced);
+            var errors = cfg.Validate();
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
+        public void Validate_MinCrfGreaterThanMaxCrf_ReturnsError()
+        {
+            var cfg = new PresetConfig { MinCRF = 50, MaxCRF = 30 };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+            Assert.Contains("MinCRF", errors[0]);
+        }
+
+        [TestMethod]
+        public void Validate_InvalidBitDepth_ReturnsError()
+        {
+            var cfg = new PresetConfig { BitDepth = 12 };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+            Assert.Contains("BitDepth", errors[0]);
+        }
+
+        [TestMethod]
+        public void Validate_InvalidMaxJobs_ReturnsError()
+        {
+            var cfg = new PresetConfig { MaxJobs = -1 };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+        }
+
+        [TestMethod]
+        public void Validate_NegativeSearchCpuUsed_ReturnsError()
+        {
+            var cfg = new PresetConfig { SearchCpuUsed = -5 };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+        }
+
+        [TestMethod]
+        public void Validate_EmptyEncoder_ReturnsError()
+        {
+            var cfg = new PresetConfig { Encoder = "" };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+        }
+
+        #endregion
+
         [TestMethod]
         public void IsMetricLowerBetter_ReturnsExpected()
         {
