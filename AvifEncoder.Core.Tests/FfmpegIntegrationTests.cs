@@ -479,6 +479,126 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public async Task ExternalTool_Ssimulacra2_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string? exe = EncoderUtils.FindExecutable("ssimulacra2");
+            if (exe == null)
+            {
+                Assert.Inconclusive("ssimulacra2 not found in PATH or app directory");
+                return;
+            }
+
+            // BMP→PNG 参考图 + BMP→AVIF编码 + AVIF→PNG解码
+            string refPng = Path.Combine(_tempDir!, "ref_ssimu2.png");
+            string bmp2pngArgs = $"-y -loglevel error -i \"{_testImagePath}\" -frames:v 1 \"{refPng}\"";
+            using (var pc = Process.Start(new ProcessStartInfo(_ffmpegPath!, bmp2pngArgs)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await pc!.WaitForExitAsync();
+
+            string encoded = Path.Combine(_tempDir!, "test_ssimu2_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 30 -b:v 0 -frames:v 1 \"{encoded}\"";
+            using (var p = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await p!.WaitForExitAsync();
+
+            // AVIF 解码回 PNG
+            string distPng = Path.Combine(_tempDir!, "dist_ssimu2.png");
+            string decodeArgs = $"-y -loglevel error -i \"{encoded}\" -frames:v 1 \"{distPng}\"";
+            using (var pd = Process.Start(new ProcessStartInfo(_ffmpegPath!, decodeArgs)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await pd!.WaitForExitAsync();
+
+            string args = $"\"{refPng}\" \"{distPng}\"";
+            using var proc = Process.Start(new ProcessStartInfo(exe, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            });
+            Assert.IsNotNull(proc);
+            string stdout = await proc.StandardOutput.ReadToEndAsync();
+            string stderr = await proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+
+            Assert.AreEqual(0, proc.ExitCode, $"ssimulacra2 failed: {stderr}");
+            string output = (stdout + stderr).Trim();
+            Assert.IsTrue(double.TryParse(output,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out double score), $"ssimulacra2 output not a number: '{output}'");
+            Assert.IsTrue(score > 0 && score <= 120,
+                $"ssimulacra2 score out of range: {score}");
+        }
+
+        [TestMethod]
+        public async Task ExternalTool_Butteraugli_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string? exe = EncoderUtils.FindExecutable("butteraugli_main");
+            if (exe == null)
+            {
+                Assert.Inconclusive("butteraugli_main not found in PATH or app directory");
+                return;
+            }
+
+            // BMP→PNG 参考图 + BMP→AVIF编码 + AVIF→PNG解码
+            string refPng = Path.Combine(_tempDir!, "ref_butter.png");
+            string b2pArgs = $"-y -loglevel error -i \"{_testImagePath}\" -frames:v 1 \"{refPng}\"";
+            using (var pc = Process.Start(new ProcessStartInfo(_ffmpegPath!, b2pArgs)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await pc!.WaitForExitAsync();
+
+            string encoded = Path.Combine(_tempDir!, "test_butter_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 30 -b:v 0 -frames:v 1 \"{encoded}\"";
+            using (var p = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await p!.WaitForExitAsync();
+
+            // AVIF 解码回 PNG
+            string distPng = Path.Combine(_tempDir!, "dist_butter.png");
+            string decodeArgs = $"-y -loglevel error -i \"{encoded}\" -frames:v 1 \"{distPng}\"";
+            using (var pd = Process.Start(new ProcessStartInfo(_ffmpegPath!, decodeArgs)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await pd!.WaitForExitAsync();
+
+            string args = $"\"{refPng}\" \"{distPng}\"";
+            using var proc = Process.Start(new ProcessStartInfo(exe, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            });
+            Assert.IsNotNull(proc);
+            string stdout = await proc.StandardOutput.ReadToEndAsync();
+            string stderr = await proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+
+            Assert.AreEqual(0, proc.ExitCode, $"butteraugli failed: {stderr}");
+            string output = (stdout + stderr).Trim();
+            // butteraugli 输出通常是空格分隔的值，或单独的数字行
+            Assert.IsTrue(output.Length > 0 && output.Length < 500,
+                $"butteraugli output unexpected: '{output[..100]}'");
+        }
+
+        [TestMethod]
+        public async Task EnvironmentCheck_ExternalTools_Detected()
+        {
+            // 验证环境检测能正确发现外部工具
+            var result = await AvifEnvironmentChecker.CheckEnvironmentAsync();
+            Assert.IsNotNull(result);
+
+            bool ssimu2Found = EncoderUtils.FindExecutable("ssimulacra2") != null;
+            bool butterFound = EncoderUtils.FindExecutable("butteraugli_main") != null;
+
+            // 环境检测结果应与实际查找一致
+            if (ssimu2Found)
+                Assert.IsTrue(result.Ssimulacra2Available,
+                    "EnvironmentCheck should report ssimulacra2 available");
+            if (butterFound)
+                Assert.IsTrue(result.ButteraugliAvailable,
+                    "EnvironmentCheck should report butteraugli available");
+        }
+
+        [TestMethod]
         public async Task EnvironmentCheck_LastResult_IsCached()
         {
             var r1 = AvifEnvironmentChecker.LastResult;
