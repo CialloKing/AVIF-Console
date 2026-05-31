@@ -540,6 +540,8 @@ namespace AvifEncoder.Gui
             await AvifEnvironmentChecker.CheckEnvironmentAsync(guiLogger);
 
             AppendLog("===== 启动检测完成 =====");
+            RefreshEncodersFromDetection();
+            RefreshMetricsFromDetection();
         }
 
         // 以下空事件处理器保留，避免设计器报错
@@ -552,6 +554,33 @@ namespace AvifEncoder.Gui
         private void label13_Click(object sender, EventArgs e) { }
         private void label11_Click(object sender, EventArgs e) { }
         private void numSearchCpuUsed_ValueChanged(object sender, EventArgs e) { }
+
+        private void RefreshEncodersFromDetection()
+        {
+            var result = AvifEnvironmentChecker.LastResult;
+            if (result == null || !result.FfmpegAvailable) return;
+            cmbEncoder.Items.Clear();
+            var preferredOrder = new[] { "libaom-av1", "libsvtav1", "librav1e",
+                                         "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" };
+            foreach (var name in preferredOrder)
+            {
+                if (result.Encoders.Any(e => e.Name == name && e.Available))
+                    cmbEncoder.Items.Add(name);
+            }
+            foreach (var enc in result.Encoders)
+            {
+                if (enc.Available && !preferredOrder.Contains(enc.Name) && !cmbEncoder.Items.Contains(enc.Name))
+                    cmbEncoder.Items.Add(enc.Name);
+            }
+            if (cmbEncoder.Items.Count > 0) cmbEncoder.SelectedIndex = 0;
+        }
+
+        private void RefreshMetricsFromDetection()
+        {
+            cmbMetric.Items.Clear();
+            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
+            if (cmbMetric.Items.Count > 0) cmbMetric.SelectedIndex = 0;
+        }
     }
 
 
