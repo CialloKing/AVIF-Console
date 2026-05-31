@@ -94,6 +94,22 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void Validate_BaseCrfOutOfRange_NoSearch_ReturnsError()
+        {
+            var cfg = new PresetConfig { BaseCRF = 100, UseCRFSearch = false };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+        }
+
+        [TestMethod]
+        public void Validate_NegativeFinalCpuUsed_ReturnsError()
+        {
+            var cfg = new PresetConfig { FinalCpuUsed = -1 };
+            var errors = cfg.Validate();
+            Assert.IsNotEmpty(errors);
+        }
+
+        [TestMethod]
         public void Validate_EmptyEncoder_ReturnsError()
         {
             var cfg = new PresetConfig { Encoder = "" };

@@ -62,6 +62,28 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void RecordFailedAttempt_Concurrent_DoesNotCrash()
+        {
+            // 验证并发写入不崩溃 (锁保护确认)
+            var tracker = new FileScopedFailTracker();
+            var tasks = new System.Threading.Tasks.Task[20];
+            for (int i = 0; i < tasks.Length; i++)
+            {
+                int crf = i / 2;
+                tasks[i] = System.Threading.Tasks.Task.Run(() =>
+                {
+                    for (int j = 0; j < 100; j++)
+                    {
+                        tracker.RecordFailedAttempt(crf);
+                        tracker.IsBlacklisted(crf);
+                    }
+                });
+            }
+            System.Threading.Tasks.Task.WaitAll(tasks);
+            // 不抛异常即通过
+        }
+
+        [TestMethod]
         public void FindSafeCrfInInterval_ReturnsValidCrf()
         {
             var tracker = new FileScopedFailTracker();

@@ -39,6 +39,22 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void Compare_CaseInsensitive_ReturnsZero()
+        {
+            // 大小写不敏感，大写小写应相等
+            Assert.AreEqual(0, _comparer.Compare("FILE1", "file1"));
+            Assert.AreEqual(0, _comparer.Compare("Photo", "photo"));
+        }
+
+        [TestMethod]
+        public void Compare_CaseInsensitive_NumericalOrder()
+        {
+            // 大小写不敏感 + 自然排序
+            Assert.IsLessThan(0, _comparer.Compare("FILE2", "FILE10"));
+            Assert.IsLessThan(0, _comparer.Compare("Img2", "img10"));
+        }
+
+        [TestMethod]
         public void Compare_MixedTextAndNumbers()
         {
             // Natural: file1 < file2 < file10

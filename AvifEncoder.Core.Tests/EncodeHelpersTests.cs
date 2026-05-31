@@ -155,6 +155,16 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void NormalizePathForExternalTool_UncPath_StripsPrefix()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                string result = EncodeHelpers.NormalizePathForExternalTool(@"\\?\UNC\server\share\path");
+                Assert.AreEqual(@"\\server\share\path", result);
+            }
+        }
+
+        [TestMethod]
         public void NormalizePathForExternalTool_KeepsNormalPath()
         {
             Assert.AreEqual(@"C:\path", EncodeHelpers.NormalizePathForExternalTool(@"C:\path"));
