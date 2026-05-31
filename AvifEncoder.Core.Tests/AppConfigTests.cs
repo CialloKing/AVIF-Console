@@ -95,6 +95,36 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void SaveAndLoad_EncodingFields_RoundTrip()
+        {
+            var original = new AppConfig
+            {
+                EncodeEncoder = "libsvtav1",
+                EncodePreset = "extreme",
+                EncodeJobs = 8,
+                EncodeSearch = true,
+                EncodeCrfMin = 10,
+                EncodeCrfMax = 50,
+                EncodeQualityValue = 95.0,
+                EncodeChroma = "444",
+                EncodeBitDepth = "10",
+                EncodeSweep = true,
+            };
+            AppConfigHelper.SaveToFile(original, _tempFile);
+            var loaded = AppConfigHelper.LoadFromFile(_tempFile);
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual("libsvtav1", loaded!.EncodeEncoder);
+            Assert.AreEqual("extreme", loaded.EncodePreset);
+            Assert.AreEqual(8, loaded.EncodeJobs);
+            Assert.IsTrue(loaded.EncodeSearch);
+            Assert.AreEqual(10, loaded.EncodeCrfMin);
+            Assert.AreEqual(50, loaded.EncodeCrfMax);
+            Assert.AreEqual("444", loaded.EncodeChroma);
+            Assert.AreEqual("10", loaded.EncodeBitDepth);
+            Assert.IsTrue(loaded.EncodeSweep);
+        }
+
+        [TestMethod]
         public void Serialize_IncludesEncodingFields()
         {
             var cfg = new AppConfig
