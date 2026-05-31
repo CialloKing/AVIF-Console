@@ -88,14 +88,16 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             txtLog.MultiLine = true;
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
-            txtLog.SelectionColor = Color.Gray;
+            txtLog.SelectionColor = Color.FromArgb(180, 128, 128, 128);
             txtLog.Size = new Size(1111, 678);
             txtLog.TabIndex = 0;
+            txtLog.Text = "日志页";
             txtLog.WordWrap = false;
             // 
             // FormLog
             // 
             AutoSize = true;
+            BackColor = Color.Black;
             ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             Name = "FormLog";

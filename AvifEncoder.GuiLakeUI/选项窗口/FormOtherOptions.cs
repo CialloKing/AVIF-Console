@@ -324,6 +324,7 @@ namespace AvifEncoder.GuiLakeUI
             // 
             modernButton1.AnimationFPS = 0;
             modernButton1.BackColor1 = Color.Transparent;
+            modernButton1.BorderColor = Color.Transparent;
             modernButton1.Dock = DockStyle.Top;
             modernButton1.Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Regular, GraphicsUnit.Point, 134);
             modernButton1.ForeColor = Color.DodgerBlue;
@@ -332,7 +333,7 @@ namespace AvifEncoder.GuiLakeUI
             modernButton1.Name = "modernButton1";
             modernButton1.Size = new Size(1111, 52);
             modernButton1.TabIndex = 9;
-            modernButton1.Text = "该页选项大部分功能为测试版，如遇bug为正常情况";
+            modernButton1.Text = "该页选项为测试版，如遇bug属正常情况";
             // 
             // btnSelectFont2
             // 

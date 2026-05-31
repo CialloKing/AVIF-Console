@@ -644,7 +644,7 @@
             label5.Size = new Size(56, 17);
             label5.TabIndex = 31;
             label5.Text = "范围上限";
-            label5.Click += label5_Click;
+
             // 
             // rbCrfRange
             // 
@@ -666,7 +666,7 @@
             label4.Size = new Size(56, 17);
             label4.TabIndex = 30;
             label4.Text = "范围下限";
-            label4.Click += label4_Click;
+
             // 
             // txtTemplate
             // 

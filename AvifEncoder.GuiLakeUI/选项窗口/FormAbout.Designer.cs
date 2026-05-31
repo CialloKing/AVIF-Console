@@ -1,6 +1,6 @@
 ﻿namespace AvifEncoder.GuiLakeUI.选项窗口
 {
-    partial class FormHelp
+    partial class FormAbout
     {
         /// <summary>
         /// Required designer variable.
@@ -29,7 +29,7 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
-            txtHelp = new LakeUI.ModernTextBox();
+            txtAbout = new LakeUI.ModernTextBox();
             modernPanel1.SuspendLayout();
             SuspendLayout();
             // 
@@ -38,53 +38,53 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Transparent;
             modernPanel1.BorderColor = Color.Transparent;
-            modernPanel1.Controls.Add(txtHelp);
+            modernPanel1.Controls.Add(txtAbout);
             modernPanel1.Dock = DockStyle.Fill;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.Size = new Size(1114, 681);
+            modernPanel1.Size = new Size(800, 450);
             modernPanel1.TabIndex = 0;
             // 
-            // txtHelp
+            // txtAbout
             // 
-            txtHelp.AllowDrop = true;
-            txtHelp.AnimationFPS = 0;
-            txtHelp.BackColor1 = Color.Transparent;
-            txtHelp.BackgroundSource = modernPanel1;
-            txtHelp.BorderColor = Color.Transparent;
-            txtHelp.BorderColorFocus = Color.Transparent;
-            txtHelp.Dock = DockStyle.Fill;
-            txtHelp.Font = new Font("Cascadia Code", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            txtHelp.ForeColor = Color.White;
-            txtHelp.LinkDetection = true;
-            txtHelp.Location = new Point(1, 1);
-            txtHelp.Margin = new Padding(2);
-            txtHelp.MaxUndoCount = 0;
-            txtHelp.MultiLine = true;
-            txtHelp.Name = "txtHelp";
-            txtHelp.ReadOnly = true;
-            txtHelp.SelectionColor = Color.FromArgb(180, 128, 128, 128);
-            txtHelp.Size = new Size(1111, 678);
-            txtHelp.TabIndex = 0;
-            txtHelp.Text = "modernTextBox1";
+            txtAbout.AllowDrop = true;
+            txtAbout.AnimationFPS = 0;
+            txtAbout.BackColor1 = Color.Transparent;
+            txtAbout.BackgroundSource = modernPanel1;
+            txtAbout.BorderColor = Color.Transparent;
+            txtAbout.BorderColorFocus = Color.Transparent;
+            txtAbout.Dock = DockStyle.Fill;
+            txtAbout.Font = new Font("Cascadia Code", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            txtAbout.ForeColor = Color.White;
+            txtAbout.LinkColor = Color.FromArgb(83, 177, 255);
+            txtAbout.LinkDetection = true;
+            txtAbout.Location = new Point(1, 1);
+            txtAbout.Margin = new Padding(2);
+            txtAbout.MaxUndoCount = 0;
+            txtAbout.MultiLine = true;
+            txtAbout.Name = "txtAbout";
+            txtAbout.ReadOnly = true;
+            txtAbout.SelectionColor = Color.FromArgb(180, 128, 128, 128);
+            txtAbout.Size = new Size(797, 447);
+            txtAbout.TabIndex = 1;
+            txtAbout.Text = "关于页";
             // 
-            // FormHelp
+            // FormAbout
             // 
-            AllowDrop = true;
-            AutoScaleDimensions = new SizeF(96F, 96F);
-            AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(1114, 681);
+            AutoScaleDimensions = new SizeF(7F, 17F);
+            AutoScaleMode = AutoScaleMode.Font;
+            BackColor = Color.Black;
+            ClientSize = new Size(800, 450);
             Controls.Add(modernPanel1);
-            DoubleBuffered = true;
-            Name = "FormHelp";
-            Text = "FormHelp";
-            Load += FormHelp_Load;
+            Name = "FormAbout";
+            Text = "FormAbout";
             modernPanel1.ResumeLayout(false);
             ResumeLayout(false);
         }
 
         #endregion
-        private LakeUI.ModernTextBox txtHelp;
+
         public LakeUI.ModernPanel modernPanel1;
+        private LakeUI.ModernTextBox txtAbout;
     }
 }

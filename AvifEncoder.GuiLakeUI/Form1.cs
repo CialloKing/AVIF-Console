@@ -19,6 +19,7 @@ namespace AvifEncoder.GuiLakeUI
         private FormHelp? _helpPage;
 
         private FormOtherOptions? _otherOptionsPage;
+        private FormAbout? _aboutPage;
 
         public Form1()
         {
@@ -146,15 +147,17 @@ namespace AvifEncoder.GuiLakeUI
             _optionsPage = new FormOptions();
             _logPage = new FormLog();
             _otherOptionsPage = new FormOtherOptions();
+            _aboutPage = new FormAbout();
 
             MakePanelTransparent(_encodePage.modernPanel1);
             MakePanelTransparent(_optionsPage.modernPanel1);
             MakePanelTransparent(_logPage.modernPanel1);
             MakePanelTransparent(_helpPage.modernPanel1);
             MakePanelTransparent(_otherOptionsPage.modernPanel1); // ★ 新增透明处理
+            MakePanelTransparent(_aboutPage.modernPanel1);
 
-            // ★ 标签页数量改为 5
-            while (modernTabListControl1.Items.Count < 5)
+            // 标签页数量改为 6
+            while (modernTabListControl1.Items.Count < 6)
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
 
             modernTabListControl1.Items[0].Text = "编码";
@@ -167,6 +170,8 @@ namespace AvifEncoder.GuiLakeUI
             modernTabListControl1.Items[3].BoundControl = _helpPage;
             modernTabListControl1.Items[4].Text = "其他功能";
             modernTabListControl1.Items[4].BoundControl = _otherOptionsPage;
+            modernTabListControl1.Items[5].Text = "关于";
+            modernTabListControl1.Items[5].BoundControl = _aboutPage;
 
             modernTabListControl1.SelectedIndex = 0;
             _encodePage.LogPage = _logPage!;
@@ -335,7 +340,7 @@ namespace AvifEncoder.GuiLakeUI
             }
             if (isRoot)
             {
-                foreach (var page in new Form?[] { _encodePage, _logPage, _helpPage, _otherOptionsPage })
+                foreach (var page in new Form?[] { _encodePage, _logPage, _helpPage, _otherOptionsPage, _aboutPage })
                 {
                     if (page != null && !page.IsDisposed)
                     {

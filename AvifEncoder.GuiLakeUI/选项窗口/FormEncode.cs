@@ -903,15 +903,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
         }
 
-        private void label4_Click(object sender, EventArgs e)
-        {
 
-        }
-
-        private void label5_Click(object sender, EventArgs e)
-        {
-
-        }
 
         /// <summary>
         /// 从 AppConfig 恢复编码设置到 UI 控件。
