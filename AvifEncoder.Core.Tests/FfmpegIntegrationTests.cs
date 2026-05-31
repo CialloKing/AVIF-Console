@@ -370,6 +370,115 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public async Task Metrics_MsSsim_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string encoded = Path.Combine(_tempDir!, "test_msssim_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 20 -b:v 0 -frames:v 1 \"{encoded}\"";
+
+            using (var proc = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await proc!.WaitForExitAsync();
+
+            string msssimArgs = $"-i \"{encoded}\" -i \"{_testImagePath}\" " +
+                $"-lavfi \"[0:v]settb=1/25,setpts=PTS-STARTPTS[dist];" +
+                $"[1:v]settb=1/25,setpts=PTS-STARTPTS[ref];" +
+                $"[dist][ref]ms_ssim\" -f null -";
+
+            using var proc2 = Process.Start(new ProcessStartInfo(_ffmpegPath!, msssimArgs)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardError = true
+            });
+            Assert.IsNotNull(proc2);
+            string err = await proc2.StandardError.ReadToEndAsync();
+            await proc2.WaitForExitAsync();
+
+            if (proc2.ExitCode != 0)
+            {
+                Assert.Inconclusive($"MS-SSIM filter not supported (exit={proc2.ExitCode})");
+            }
+            Assert.IsTrue(err.Contains("All"), $"MS-SSIM output missing: {err[^200..]}");
+        }
+
+        [TestMethod]
+        public async Task Metrics_Xpsnr_ReturnsScore()
+        {
+            AssertFfmpegAvailable();
+            string encoded = Path.Combine(_tempDir!, "test_xpsnr_enc.avif");
+            string encArgs = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 20 -b:v 0 -frames:v 1 \"{encoded}\"";
+
+            using (var proc = Process.Start(new ProcessStartInfo(_ffmpegPath!, encArgs)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true }))
+                await proc!.WaitForExitAsync();
+
+            string xpsnrArgs = $"-i \"{encoded}\" -i \"{_testImagePath}\" " +
+                $"-lavfi \"[0:v]settb=1/25,setpts=PTS-STARTPTS[dist];" +
+                $"[1:v]settb=1/25,setpts=PTS-STARTPTS[ref];" +
+                $"[dist][ref]xpsnr\" -f null -";
+
+            using var proc2 = Process.Start(new ProcessStartInfo(_ffmpegPath!, xpsnrArgs)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardError = true
+            });
+            Assert.IsNotNull(proc2);
+            string err = await proc2.StandardError.ReadToEndAsync();
+            await proc2.WaitForExitAsync();
+
+            if (proc2.ExitCode != 0)
+            {
+                Assert.Inconclusive($"XPSNR filter not available (exit={proc2.ExitCode})");
+            }
+            Assert.IsTrue(err.Contains("XPSNR") || err.Contains("xpsnr"),
+                $"XPSNR output missing: {err[^200..]}");
+        }
+
+        [TestMethod]
+        public async Task Encode_10bit_CreatesAvifFile()
+        {
+            AssertFfmpegAvailable();
+            string output = Path.Combine(_tempDir!, "test_10bit.avif");
+            string args = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 30 -b:v 0 -pix_fmt yuv420p10le -frames:v 1 \"{output}\"";
+
+            using var process = Process.Start(new ProcessStartInfo(_ffmpegPath!, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+            });
+            Assert.IsNotNull(process);
+            await process.WaitForExitAsync();
+
+            Assert.AreEqual(0, process.ExitCode);
+            Assert.IsTrue(File.Exists(output));
+            Assert.IsTrue(new FileInfo(output).Length > 100);
+        }
+
+        [TestMethod]
+        public async Task Encode_CrfScaling_HigherCrfSmallerFile()
+        {
+            AssertFfmpegAvailable();
+            string hiQ = Path.Combine(_tempDir!, $"test_crf10.avif");
+            string loQ = Path.Combine(_tempDir!, $"test_crf50.avif");
+
+            string argsHi = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 10 -b:v 0 -frames:v 1 \"{hiQ}\"";
+            string argsLo = $"-y -loglevel error -i \"{_testImagePath}\" -c:v libaom-av1 -crf 50 -b:v 0 -frames:v 1 \"{loQ}\"";
+
+            using (var p = Process.Start(new ProcessStartInfo(_ffmpegPath!, argsHi)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await p!.WaitForExitAsync();
+            using (var p = Process.Start(new ProcessStartInfo(_ffmpegPath!, argsLo)
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await p!.WaitForExitAsync();
+
+            long sizeHi = new FileInfo(hiQ).Length;
+            long sizeLo = new FileInfo(loQ).Length;
+
+            // CRF 较高(50)的文件应小于 CRF 较低(10)的文件
+            Assert.IsTrue(sizeLo < sizeHi,
+                $"CRF 50 ({sizeLo} bytes) should be smaller than CRF 10 ({sizeHi} bytes)");
+        }
+
+        [TestMethod]
         public async Task EnvironmentCheck_LastResult_IsCached()
         {
             var r1 = AvifEnvironmentChecker.LastResult;
