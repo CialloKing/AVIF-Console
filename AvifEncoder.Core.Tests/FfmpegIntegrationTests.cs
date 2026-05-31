@@ -599,6 +599,37 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        [DoNotParallelize]
+        public async Task Pipeline_BasicEncode_Succeeds()
+        {
+            AssertFfmpegAvailable();
+            string root = Path.Combine(Path.GetTempPath(), $"avif_pipe_{Guid.NewGuid():N}");
+            string inDir = Path.Combine(root, "input");
+            string outDir = Path.Combine(root, "output");
+            Directory.CreateDirectory(inDir);
+            // 转为 PNG (Pipeline 默认只扫描 jpg/jpeg/png/webp)
+            string localPng = Path.Combine(inDir, "test.png");
+            using (var pc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                _ffmpegPath!, $"-y -loglevel error -i \"{_testImagePath}\" -frames:v 1 \"{localPng}\"")
+                { UseShellExecute = false, CreateNoWindow = true }))
+                await pc!.WaitForExitAsync();
+
+            var config = PresetConfig.CreateFromPreset(CliPreset.Fast);
+            config.Encoder = "libaom-av1";
+            config.UseCRFSearch = false;
+            config.BaseCRF = 30;
+
+            try
+            {
+                using var pipeline = new AvifPipeline(inDir, outDir, config,
+                    logger: new NullLogger(), progress: new Progress<int>(_ => { }));
+                await pipeline.RunAsync();
+                Assert.IsTrue(Directory.GetFiles(outDir, "*.avif").Length > 0);
+            }
+            finally { try { Directory.Delete(root, true); } catch { } }
+        }
+
+        [TestMethod]
         public async Task EnvironmentCheck_LastResult_IsCached()
         {
             var r1 = AvifEnvironmentChecker.LastResult;
@@ -610,5 +641,13 @@ namespace AvifEncoder.Core.Tests
             Assert.IsNotNull(r1, "LastResult should be set after check");
             Assert.IsTrue(r1.FfmpegAvailable);
         }
+    }
+
+    internal class NullLogger : ILogger
+    {
+        public void LogInfo(string msg) { }
+        public void LogError(string msg) { }
+        public void LogMetric(string metricName, string msg) { }
+        public void LogSearch(string msg) { }
     }
 }

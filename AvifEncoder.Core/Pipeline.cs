@@ -651,7 +651,10 @@ namespace AvifEncoder
             _inputDir = EnsureLongPath(inputDir);
             _outputDir = EnsureLongPath(outputDir);
 
-            // ��������Ŀ¼����������ֹ�������ͬʱдͬһĿ¼
+            // 先创建输出目录，再创建锁文件
+            _fs.CreateDirectory(_outputDir);
+
+            // 输出目录锁，防止多进程同时写同一目录
             string lockFile = Path.Combine(_outputDir, ".avifencoder.lock");
             try
             {
