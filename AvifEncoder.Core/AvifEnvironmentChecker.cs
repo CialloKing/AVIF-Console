@@ -31,6 +31,9 @@ namespace AvifEncoder
 
     public static class AvifEnvironmentChecker
     {
+        /// <summary>缓存最近一次检测结果，供 UI 动态获取</summary>
+        public static EnvironmentCheckResult? LastResult { get; private set; }
+
         public static async Task<EnvironmentCheckResult> CheckEnvironmentAsync(
     ILogger? logger = null,
     string? tempDir = null)
@@ -138,6 +141,7 @@ namespace AvifEncoder
                 if (Directory.Exists(workDir) && !Directory.EnumerateFileSystemEntries(workDir).Any())
                     try { Directory.Delete(workDir); } catch { }
             }
+            LastResult = result;
             return result;
         }
 

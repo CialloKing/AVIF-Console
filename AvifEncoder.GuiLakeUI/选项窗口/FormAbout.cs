@@ -10,6 +10,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         {
             InitializeComponent();
             LoadAboutText();
+            txtAbout.LinkClicked += (s, e) =>
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.LinkText) { UseShellExecute = true }); } catch { }
+            };
         }
 
         private void LoadAboutText()

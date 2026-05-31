@@ -178,6 +178,10 @@ namespace AvifEncoder.GuiLakeUI
 
             await RunStartupCheckAsync();
 
+            // 环境检测完成后刷新下拉框
+            _encodePage?.RefreshEncodersFromDetection();
+            _encodePage?.RefreshMetricsFromDetection();
+
             TryLoadDefaultConfig();
 
         }

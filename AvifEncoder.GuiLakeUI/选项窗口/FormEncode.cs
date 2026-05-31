@@ -38,7 +38,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private bool _isResumeDetected;
 
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
-        private static readonly string[] _encoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
+        private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
         private static readonly string[] _chromaNames = ["auto", "420", "422", "444"];
         private static readonly string[] _bitDepthNames = ["auto", "8", "10"];
         private static readonly string[] _conflictNames = ["自动重命名", "覆盖已存在文件", "跳过已存在文件"];
@@ -115,8 +115,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbPreset.Items.AddRange(_presetNames);
 
             cmbEncoder.Items.Clear();
-            cmbEncoder.Items.AddRange(_encoderNames);
+            cmbEncoder.Items.AddRange(_allEncoderNames);
             SetComboBoxItem(cmbEncoder, "libaom-av1");
+            // 如果有缓存的环境检测结果，用它刷新下拉框
+            RefreshEncodersFromDetection();
             UpdateCpuUsedLimits();   // 添加此行，使初始上限与编码器匹配
 
             numJobs.Minimum = 0; numJobs.Maximum = 128; numJobs.Value = 0;
@@ -1280,6 +1282,51 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         }
 
         #endregion
+
+        // ========== 环境检测联动 ==========
+    /// <summary>根据环境检测结果刷新编码器下拉框，只显示可用的编码器</summary>
+    public void RefreshEncodersFromDetection()
+    {
+        var result = AvifEnvironmentChecker.LastResult;
+        if (result == null || !result.FfmpegAvailable) return;
+
+        cmbEncoder.Items.Clear();
+        // 优先显示可用编码器，按固定顺序排列
+        var preferredOrder = new[] { "libaom-av1", "libsvtav1", "librav1e",
+                                     "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" };
+        foreach (var name in preferredOrder)
+        {
+            if (result.Encoders.Any(e => e.Name == name && e.Available))
+                cmbEncoder.Items.Add(name);
+        }
+        // 补充检测到的额外编码器（不在预设列表中的）
+        foreach (var enc in result.Encoders)
+        {
+            if (enc.Available && !preferredOrder.Contains(enc.Name) && !cmbEncoder.Items.Contains(enc.Name))
+                cmbEncoder.Items.Add(enc.Name);
+        }
+
+        if (cmbEncoder.Items.Count > 0)
+            cmbEncoder.SelectedIndex = 0;
+    }
+
+    /// <summary>根据环境检测结果刷新质量指标下拉框</summary>
+    public void RefreshMetricsFromDetection()
+    {
+        var result = AvifEnvironmentChecker.LastResult;
+        // 质量指标始终显示全部，但外部工具指标标记情况可通过日志了解
+        cmbMetric.Items.Clear();
+        cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
+        if (cmbMetric.Items.Count > 0) cmbMetric.SelectedIndex = 0;
+
+        cmbQualityMode.Items.Clear();
+        cmbQualityMode.Items.Add("无");
+        cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
+            .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
+            .Where(n => n.Length > 0).ToArray());
+        if (cmbQualityMode.Items.Count > 0) cmbQualityMode.SelectedIndex = 0;
+        numQualityValue.Enabled = false;
+    }
 
     }
 
