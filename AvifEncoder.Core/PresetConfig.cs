@@ -258,6 +258,31 @@ namespace AvifEncoder
         }
 
 
+        /// <summary>验证配置参数是否合法，返回错误描述列表（空列表表示无错误）</summary>
+        public System.Collections.Generic.List<string> Validate()
+        {
+            var errors = new System.Collections.Generic.List<string>();
+            if (MinCRF > MaxCRF)
+                errors.Add($"MinCRF ({MinCRF}) 不能大于 MaxCRF ({MaxCRF})");
+            if (MinCRF < 0 || MinCRF > 63)
+                errors.Add($"MinCRF ({MinCRF}) 超出有效范围 0-63");
+            if (MaxCRF < 0 || MaxCRF > 63)
+                errors.Add($"MaxCRF ({MaxCRF}) 超出有效范围 0-63");
+            if (!UseCRFSearch && (BaseCRF < 0 || BaseCRF > 63))
+                errors.Add($"BaseCRF ({BaseCRF}) 超出有效范围 0-63");
+            if (BitDepth != 8 && BitDepth != 10)
+                errors.Add($"BitDepth ({BitDepth}) 仅支持 8 或 10");
+            if (string.IsNullOrWhiteSpace(Encoder))
+                errors.Add("编码器名称不能为空");
+            if (MaxJobs < 0)
+                errors.Add($"MaxJobs ({MaxJobs}) 不能为负数");
+            if (SearchCpuUsed < 0)
+                errors.Add($"SearchCpuUsed ({SearchCpuUsed}) 不能为负数");
+            if (FinalCpuUsed < 0)
+                errors.Add($"FinalCpuUsed ({FinalCpuUsed}) 不能为负数");
+            return errors;
+        }
+
         // ========== 文件系统抽象（解决跨平台/长路径/可测试性）==========
         public interface IFileSystem
         {
