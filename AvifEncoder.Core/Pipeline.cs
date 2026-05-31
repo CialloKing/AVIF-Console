@@ -2057,7 +2057,7 @@ namespace AvifEncoder
             string legacyMetricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");
             if (Directory.Exists(legacyMetricsDir))
             {
-                try { Directory.Delete(legacyMetricsDir, true); } catch (Exception ex) { _logger?.LogError($"清理临时目录异常: "+ex.Message); }
+                try { Directory.Delete(legacyMetricsDir, true); } catch (Exception ex) { _logger?.LogError($"清理临时目录异常: " + ex.Message); }
             }
         }
 

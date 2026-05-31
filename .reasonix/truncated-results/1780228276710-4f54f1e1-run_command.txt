@@ -1,0 +1,1189 @@
+$ powershell -Command "$c=[System.IO.File]::ReadAllText('AvifEncoder.GuiLakeUI/选项窗口/FormEncode.cs',[System.Text.Encoding]::UTF8); $lines=$c.Split([Environment]::NewLine); for($i=1350;$i -lt $lines.Count;$i++){ Write-Host ('{0}: {1}' -f ($i+1), $lines[$i]) }"
+[exit 0]
+1351: 
+1352: 
+1353: 
+1354: 
+1355: 
+1356: 
+1357: 
+1358: 
+1359:                 var fileLogger = new FileLogger(outputDir);
+1360: 
+1361:                 var logger = new CompositeLogger(guiLogger, fileLogger);
+1362: 
+1363: 
+1364: 
+1365:                 var progress = new Progress<int>(p =>
+1366: 
+1367:                 {
+1368: 
+1369:                     if (InvokeRequired) BeginInvoke(new Action(() => UpdateProgress(p)));
+1370: 
+1371:                     else UpdateProgress(p);
+1372: 
+1373:                 });
+1374: 
+1375: 
+1376: 
+1377:                 using (_cts = new CancellationTokenSource())
+1378: 
+1379:                 {
+1380: 
+1381:                     try
+1382: 
+1383:                     {
+1384: 
+1385:                         using var pipeline = new AvifPipeline(
+1386: 
+1387:                             inputDir, outputDir, config,
+1388: 
+1389:                             logger: logger,
+1390: 
+1391:                             progress: progress);
+1392: 
+1393:                         await pipeline.RunAsync(_cts.Token);
+1394: 
+1395:                     }
+1396: 
+1397:                     catch (OperationCanceledException)
+1398: 
+1399:                     {
+1400: 
+1401:                         LogPage?.AppendLog("编码已被用户取消。");
+1402: 
+1403:                         MessageBox.Show("编码已取消。", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+1404: 
+1405:                         return;
+1406: 
+1407:                     }
+1408: 
+1409:                 }
+1410: 
+1411: 
+1412: 
+1413:                 LogPage?.AppendLog("===== 全部完成 =====");
+1414: 
+1415:                 MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+1416: 
+1417:             }
+1418: 
+1419:             catch (Exception ex)
+1420: 
+1421:             {
+1422: 
+1423:                 LogPage?.AppendLog($"严重错误: {ex.Message}\n{ex.StackTrace}");
+1424: 
+1425:                 MessageBox.Show($"错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+1426: 
+1427:             }
+1428: 
+1429:             finally
+1430: 
+1431:             {
+1432: 
+1433:                 _isEncoding = false;
+1434: 
+1435:                 _isResumeDetected = false;  // 编码完成后清除恢复状态
+1436: 
+1437:                 btnStart.Enabled = true;
+1438: 
+1439:                 btnStop.Enabled = false;
+1440: 
+1441:                 _cts?.Dispose(); _cts = null;
+1442: 
+1443:                 progressBar1.Value = 100;
+1444: 
+1445:                 // 清除任务栏进度（恢复无进度状态）
+1446: 
+1447:                 if (_topLevelHandle != IntPtr.Zero)
+1448: 
+1449:                     SysTaskBarProgress.Clear(_topLevelHandle);
+1450: 
+1451:             }
+1452: 
+1453:         }
+1454: 
+1455:         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
+1456: 
+1457:         {
+1458: 
+1459:             if (_isEncoding)
+1460: 
+1461:             {
+1462: 
+1463:                 // 主动取消编码任务（内部已通过 Job Object 兜底，此处只是提前通知）
+1464: 
+1465:                 _cts?.Cancel();
+1466: 
+1467:             }
+1468: 
+1469:         }
+1470: 
+1471:         private void btnStop_Click(object? sender, EventArgs e)
+1472: 
+1473:         {
+1474: 
+1475:             if (_cts != null && !_cts.IsCancellationRequested)
+1476: 
+1477:             {
+1478: 
+1479:                 LogPage?.AppendLog("正在请求取消编码...");
+1480: 
+1481:                 _cts.Cancel();
+1482: 
+1483:                 btnStop.Enabled = false;
+1484: 
+1485:                 // 任务栏进度设为暂停状态（可选）
+1486: 
+1487:                 if (_topLevelHandle != IntPtr.Zero)
+1488: 
+1489:                     SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
+1490: 
+1491:             }
+1492: 
+1493:         }
+1494: 
+1495: 
+1496: 
+1497:         /// <summary>
+1498: 
+1499:         /// 从 UI 控件收集编码参数，构建 PresetConfig。
+1500: 
+1501:         /// </summary>
+1502: 
+1503:         private PresetConfig BuildConfigFromUI()
+1504: 
+1505:         {
+1506: 
+1507:             var config = new PresetConfig
+1508: 
+1509:             {
+1510: 
+1511:                 Encoder = cmbEncoder.SelectedIndex >= 0
+1512: 
+1513:                     ? cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString()
+1514: 
+1515:                         ?? "libaom-av1"
+1516: 
+1517:                     : "libaom-av1"
+1518: 
+1519:             };
+1520: 
+1521: 
+1522: 
+1523:             int jobs = (int)numJobs.Value;
+1524: 
+1525:             if (jobs > 0)
+1526: 
+1527:             {
+1528: 
+1529:                 config.MaxJobs = jobs;
+1530: 
+1531:                 config.UserSpecifiedMaxJobs = true;
+1532: 
+1533:             }
+1534: 
+1535: 
+1536: 
+1537:             config.OutputNameFormat =
+1538: 
+1539:                 string.IsNullOrWhiteSpace(txtTemplate.Text)
+1540: 
+1541:                     ? "covers-{index}.avif"
+1542: 
+1543:                     : txtTemplate.Text.Trim();
+1544: 
+1545:             config.RecurseSubdirectories = chkRecursive.Checked;
+1546: 
+1547:             config.Lossless = chkLossless.Checked;
+1548: 
+1549: 
+1550: 
+1551:             // 固定CRF模式下搜索无效，范围模式下搜索才启用
+1552: 
+1553:             if (rbCrfFix.Checked)
+1554: 
+1555:             {
+1556: 
+1557:                 config.UseCRFSearch = false;
+1558: 
+1559:                 config.BaseCRF = (int)numCrfFix.Value;
+1560: 
+1561:             }
+1562: 
+1563:             else
+1564: 
+1565:             {
+1566: 
+1567:                 config.UseCRFSearch = chkSearch.Checked;
+1568: 
+1569:                 config.MinCRF = (int)numCrfMin.Value;
+1570: 
+1571:                 config.MaxCRF = (int)numCrfMax.Value;
+1572: 
+1573:             }
+1574: 
+1575: 
+1576: 
+1577:             if (chkSweep.Checked)
+1578: 
+1579:             {
+1580: 
+1581:                 if (rbCrfFix.Checked)
+1582: 
+1583:                 {
+1584: 
+1585:                     config.MinCRF = config.MaxCRF =
+1586: 
+1587:                         (int)numCrfFix.Value;
+1588: 
+1589:                 }
+1590: 
+1591:                 config.SweepMode = true;
+1592: 
+1593:                 config.UseCRFSearch = false;
+1594: 
+1595:             }
+1596: 
+1597: 
+1598: 
+1599:             string chroma = cmbChroma
+1600: 
+1601:                 .Items[cmbChroma.SelectedIndex]?.ToString()
+1602: 
+1603:                 ?.ToLower() ?? "auto";
+1604: 
+1605:             if (chroma != "auto")
+1606: 
+1607:             {
+1608: 
+1609:                 config.AutoSource = false;
+1610: 
+1611:                 config.UserSetChroma = true;
+1612: 
+1613:                 config.PixelFormat = chroma switch
+1614: 
+1615:                 {
+1616: 
+1617:                     "420" => "yuv420p",
+1618: 
+1619:                     "422" => "yuv422p",
+1620: 
+1621:                     "444" => "yuv444p",
+1622: 
+1623:                     _ => "yuv420p"
+1624: 
+1625:                 };
+1626: 
+1627:             }
+1628: 
+1629: 
+1630: 
+1631:             string? bitStr = cmbBitDepth
+1632: 
+1633:                 .Items[cmbBitDepth.SelectedIndex]?.ToString();
+1634: 
+1635:             if (!string.IsNullOrEmpty(bitStr)
+1636: 
+1637:                 && bitStr != "auto"
+1638: 
+1639:                 && int.TryParse(bitStr, out int b))
+1640: 
+1641:             {
+1642: 
+1643:                 config.BitDepth = b;
+1644: 
+1645:                 config.UserSetBitDepth = true;
+1646: 
+1647:                 config.AutoSource = false;
+1648: 
+1649:                 AvifPipeline.ApplyBitDepth(config);
+1650: 
+1651:             }
+1652: 
+1653: 
+1654: 
+1655:             config.MetricMode = cmbMetric
+1656: 
+1657:                 .Items[cmbMetric.SelectedIndex]?.ToString()
+1658: 
+1659:                 ?.ToLower() ?? "vmaf";
+1660: 
+1661: 
+1662: 
+1663:             string? qMode = cmbQualityMode
+1664: 
+1665:                 .Items[cmbQualityMode.SelectedIndex]?.ToString();
+1666: 
+1667:             if (!string.IsNullOrEmpty(qMode) && qMode != "无")
+1668: 
+1669:             {
+1670: 
+1671:                 double rawValue = (double)numQualityValue.Value;
+1672: 
+1673:                 var def = MetricRegistry.AllKeys
+1674: 
+1675:                     .Select(k => MetricRegistry.Get(k))
+1676: 
+1677:                     .FirstOrDefault(d => d != null &&
+1678: 
+1679:                         string.Equals(d.DisplayName, qMode, StringComparison.OrdinalIgnoreCase));
+1680: 
+1681:                 if (def != null)
+1682: 
+1683:                 {
+1684: 
+1685:                     config.MetricMode = def.Key;
+1686: 
+1687:                     config.SetQualityTarget(rawValue, def.Key);
+1688: 
+1689:                 }
+1690: 
+1691:             }
+1692: 
+1693: 
+1694: 
+1695:             config.MaxResolution = (int)numMaxRes.Value;
+1696: 
+1697:             config.ApplyScalingToOutput =
+1698: 
+1699:                 !chkOutputFullRes.Checked;
+1700: 
+1701: 
+1702: 
+1703:             config.SerialEncode = chkSerialEncode.Checked;
+1704: 
+1705:             // 恢复模式
+1706: 
+1707:             config.Resume = _isResumeDetected;
+1708: 
+1709: 
+1710: 
+1711:             // 从选项页读取自定义后缀、超时等
+1712: 
+1713:             if (Application.OpenForms["Form1"] is Form1 mainForm)
+1714: 
+1715:             {
+1716: 
+1717:                 var optsPage = mainForm.GetOptionsPage();
+1718: 
+1719:                 if (optsPage != null)
+1720: 
+1721:                 {
+1722: 
+1723:                     string ext = optsPage.GetExtensions();
+1724: 
+1725:                     if (!string.IsNullOrWhiteSpace(ext))
+1726: 
+1727:                         config.InputExtensions = ext;
+1728: 
+1729: 
+1730: 
+1731:                     if (optsPage.EncodeTimeout >= 0)
+1732: 
+1733:                         config.EncodeTimeoutMinutes = optsPage.EncodeTimeout == 0 ? -1 : optsPage.EncodeTimeout;
+1734: 
+1735:                     if (optsPage.SearchTimeout > 0)
+1736: 
+1737:                         config.SearchTimeoutMinutes = optsPage.SearchTimeout;
+1738: 
+1739:                     if (optsPage.SafeTimeout > 0)
+1740: 
+1741:                         config.SafeTimeoutMinutes = optsPage.SafeTimeout;
+1742: 
+1743:                     if (optsPage.SsimTimeout > 0)
+1744: 
+1745:                         config.SsimTimeoutMinutes = optsPage.SsimTimeout;
+1746: 
+1747: 
+1748: 
+1749:                     config.DryRun = optsPage.DryRun;
+1750: 
+1751:                     config.Verbose = optsPage.VerboseOutput;
+1752: 
+1753:                 }
+1754: 
+1755:             }
+1756: 
+1757:             config.UsePriorSearch = chkPriorSearch.Checked;
+1758: 
+1759:             config.UseProxySearch = chkProxy.Checked;
+1760: 
+1761:             config.SearchCpuUsed =
+1762: 
+1763:                 (int)numSearchCpuUsed.Value;
+1764: 
+1765:             config.FinalCpuUsed =
+1766: 
+1767:                 (int)numFinalCpuUsed.Value;
+1768: 
+1769: 
+1770: 
+1771:             config.FileConflictStrategy =
+1772: 
+1773:                 cmbConflict.SelectedIndex switch
+1774: 
+1775:                 {
+1776: 
+1777:                     1 => PresetConfig.ConflictStrategy.Overwrite,
+1778: 
+1779:                     2 => PresetConfig.ConflictStrategy.Skip,
+1780: 
+1781:                     _ => PresetConfig.ConflictStrategy.Rename
+1782: 
+1783:                 };
+1784: 
+1785: 
+1786: 
+1787:             return config;
+1788: 
+1789:         }
+1790: 
+1791: 
+1792: 
+1793: 
+1794: 
+1795:         private void UpdateProgress(int percent)
+1796: 
+1797:         {
+1798: 
+1799:             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
+1800: 
+1801:             int clamped = Math.Max(0, Math.Min(percent, 100));
+1802: 
+1803:             progressBar1.Value = clamped;
+1804: 
+1805:             // 同步任务栏进度
+1806: 
+1807:             if (_topLevelHandle != IntPtr.Zero)
+1808: 
+1809:                 SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
+1810: 
+1811:         }
+1812: 
+1813: 
+1814: 
+1815: 
+1816: 
+1817: 
+1818: 
+1819:         /// <summary>
+1820: 
+1821:         /// 从 AppConfig 恢复编码设置到 UI 控件。
+1822: 
+1823:         /// </summary>
+1824: 
+1825:         public void ApplyConfig(AppConfig cfg)
+1826: 
+1827:         {
+1828: 
+1829:             _isApplyingPreset = true;
+1830: 
+1831:             try
+1832: 
+1833:             {
+1834: 
+1835:                 if (cfg.EncodePreset != null)
+1836: 
+1837:                 {
+1838: 
+1839:                     SetComboBoxItem(cmbPreset, cfg.EncodePreset);
+1840: 
+1841:                 }
+1842: 
+1843:                 if (cfg.EncodeEncoder != null)
+1844: 
+1845:                 {
+1846: 
+1847:                     SetComboBoxItem(cmbEncoder, cfg.EncodeEncoder);
+1848: 
+1849:                 }
+1850: 
+1851:                 numJobs.Value = cfg.EncodeJobs;
+1852: 
+1853:                 numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
+1854: 
+1855:                 numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
+1856: 
+1857:                 if (cfg.EncodeTemplate != null)
+1858: 
+1859:                 {
+1860: 
+1861:                     txtTemplate.Text = cfg.EncodeTemplate;
+1862: 
+1863:                 }
+1864: 
+1865:                 chkSearch.Checked = cfg.EncodeSearch;
+1866: 
+1867:                 if (cfg.EncodeCrfRangeMode)
+1868: 
+1869:                 {
+1870: 
+1871:                     rbCrfRange.Checked = true;
+1872: 
+1873:                     numCrfMin.Value = cfg.EncodeCrfMin;
+1874: 
+1875:                     numCrfMax.Value = cfg.EncodeCrfMax;
+1876: 
+1877:                 }
+1878: 
+1879:                 else
+1880: 
+1881:                 {
+1882: 
+1883:                     rbCrfFix.Checked = true;
+1884: 
+1885:                     numCrfFix.Value = cfg.EncodeCrfFix;
+1886: 
+1887:                 }
+1888: 
+1889:                 if (cfg.EncodeMetric != null)
+1890: 
+1891:                 {
+1892: 
+1893:                     SetComboBoxItem(cmbMetric, cfg.EncodeMetric);
+1894: 
+1895:                 }
+1896: 
+1897:                 if (cfg.EncodeQualityMode != null)
+1898: 
+1899:                 {
+1900: 
+1901:                     SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
+1902: 
+1903:                 }
+1904: 
+1905: 
+1906: 
+1907:                 // 显式同步范围再赋值，避免恢复时越界
+1908: 
+1909:                 string? qMode =
+1910: 
+1911:                     cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
+1912: 
+1913:                         ?.ToString();
+1914: 
+1915:                 if (qMode != null)
+1916: 
+1917:                 {
+1918: 
+1919:                     SetQualityRange(qMode);
+1920: 
+1921:                 }
+1922: 
+1923:                 if (cfg.EncodeQualityValue <= numQualityValue.Maximum
+1924: 
+1925:                     && cfg.EncodeQualityValue
+1926: 
+1927:                         >= numQualityValue.Minimum)
+1928: 
+1929:                 {
+1930: 
+1931:                     numQualityValue.Value =
+1932: 
+1933:                         cfg.EncodeQualityValue;
+1934: 
+1935:                 }
+1936: 
+1937: 
+1938: 
+1939:                 if (cfg.EncodeChroma != null)
+1940: 
+1941:                 {
+1942: 
+1943:                     SetComboBoxItem(cmbChroma, cfg.EncodeChroma);
+1944: 
+1945:                 }
+1946: 
+1947:                 if (cfg.EncodeBitDepth != null)
+1948: 
+1949:                 {
+1950: 
+1951:                     SetComboBoxItem(cmbBitDepth, cfg.EncodeBitDepth);
+1952: 
+1953:                 }
+1954: 
+1955:                 chkLossless.Checked = cfg.EncodeLossless;
+1956: 
+1957:                 chkRecursive.Checked = cfg.EncodeRecursive;
+1958: 
+1959:                 numMaxRes.Value = cfg.EncodeMaxRes;
+1960: 
+1961:                 chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
+1962: 
+1963:                 if (cfg.EncodeConflict >= 0
+1964: 
+1965:                     && cfg.EncodeConflict < cmbConflict.Items.Count)
+1966: 
+1967:                 {
+1968: 
+1969:                     cmbConflict.SelectedIndex = cfg.EncodeConflict;
+1970: 
+1971:                 }
+1972: 
+1973:                 chkSerialEncode.Checked = cfg.EncodeSerialEncode;
+1974: 
+1975:                 chkPriorSearch.Checked = cfg.EncodePriorSearch;
+1976: 
+1977:                 chkProxy.Checked = cfg.EncodeProxy;
+1978: 
+1979:                 chkSweep.Checked = cfg.EncodeSweep;
+1980: 
+1981: 
+1982: 
+1983:                 if (cfg.EncodeInput != null)
+1984: 
+1985:                 {
+1986: 
+1987:                     txtInput.Text = cfg.EncodeInput;
+1988: 
+1989:                 }
+1990: 
+1991:                 if (cfg.EncodeOutput != null)
+1992: 
+1993:                 {
+1994: 
+1995:                     txtOutput.Text = cfg.EncodeOutput;
+1996: 
+1997:                 }
+1998: 
+1999: 
+2000: 
+2001:                 // 选项页数据回填
+2002: 
+2003:                 var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2004: 
+2005:                 if (optsPage != null)
+2006: 
+2007:                 {
+2008: 
+2009:                     if (cfg.EncodeExtensions != null)
+2010: 
+2011:                         optsPage.SetExtensions(cfg.EncodeExtensions);
+2012: 
+2013:                     optsPage.SetEncodeTimeout(cfg.EncodeTimeoutEncode);
+2014: 
+2015:                     optsPage.SetSearchTimeout(cfg.EncodeTimeoutSearch);
+2016: 
+2017:                     optsPage.SetSafeTimeout(cfg.EncodeTimeoutSafe);
+2018: 
+2019:                     optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
+2020: 
+2021:                     optsPage.SetDryRun(cfg.EncodeDryRun);
+2022: 
+2023:                     optsPage.SetVerboseOutput(cfg.EncodeVerbose);
+2024: 
+2025:                 }
+2026: 
+2027:             }
+2028: 
+2029:             finally
+2030: 
+2031:             {
+2032: 
+2033:                 _isApplyingPreset = false;
+2034: 
+2035:             }
+2036: 
+2037:         }
+2038: 
+2039: 
+2040: 
+2041:         /// <summary>
+2042: 
+2043:         /// 从 UI 控件收集编码设置到 AppConfig。
+2044: 
+2045:         /// </summary>
+2046: 
+2047:         public string GetOutputDir() => txtOutput.Text.Trim();
+2048: 
+2049: 
+2050: 
+2051:         public void ResetToDefaults()
+2052: 
+2053:         {
+2054: 
+2055:             ApplyPresetToUI(CliPreset.Balanced);
+2056: 
+2057:             SetComboBoxItem(cmbPreset, "balanced");
+2058: 
+2059:         }
+2060: 
+2061: 
+2062: 
+2063:         public void BuildConfig(AppConfig cfg)
+2064: 
+2065:         {
+2066: 
+2067:             cfg.EncodePreset =
+2068: 
+2069:                 cmbPreset.Items[cmbPreset.SelectedIndex]?.ToString();
+2070: 
+2071:             cfg.EncodeEncoder =
+2072: 
+2073:                 cmbEncoder.Items[cmbEncoder.SelectedIndex]?.ToString();
+2074: 
+2075:             cfg.EncodeJobs = (int)numJobs.Value;
+2076: 
+2077:             cfg.EncodeSearchCpuUsed = (int)numSearchCpuUsed.Value;
+2078: 
+2079:             cfg.EncodeFinalCpuUsed = (int)numFinalCpuUsed.Value;
+2080: 
+2081:             cfg.EncodeTemplate = txtTemplate.Text;
+2082: 
+2083:             cfg.EncodeSearch = chkSearch.Checked;
+2084: 
+2085:             cfg.EncodeCrfRangeMode = rbCrfRange.Checked;
+2086: 
+2087:             cfg.EncodeCrfFix = (int)numCrfFix.Value;
+2088: 
+2089:             cfg.EncodeCrfMin = (int)numCrfMin.Value;
+2090: 
+2091:             cfg.EncodeCrfMax = (int)numCrfMax.Value;
+2092: 
+2093:             cfg.EncodeMetric =
+2094: 
+2095:                 cmbMetric.Items[cmbMetric.SelectedIndex]?.ToString();
+2096: 
+2097:             cfg.EncodeQualityMode =
+2098: 
+2099:                 cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
+2100: 
+2101:                     ?.ToString();
+2102: 
+2103:             cfg.EncodeQualityValue = (double)numQualityValue.Value;
+2104: 
+2105:             cfg.EncodeChroma =
+2106: 
+2107:                 cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString();
+2108: 
+2109:             cfg.EncodeBitDepth =
+2110: 
+2111:                 cmbBitDepth.Items[cmbBitDepth.SelectedIndex]?.ToString();
+2112: 
+2113:             cfg.EncodeLossless = chkLossless.Checked;
+2114: 
+2115:             cfg.EncodeRecursive = chkRecursive.Checked;
+2116: 
+2117:             cfg.EncodeMaxRes = (int)numMaxRes.Value;
+2118: 
+2119:             cfg.EncodeOutputFullRes = chkOutputFullRes.Checked;
+2120: 
+2121:             cfg.EncodeConflict = cmbConflict.SelectedIndex;
+2122: 
+2123:             cfg.EncodeSerialEncode = chkSerialEncode.Checked;
+2124: 
+2125:             cfg.EncodePriorSearch = chkPriorSearch.Checked;
+2126: 
+2127:             cfg.EncodeProxy = chkProxy.Checked;
+2128: 
+2129:             cfg.EncodeSweep = chkSweep.Checked;
+2130: 
+2131: 
+2132: 
+2133:             cfg.EncodeInput = txtInput.Text;
+2134: 
+2135:             cfg.EncodeOutput = txtOutput.Text;
+2136: 
+2137: 
+2138: 
+2139:             // 选项页数据
+2140: 
+2141:             if (Application.OpenForms["Form1"] is Form1 mainForm)
+2142: 
+2143:             {
+2144: 
+2145:                 var optsPage = mainForm.GetOptionsPage();
+2146: 
+2147:                 if (optsPage != null)
+2148: 
+2149:                 {
+2150: 
+2151:                     cfg.EncodeExtensions = optsPage.GetExtensions();
+2152: 
+2153:                     cfg.EncodeTimeoutEncode = optsPage.EncodeTimeout;
+2154: 
+2155:                     cfg.EncodeTimeoutSearch = optsPage.SearchTimeout;
+2156: 
+2157:                     cfg.EncodeTimeoutSafe = optsPage.SafeTimeout;
+2158: 
+2159:                     cfg.EncodeTimeoutSsim = optsPage.SsimTimeout;
+2160: 
+2161:                     cfg.EncodeDryRun = optsPage.DryRun;
+2162: 
+2163:                     cfg.EncodeVerbose = optsPage.VerboseOutput;
+2164: 
+2165:                 }
+2166: 
+2167:             }
+2168: 
+2169:         }
+2170: 
+2171: 
+2172: 
+2173:         #region 断点续传 UI
+2174: 
+2175: 
+2176: 
+2177:         private void TxtOutput_TextChanged(object? sender, EventArgs e)
+2178: 
+2179:         {
+2180: 
+2181:             if (_isEncoding) return;
+2182: 
+2183:             string outputDir = txtOutput.Text.Trim('"').Trim();
+2184: 
+2185:             if (string.IsNullOrEmpty(outputDir)) return;
+2186: 
+2187: 
+2188: 
+2189:             string snapshot = Path.Combine(outputDir, ".session", "snapshot.json");
+2190: 
+2191:             if (File.Exists(snapshot))
+2192: 
+2193:             {
+2194: 
+2195:                 var (_, configJson, inputPath) = LoadConfigFromSnapshot(snapshot);
+2196: 
+2197:                 if (configJson != null)
+2198: 
+2199:                 {
+2200: 
+2201:                     if (!string.IsNullOrEmpty(inputPath))
+2202: 
+2203:                     {
+2204: 
+2205:                         txtInput.Text = inputPath;  // 总是恢复输入路径（用户可覆盖）
+2206: 
+2207:                     }
+2208: 
+2209:                     else
+2210: 
+2211:                     {
+2212: 
+2213:                         LogPage?.AppendLog("[RESUME] 快照中无输入路径（可能是旧版本快照，请重新运行一次 --resume 以更新）");
+2214: 
+2215:                     }
+2216: 
+2217:                     EnterResumeMode(configJson);
+2218: 
+2219:                     return;
+2220: 
+2221:                 }
+2222: 
+2223:             }
+2224: 
+2225:             ExitResumeMode();
+2226: 
+2227:         }
+2228: 
+2229: 
+2230: 
+2231:         private static (HashSet<string>?, string?, string?) LoadConfigFromSnapshot(string path)
+2232: 
+2233:         {
+2234: 
+2235:             try
+2236: 
+2237:             {
+2238: 
+2239:                 string json = File.ReadAllText(path);
+2240: 
+2241:                 using var doc = System.Text.Json.JsonDocument.Parse(json);
+2242: 
+2243:                 var root = doc.RootElement;
+2244: 
+2245:                 string? cfgJson = null, inputPath = null;
+2246: 
+2247:                 if (root.TryGetProperty("config", out var cfgEl))
+2248: 
+2249:                     cfgJson = cfgEl.GetRawText();
+2250: 
+2251:                 if (root.TryGetProperty("inputDir", out var idEl))
+2252: 
+2253:                     inputPath = idEl.GetString();
+2254: 
+2255:                 return (null, cfgJson, inputPath);
+2256: 
+2257:             }
+2258: 
+2259:             catch { return (null, null, null); }
+2260: 
+2261:         }
+2262: 
+2263: 
+2264: 
+2265:         private void EnterResumeMode(string configJson)
+2266: 
+2267:         {
+2268: 
+2269:             if (_isResumeDetected) return;
+2270: 
+2271: 
+2272: 
+2273:             try
+2274: 
+2275:             {
+2276: 
+2277:                 // 从 JSON 回填所有控件
+2278: 
+2279:                 using var doc = System.Text.Json.JsonDocument.Parse(configJson);
+2280: 
+2281:                 var cfg = doc.RootElement;
+2282: 
+2283: 
+2284: 
+2285:                 _isApplyingPreset = true;
+2286: 
+2287:                 if (cfg.TryGetProperty("Encoder", out var enc)) SetComboBoxItem(cmbEncoder, enc.GetString()!);
+2288: 
+2289:                 if (cfg.TryGetProperty("Lossless", out var ll)) chkLossless.Checked = ll.GetBoolean();
+2290: 
+2291:                 if (cfg.TryGetProperty("BaseCRF", out var bcrf)) numCrfFix.Value = bcrf.GetInt32();
+2292: 
+2293:                 if (cfg.TryGetProperty("MinCRF", out var mn)) numCrfMin.Value = mn.GetInt32();
+2294: 
+2295:                 if (cfg.TryGetProperty("MaxCRF", out var mx)) numCrfMax.Value = mx.GetInt32();
+2296: 
+2297:                 if (cfg.TryGetProperty("UseCRFSearch", out var sr))
+2298: 
+2299:                 {
+2300: 
+2301:                     if (sr.GetBoolean()) { rbCrfRange.Checked = true; }
+2302: 
+2303:                     else { rbCrfFix.Checked = true; }
+2304: 
+2305:                 }
+2306: 
+2307:                 if (cfg.TryGetProperty("MetricMode", out var mm)) SetComboBoxItem(cmbMetric, mm.GetString()!);
+2308: 
+2309:                 if (cfg.TryGetProperty("PixelFormat", out var pf))
+2310: 
+2311:                 {
+2312: 
+2313:                     string pfStr = pf.GetString() ?? "";
+2314: 
+2315:                     if (pfStr.Contains("444")) SetComboBoxItem(cmbChroma, "444");
+2316: 
+2317:                     else if (pfStr.Contains("422")) SetComboBoxItem(cmbChroma, "422");
+2318: 
+2319:                     else if (pfStr == "") SetComboBoxItem(cmbChroma, "auto");
+2320: 
+2321:                     else SetComboBoxItem(cmbChroma, "420");
+2322: 
+2323:                 }
+2324: 
+2325:                 if (cfg.TryGetProperty("BitDepth", out var bd))
+2326: 
+2327:                     SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 10 ? "10" : "8");
+2328: 
+2329:                 if (cfg.TryGetProperty("OutputNameFormat", out var ot)) txtTemplate.Text = ot.GetString()!;
+2330: 
+2331:                 if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) chkRecursive.Checked = rc.GetBoolean();
+2332: 
+2333:                 if (cfg.TryGetProperty("SerialEncode", out var se)) chkSerialEncode.Checked = se.GetBoolean();
+2334: 
+2335:                 if (cfg.TryGetProperty("UsePriorSearch", out var ps)) chkPriorSearch.Checked = ps.GetBoolean();
+2336: 
+2337:                 if (cfg.TryGetProperty("UseProxySearch", out var px)) chkProxy.Checked = px.GetBoolean();
+2338: 
+2339:                 if (cfg.TryGetProperty("SearchCpuUsed", out var sc)) numSearchCpuUsed.Value = sc.GetInt32();
+2340: 
+2341:                 if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) numFinalCpuUsed.Value = fc.GetInt32();
+2342: 
+2343:                 if (cfg.TryGetProperty("MaxResolution", out var mr)) numMaxRes.Value = mr.GetInt32();
+2344: 
+2345:                 if (cfg.TryGetProperty("MaxJobs", out var mj)) numJobs.Value = mj.GetInt32();
+2346: 
+2347:                 if (cfg.TryGetProperty("InputExtensions", out var ie))
+2348: 
+2349:                 {
+2350: 
+2351:                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2352: 
+2353:                     optsPage?.SetExtensions(ie.GetString() ?? "");
+2354: 
+2355:                 }
+2356: 
+2357:                 if (cfg.TryGetProperty("EncodeTimeoutMinutes", out var et))
+2358: 
+2359:                 {
+2360: 
+2361:                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2362: 
+2363:                     optsPage?.SetEncodeTimeout(et.GetInt32());
+2364: 
+2365:                 }
+2366: 
+2367:                 if (cfg.TryGetProperty("SearchTimeoutMinutes", out var st))
+2368: 
+2369:                 {
+2370: 
+2371:                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2372: 
+2373:                     optsPage?.SetSearchTimeout(st.GetInt32());
+2374: 
+2375:                 }
+2376: 
+2377:                 if (cfg.TryGetProperty("SafeTimeoutMinutes", out var sf))
+2378: 
+2379:                 {
+2380: 
+2381:                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2382: 
+2383:                     optsPage?.SetSafeTimeout(sf.GetInt32());
+2384: 
+2385:                 }
+2386: 
+2387:                 if (cfg.TryGetProperty("SsimTimeoutMinutes", out var ss))
+2388: 
+2389:                 {
+2390: 
+2391:                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+2392: 
+2393:                     optsPage?.SetSsimTimeout(ss.GetInt32());
+2394: 
+2395:                 }
+2396: 
+2397:                 if (cfg.TryGetProperty("SweepMode", out var sw)) chkSweep.Checked = sw.GetBoolean();
+2398: 
+2399:                 _isApplyingPreset = false;
+2400: 
+2401:             }
+2402: 
+2403:             catch { _isApplyingPreset = false; }
+2404: 
+2405: 
+2406: 
+2407:             // 锁定所有控件
+2408: 
+2409:             SetEncodingControlsEnabled(false);
+2410: 
+2411: 
+2412: 
+2413:             // 按钮切换
+2414: 
+2415:             btnStart.Enabled = false;
+2416: 
+2417:             btnResume.Enabled = true;
+2418: 
+2419:             btnAbandon.Enabled = true;
+2420: 
+2421: 
+2422: 
+2423:             _isResumeDetected = true;
+2424: 
+2425:             LogPage?.AppendLog("[RESUME] 检测到中断任务，已恢复编码配置，点击 [恢复任务] 继续");
+2426: 
+2427:         }
+2428: 
+2429: 
+2430: 
+2431:         private void ExitResumeMode()
+2432: 
+2433:         {
+2434: 
+2435:             if (!_isResumeDetected) return;
+2436: 
+2437: 
+2438: 
+2439:             SetEncodingControlsEnabled(true);
+2440: 
+2441:             btnStart.Enabled = true;
+2442: 
+2443:             btnResume.Enabled = false;
+2444: 
+2445:             btnAbandon.Enabled = false;
+2446: 
+2447: 
+2448: 
+2449:             _isResumeDetected = false;
+2450: 
+2451:         }
+2452: 
+2453: 
+2454: 
+2455:         private void SetEncodingControlsEnabled(bool enabled)
+2456: 
+2457:         {
+2458: 
+2459:             cmbPreset.Enabled = enabled;
+2460: 
+2461:             cmbEncoder.Enabled = enabled;
+2462: 
+2463:             numJobs.Enabled = enabled;
+2464: 
+2465:             chkSearch.Enabled = enabled;
+2466: 
+2467:             numCrfFix.Enabled = enabled && rbCrfFix.Checked;
+2468: 
+2469:             numCrfMin.Enabled = enabled && rbCrfRange.Checked;
+2470: 
+2471:             numCrfMax.Enabled = enabled && rbCrfRange.Checked;
+2472: 
+2473:             rbCrfFix.Enabled = enabled;
+2474: 
+2475:             rbCrfRange.Enabled = enabled;
+2476: 
+2477:             cmbMetric.Enabled = enabled;
+2478: 
+2479:             cmbQualityMode.Enabled = enabled;
+2480: 
+2481:             numQualityValue.Enabled = enabled;
+2482: 
+2483:             cmbChroma.Enabled = enabled;
+2484: 
+2485:             cmbBitDepth.Enabled = enabled;
+2486: 
+2487:             chkLossless.Enabled = enabled;
+2488: 
+2489:             grpCrfMode.Enabled = enabled;
+2490: 
+2491:             txtTemplate.Enabled = enabled;
+2492: 
+2493:             cmbTemplate.Enabled = enabled;
+2494: 
+2495:             chkRecursive.Enabled = enabled;
+2496: 
+2497:             chkSerialEncode.Enabled = enabled;
+2498: 
+2499:             chkPriorSearch.Enabled = enabled;
+2500: 
+2501:             chkProxy.Enabled = enabled;
+2502: 
+2503:             numSearchCpuUsed.Enabled = enabled;
+2504: 
+2505:             numFinalCpuUsed.Enabled = enabled;
+2506: 
+2507:             numMaxRes.Enabled = enabled;
+2508: 
+2509:             chkOutputFullRes.Enabled = enabled;
+2510: 
+2511:             cmbConflict.Enabled = enabled;
+2512: 
+2513:             chkSweep.Enabled = enabled;
+2514: 
+2515:         }
+2516: 
+2517: 
+2518: 
+2519:         private void BtnResume_Click(object? sender, EventArgs e)
+2520: 
+2521:         {
+2522: 
+2523:             btnStart_Click(sender, e);
+2524: 
+2525:         }
+2526: 
+2527: 
+2528: 
+2529:         private void BtnAbandon_Click(object? sender, EventArgs e)
+2530: 
+2531:         {
+2532: 
+2533:             if (MessageBox.Show(
+2534: 
+2535:                 "确定放弃上次中断的任务吗？
+
+[… truncated 4284 chars …]

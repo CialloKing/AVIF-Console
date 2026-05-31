@@ -44,26 +44,26 @@ namespace AvifEncoder
         static MetricRegistry()
         {
             // 常用基础指标
-            Register(new MetricDef("vmaf",   "VMAF",              false, false, m => m.VMAF));
-            Register(new MetricDef("ssim",   "SSIM",              false, false, m => m.SSIM));
-            Register(new MetricDef("psnr",   "PSNR-Y",            false, false, m => m.PSNR_Y));
-            Register(new MetricDef("msssim", "MS-SSIM",           false, false, m => m.MS_SSIM));
+            Register(new MetricDef("vmaf", "VMAF", false, false, m => m.VMAF));
+            Register(new MetricDef("ssim", "SSIM", false, false, m => m.SSIM));
+            Register(new MetricDef("psnr", "PSNR-Y", false, false, m => m.PSNR_Y));
+            Register(new MetricDef("msssim", "MS-SSIM", false, false, m => m.MS_SSIM));
             // XPSNR 系列
-            Register(new MetricDef("xpsnr",   "XPSNR (W)",         false, false, m => m.W_XPSNR ?? double.NaN));
+            Register(new MetricDef("xpsnr", "XPSNR (W)", false, false, m => m.W_XPSNR ?? double.NaN));
             // 高级指标
-            Register(new MetricDef("ssimu2",  "SSIMULACRA2",       false, true,  m => m.SSIMULACRA2 ?? double.NaN));
-            Register(new MetricDef("butter3", "Butteraugli 3norm", true,  true,  m => m.Butteraugli_3norm ?? double.NaN));
-            Register(new MetricDef("gmsd",    "GMSD",              true,  true,  m => m.GMSD ?? double.NaN));
+            Register(new MetricDef("ssimu2", "SSIMULACRA2", false, true, m => m.SSIMULACRA2 ?? double.NaN));
+            Register(new MetricDef("butter3", "Butteraugli 3norm", true, true, m => m.Butteraugli_3norm ?? double.NaN));
+            Register(new MetricDef("gmsd", "GMSD", true, true, m => m.GMSD ?? double.NaN));
             // CAMBI/ADM 暂未在此 ffmpeg 构建中可用，择机恢复
             // Register(new MetricDef("cambi",   "CAMBI",             true,  false, m => m.CAMBI ?? double.NaN));
             // Register(new MetricDef("adm",     "ADM",               true,  false, m => m.ADM ?? double.NaN));
             // XPSNR 子通道（较少使用）
-            Register(new MetricDef("xpsnr_y", "XPSNR-Y",           false, false, m => m.XPSNR_Y ?? double.NaN));
-            Register(new MetricDef("xpsnr_u", "XPSNR-U",           false, false, m => m.XPSNR_U ?? double.NaN));
-            Register(new MetricDef("xpsnr_v", "XPSNR-V",           false, false, m => m.XPSNR_V ?? double.NaN));
-            Register(new MetricDef("xpsnr_w", "XPSNR (W)",         false, false, m => m.W_XPSNR ?? double.NaN));
+            Register(new MetricDef("xpsnr_y", "XPSNR-Y", false, false, m => m.XPSNR_Y ?? double.NaN));
+            Register(new MetricDef("xpsnr_u", "XPSNR-U", false, false, m => m.XPSNR_U ?? double.NaN));
+            Register(new MetricDef("xpsnr_v", "XPSNR-V", false, false, m => m.XPSNR_V ?? double.NaN));
+            Register(new MetricDef("xpsnr_w", "XPSNR (W)", false, false, m => m.W_XPSNR ?? double.NaN));
             // 末尾 — 综合评分，依赖多项基础指标，放在最后
-            Register(new MetricDef("mix",    "MixScore",          false, false, m => double.IsNaN(m.VMAF) ? double.NaN : ComputeMixScore(m)));
+            Register(new MetricDef("mix", "MixScore", false, false, m => double.IsNaN(m.VMAF) ? double.NaN : ComputeMixScore(m)));
         }
 
         private static void Register(MetricDef def)

@@ -90,7 +90,7 @@ namespace AvifEncoder.Core.Tests
         {
             int count = 0;
             foreach (var _ in MetricRegistry.AllKeys) count++;
-            Assert.IsTrue(count >= 10, $"Expected >= 10 metrics, got {count}");
+            Assert.IsGreaterThanOrEqualTo(10, count, $"Expected >= 10 metrics, got {count}");
         }
 
         [TestMethod]

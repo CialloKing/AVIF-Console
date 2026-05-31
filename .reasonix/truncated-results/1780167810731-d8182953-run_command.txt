@@ -1,0 +1,265 @@
+$ git log --oneline --all
+[exit 0]
+6b6a975 第216步 fix: 断点续传审查修复——21个bug清零+IDE警告清零
+4829c28 第215步 feat: 断点续传完善——GUI一键恢复+进度接续+CSV容错+性能优化
+c1eca94 第214步 feat: 断点续传完善——快照存配置+GUI自动检测+一键恢复
+98943d8 第213步 feat: 断点续传——NDJSON日志+快照+原子重命名+三源交集判定
+d5736b7 第212步 feat: 配置完整保存+启动智能扫描——选项页全量持久化
+b3b2312 第211步 feat: CLI选项增强+进程保护+自定义后缀+选项页重构——多项核心改进
+9f75a92 第210步 fix: 进度天花板与任务栏同步修复——编码完成≠全部完成
+8ddbf1c 第209步 feat: GUI增强与多项修复——注册表整合+其他选项页+遍历/无损联动
+d1b7692 第208步 feat: 新增感知指标 CAMBI + ADM——零额外ffmpeg开销集成
+6995a0c 第207步 refactor: 指标系统解耦重构——注册表模式+搜索按需计算+GUI硬编码消除
+ff602f2 第206步 feat: 文件名模板系统增强+帮助文档+代码风格修复
+46c4b25 第205步 feat: 防呆增强与性能优化——12项健壮性提升+NVENC硬件编码+CSV精度保留
+bce176d 第204步 feat: 多项防呆设计与交互优化
+7454c2f 第203步 fix: 多项诊断与数据完整性提升——无损模式兼容性修复与质量指标增强
+ebe352a 第204步 fix: 修复三项用户反馈bug + 多项增强
+2117e44 第203步 fix: 全面修复高级指标缺失链路与AOM参数静默丢弃——多项数据完整性增强
+8ceea58 第202步 fix: 修复高级指标缺失与AOM参数静默丢弃——6项诊断与透明度增强
+deccc12 第201步 style: FormUpdate 更新弹窗改用 LakeUI 控件——ModernPanel 容器、ModernTextBox 状态文字、ExcellentProgressBar 进度条、ModernButton 按钮，深色背景与整体界面统一；修复 UpdateManager 改名后资产匹配优先同类型+同变体，避免下载错版本
+4ac708c 第200步 release: 发布 v2.0.0
+fc88b08 第199步 refactor: 质量目标统一为全原生值——消除 VMAF/PSNR 归一化往返转换
+d9b55fb 第198步 feat:全面调整控件透明色
+e156941 第197步 feat: 无损验证全面增强——全量扫描+2D坐标+通道统计+失败分类+CSV/JSON/diff热力图报告体系
+ce6822a 第196步 feat: 无损验证失败视为编码失败，删除不合格输出，CSV记录原因
+9caf0f1 第195步 feat: 无损模式增加自动验证——解码后逐像素比对原图
+a852957 第194步 feat: 无损模式增加强约束——禁止预缩放
+cfb8677 第193步 feat(UpdateManager): 资产匹配增加 fdd/scd 变体识别，按优先级选择
+7070581 第192步 fix(UpdateManager): 自动更新按当前进程名匹配 Release 中的 exe
+3c41ce4 第191步 style: 修复 Program.cs 的 IDE0057/IDE0305 诊断
+a5c88c6 第190步 docs: 重写 README + GUI 使用指南
+7fad66d 第189步 refactor: 控制台质量指标完整显示原生值 + CRF搜索统一使用原生值比较
+8f59c80 第188步 fix: 清除 Pipeline.cs 旧版死代码，全面替换 EncoderUtils 类型判断
+d815dcb 第188步 fix: 消除旧版 BuildEncoderSpecificArgs/GetRowMtArg 遮蔽，编码器接口全面生效
+f131d77 第187步 test: 核心方法改 internal 支持测试，追加 20 个新测试
+dd91f60 第186步 test: 添加 77 个单元测试覆盖核心引擎
+5d5b099 第185步 refactor: IAv1Encoder 新增 BuildFullTuneArg，消除 BuildEncoderSpecificArgs 中的 is 类型检查
+00bfc95 第184步 refactor: 消除 EncoderUtils 类型判断，全面迁移到 IAv1Encoder
+ace6e0d 第183步 feat: 新增 IAv1Encoder 编码器抽象层
+2926774 第182步 style: 清理所有 Pipeline partial 文件中未使用的 System.Security.Cryptography
+3fcd678 第181步 refactor: CreateFromPreset 移至 PresetConfig、Sha256 移至 EncodeHelpers
+6b6015e 第180步 refactor: 提取嵌套类 NaturalComparer + PipelineDataTypes，全局清理 using
+536a7eb 第179步 refactor: 提取 VmafPriorHelper.cs，删除 Pipeline 中 ClampCrf 死代码
+9811a76 第178步 refactor: 提取 FileScopedFailTracker + Pipeline.cs 加 #region 导航
+d88f8ab 第177步 refactor: 提取 EncodeHelpers 静态工具类
+a2248fe 第176步 refactor: 环境检测改为每次运行执行，移除 AvifEncoder_env.json 磁盘缓存
+f5175bd 第175步 refactor: 更新检查改为手动触发，移除磁盘缓存
+52542ce 第174步 refactor: 版本号统一到 Directory.Build.props，4 个 csproj 清理重复
+72cf681 第173步 refactor: 抽取 BuildConfigFromUI、统一 CompositeLogger、清理无用 using
+f521ac8 第173步 refactor: 清理 partial 文件无用 using、统一 CompositeLogger 到 Core
+c2f8418 第172步 style: dotnet format 批量修复 IDE0090/0028/0042/0057/0059/0305/0330/CA1845/CA1862/SYSLIB1045
+65420d8 第171步 fix(Pipeline): 删除 Sha256 方法中未使用的 SHA256.Create() 对象
+5ee327f 第170步 refactor: 提取 Pipeline.Process.cs，文件处理编排与质量评估独立
+080236a 第169步 refactor: 提取 Pipeline.Finalize.cs，CRF 搜索调度与最终编码回退独立
+41c7e77 第168步 refactor: 提取 Pipeline.Encoding.cs，编码执行与参数构建独立
+a6fafc3 第167步 refactor: 提取 Pipeline.Metrics.cs，SSIM/VMAF/XPSNR 计算独立
+7e9ce25 第166步 refactor: AvifPipeline 拆分为 2 个 partial 文件，提取搜索模块
+2c8e5c0 第165步 refactor(Pipeline): 删除死代码 EvaluateCrfSafe 整方法、重复常量、未使用参数
+68ced64 第164步 fix(Pipeline): 硬件编码器兜底参数 -preset p4 改为空字符串
+dca3261 第163步 refactor: 提取帮助文本到 Core 共享类，消除三处重复
+657461c 第162步 fix: 消除 async-over-sync 死锁风险、SelectedIndex 越界、添加环境检测缓存
+9b6396d 第161步 fix: 修复 UpdateManager 空引用与残留文件、FormUpdate 异常丢失、AppConfig 路径持久化
+ee2eb0b 第160步 fix(Pipeline): 修复 TryParse 未检查返回值、补全 Dispose 模式、6 个方法标记 static
+c698e11 第159步 refactor: 拆分 Pipeline.cs 为 6 个文件（God File 解构）
+b5f9d6a 第158步 fix(config): 修复 ApplyConfig 恢复配置时质量值越界和被事件覆盖、MarkCustom 越界
+128b3ee 第157步 fix(config): 启动加载配置时同时检查程序目录和工作目录
+274803f 第156步 feat(config): 实现 JSON 配置文件的保存/加载，覆盖字体、窗口状态和全部编码设置
+316c41a 第155步  fix(FormOtherOptions): 添加 null! 标记消除设计器控件字段的 CS8618 警告
+b180be0 第154步 fix(UI): 替换 ModernFontDialog 为标准 FontDialog，解决字体切换不生效
+cff2306 第153步 暂时添加切换字体的其他选项页面，功能未正常生效
+07fe453 第152步  feat: 集成 SysTaskBarProgress 实现任务栏进度同步
+bb9613a 第151步  fix: 更新数字输入框
+e9008c7 第150步  feat: -b/--bit-depth 支持 auto 选项，Balanced/Best/Extreme 预设默认搜索
+f4ad70e 第149步  refactor: 精简预设定义，仅保留目标值差异
+482ebb8 第148步  fix: 修复 EvaluateFinalQualityAsync 缓存命中时指标覆盖问题
+25b713d 第147步  fix: 单核 tileCols、安全Tile逻辑统一、缓存更新原子化
+9c553ba 第146步  fix: 修复 SVT-AV1 无损参数、安全Tile逻辑及并发指标更新丢失
+07fac5d 第145步  fix: 修复线程安全及搜索 NaN 等多个关键缺陷
+1b86c10 第144步  fix: 适配 librav1e 无损编码参数，避免 -lossless 1 无效
+e368581 第143步  fix: 正确处理 UNC 网络路径的长路径前缀转换
+a3c69dd 第142步  feat: 使用 Job Object 根治 Windows 下 ffmpeg 孤儿进程问题
+676aa43 第141步  fix: 扩展RGB源检测以支持argb/abgr等格式，确保输出yuva444p
+5c6ec59 第140步  perf: 将高级指标计算异步化，消除编码流水线阻塞
+fff37de 第139步  fix: 修复 -j 不生效，优化遍历模式串行及 CPU 负载平滑
+eec1f1e 第138步  feat(FormEncode): 支持拖拽文件夹到输入/输出文本框 - 为 txtInput 和 txtOutput 添加 DragEnter/DragDrop 事件 - 修改控件类型判断为 Control 基类，兼容 LakeUI 自定义控件 - 仅接受单个文件夹，拖入后自动填充路径 - 解决之前拖拽无效的问题
+e38ce01 第137步  feat(sweep): 遍历模式支持并行编码，由MaxJobs控制并发ffmpeg数
+809b85b 第136步  feat(avif): 实现工业级色彩元数据继承与像素格式一致性保障
+b168432 第135步  fix: 切换预设后遍历模式禁用的控件无法恢复
+250c40c 第134步  feat: 遍历模式联动优化——自动禁用搜索、强制范围CRF，并与无损模式互斥
+df37844 第133步  fix: 遍历模式进度条逻辑修正，总进度改为图片数×CRF范围
+30a6f7c 第132步  feat: GuiLakeUI 添加遍历模式开关(chkSweep)，支持通过复选框启用--sweep功能
+8f8062e 第131步  feat: GUI添加遍历模式开关(chkSweep)，支持通过复选框启用--sweep功能
+ca6fd7a 第130步  feat: 添加遍历模式(--sweep)与PNG尾部自动清洗功能
+9207831 第129步  feat: 添加PNG尾部数据自动清洗功能，修复有尾部污染的源文件导致SSIMULACRA2/Butteraugli等高级指标缺失的问题
+9fc80bc 第128步  fix(metrics): 修复 VMAF 提取误报，缺失时使用 NaN 标记
+55492ad 第127步  优化(xpsnr): 调整滤镜顺序 format 前置，明确锁定像素格式后再补边
+eadfafd 第126步  优化(xpsnr)：调整滤镜顺序并显式声明填充颜色，提升精度与可靠性
+dd090b3 第125步  修复(xpsnr)：增加高度填充、时间基对齐、色彩范围约束及10位深适配
+9e8d0a1 第124步  使用LakeUI的版本基本可用
+10f82dc 第123步  抽出测试代码作为核心共用，更新使用LakeUI框架的版本
+7c8f3f9 第122步 初步更新.GuiLakeUl版本
+83e440f Split Form1 into multiple ModernPanel pages (Basic/Encode/Quality/Log) and bind to ModernTabListControl in MainWindow
+258d008 Refactor MainWindow to LakeUI.Demo style: add ModernTabListControl and ModernPanel, set D2D GlobalTextQuality and attach ThisIsYourWindow
+df8e815 Integrate LakeUI into AvifEncoder.GuiLakeUl: host Form1 inside LakeUI ModernPanel and attach ThisIsYourWindow
+a3e3635 添加了一行空格(?
+eee5caa 修改窗口设计界面为非DPI感知模式
+9992566 第121步  fix(gui): 修复“开始”按钮重复绑定导致两次完成弹窗
+835fe96 第120步  fix: 修复递归子目录时仅根目录无图片导致检测不到文件的问题
+0007f61 第119步  ``` feat(gui): 启动时输出完整使用帮助与控件对照表
+594d5cf 第118步  feat(gui): 添加最终编码速度控制控件 numFinalCpuUsed
+439b06e 第117步  feat(cli): 新增 --final-cpu-used 选项，允许自定义最终编码速度
+d91718a 第116步  feat: 扩展搜索速度选项支持 SVT‑AV1，映射为 -preset 参数
+aba976b 第115步  fix(gui): 修复搜索速度控件重复显示的问题
+d6a80d5 第114步  feat(gui): 添加搜索速度控制控件，修复控件未显示的问题
+c5e3684 第113步  feat: 添加 --search-cpu-used 选项，允许用户自定义搜索阶段编码速度
+6faeb49 第112步  修改部分提示文字
+40e4366 第111步  fix: 修复 XPSNR 计算方法编译错误及参数无效问题
+8a08a8b 第110步  fix: 修复外部工具检测因重复 .exe 扩展名导致的误报未找到
+b922fb0 第109步  feat(gui): 启动时自动检测编码器及外部工具可用性并输出到日志
+80a6bd9 第108步  feat(cli): 交互模式下检测并提示 SSIMULACRA2/Butteraugli 工具是否可用
+8bbcd10 第107步  fix: 高级指标补算解耦，确保 GMSD 在缺少外部工具时仍能生成
+5fe66fa 第106步  feat(gui): 添加 SSIMULACRA2、Butteraugli 3‑norm、GMSD 高级指标支持
+6ceff5b 第105步  feat(advanced-metrics): 支持 SSIMU2/Butter3/GMSD 作为 CRF 搜索目标，并修复多项稳定性问题
+4bcbe8e 第104步  feat: 支持 SSIMU2、Butteraugli 3‑norm、GMSD 作为 CRF 搜索目标，并修复相关指标补算问题
+cb94316 第103步  feat: 支持高级指标(SSIMU2/Butter3/GMSD)作为 CRF 搜索目标，允许用户输入任意原生数值
+90aee94 第102步  feat: 自定义实现 GMSD 算法，替代缺失的 ffmpeg gmsd 滤镜
+828d63d 第101步  feat(metrics): 为 CSV 报告添加 SSIMULACRA2 / Butteraugli / GMSD 高级视觉质量指标     - QualityMetrics 和 EncodeResult 新增字段：SSIMULACRA2, Butteraugli_Raw,       Butteraugli_3norm, GMSD     - 实现四个外部/内置工具调用方法：       · ComputeSSIMULACRA2Async （调用 ssimulacra2.exe）       · ComputeButteraugliAsync  （调用 butteraugli_main.exe，提取原始误差和 3‑norm）       · ComputeGMSDAsync         （使用 ffmpeg 内置 gmsd 滤镜）       · ConvertToPngAsync        （统一为外部工具准备 PNG 参考图）     - 在 EvaluateFinalQualityAsync 最终质量评估阶段补算高级指标，       并将结果写回缓存，避免重复计算     - 更新 CsvColumnNames 和 GetCsvRow，CSV 报告增加四列：       SSIMULACRA2, Butteraugli_Raw, Butteraugli_3norm, GMSD     - 修改 BuildResult 方法，将新指标字段填入 EncodeResult     - 所有外部工具优先从程序目录查找，回退到 PATH，与现有编码器查找一致     - 新建指标仅在最终编码成功时计算，不影响搜索阶段性能     环境依赖：ssimulacra2.exe、butteraugli_main.exe 需处于 PATH 或程序同目录；                ffmpeg 版本需支持 gmsd 滤镜（v4.0+）。
+12f46c1 第100步      feat(ui): 添加 XPSNR 质量目标选择并实现搜索度量联动     - 质量目标下拉框新增“XPSNR”选项，数值范围 40‑60 dB，默认 45     - 搜索度量下拉框增加“xpsnr”选项     - 选择质量目标（VMAF/SSIM/PSNR‑Y/MS‑SSIM/Mix/XPSNR）时，自动将搜索度量切换为相同指标     - 修复联动代码中的 CS8600 警告，使用空字符串替代 null     - 启动按钮正确映射“xpsnr”度量模式并存入 XpsnrTargetValue
+f57a15a 第99步  feat: 完整支持 XPSNR 多通道评分与加权质量目标搜索     - QualityMetrics 新增 XPSNR_Y/U/V 及加权 W‑XPSNR 字段 (6:1:1)     - 实现 ComputeXPSNRAsync 方法，调用 ffmpeg xpsnr 滤镜计算各通道 dB     - 修复 XPSNR 滤镜链：移除 fps=1，改用独立 format 链避免帧对丢失     - 去除输入路径的 \\?\ 前缀，兼容 FFmpeg 长路径解析     - 合并 stdout/stderr 输出进行正则匹配，兼容不同构建版本     - 在 EvaluateFinalQualityAsync 中计算 XPSNR 并写入最终指标     - 缓存命中时自动补算缺失的 XPSNR 数据并更新缓存     - 修改 ComputeMixScore 支持五指标加权（含 W‑XPSNR），XPSNR 缺失时回退旧公式     - 新增 PresetConfig.XpsnrTargetValue/Channel 属性，支持原生分贝目标     - 在 SetQualityTarget 和 AdjustTargetForMetricMode 中处理 xpsnr 模式     - 命令行新增 --target-xpsnr <dB> 选项，可与 --metric xpsnr_y/u/v 配合指定通道     - 更新帮助文本，说明通道选择方式     - GetSearchScore 增加 xpsnr/xpsnr_y/u/v/w 分支，直接返回原生分贝值     - GetOrComputeMetrics 中当度量模式为 xpsnr 时即时计算 XPSNR 并写入缓存     - HybridSearchCRFAsync 中动态区分 XPSNR 目标值，使用 0.01 dB 容差     - FormatScore 支持 XPSNR 显示 (XPSNR=xx.xx dB)     - ProgressTracker.GetProgressLine 中显示加权 W‑XPSNR 分数     - CSV 输出列顺序更新，插入 XPSNR-Y/U/V 和 W‑XPSNR 四列     - 修复搜索失败问题：解决 SSIM 与 XPSNR 量纲错误导致的二分搜索无解     - 增强命令行解析：--target-xpsnr 自动将 MetricMode 设为 xpsnr，支持用户显式选择通道     - 整体提升 XPSNR 搜索准确性、输出完整性和缓存一致性
+af5884b 第98步  feat: 完整集成 XPSNR 多通道评分与加权质量目标搜索
+74c617b 第97步  feat: 集成 XPSNR 多通道分与加权评分，修复滤镜链错误
+fac3e90 第96步  feat: 集成XPSNR多通道分与加权综合分，并修复编译错误
+5ff8315 第95步  添加更多图片格式
+693b11e 添加README文件
+e39cebf 第94步  feat: 确保临时文件在任何退出情况下都被清理，修复GUI编译错误
+9384d10 第93步   将默认预设从 balanced 改为 fast实现预设联动：选择预设自动填充界面参数新增“自定义”预设选项 优化预设切换逻辑，防止循环触发
+12a9605 第92步  补全缺失的 pixInfo、w、h
+9ac6832 第91步  改变无损压缩策略：启用无损选项后对所有图片均使用真无损编码
+bd96119 第90步  feat: GUI 新增输出文件冲突处理策略选择
+f304f80 第89步      fix: 移除 BuildParamSets 中非法注入 threads=1 到 -aom-params     --serial-encode 模式下，libaom-av1 不支持 -aom-params threads=1，     导致常规编码反复失败后回退安全模式。现已删除该拼接，     仅保留全局 -threads 1 控制，常规编码恢复正常。
+9116999 第88步     fix: 移除 BuildSafeModeArgs 中非法的 -aom-params threads=1     在 --serial-encode 模式下，libaom-av1 不支持 -aom-params threads=1，     导致编码器初始化失败 "Cannot find aom option threads"，     最终引发 "Nothing was written into output file" 错误。     改为仅保留全局 -threads 1 及 -row-mt 0 控制，不再向 -aom-params 注入线程参数。
+634f8ac 第87步     feat: 添加 -n/--no-clobber 选项，重构输出冲突处理策略     - 引入 ConflictStrategy 枚举，替代原来的 Overwrite 布尔值     - 支持三种冲突处理模式：Rename(默认)、Overwrite(-y)、Skip(-n)     - 在 PresetConfig 中增加 FileConflictStrategy 属性     - 更新 GetOutputPath 和 TrySkipExistingOutputAsync 逻辑     - 命令行解析支持 -n 和 --no-clobber     - 帮助文本同步更新     - 行为与 ffmpeg 的 -y / -n 保持一致
+a9283df 第86步      feat: 添加 -y/--overwrite 命令行选项，支持覆盖输出文件     - 帮助文本中添加 -y/--overwrite 说明     - 解析命令行参数，传递 Overwrite 至 PresetConfig     - 当启用覆盖时，不再自动重命名输出文件，直接覆盖     - 标准 ffmpeg -y 行为保持一致
+489480f 第85步      fix: 极高VMAF目标下HybridSearchCRFAsync内部不再触发耗时安全扫描     - 在三个回退安全扫描的位置（无先验、默认先验、Proxy）增加MinCRF==0判断     - 当MinCRF=0时直接返回失败，避免无效的全范围安全扫描     - 修复二分区间[0,-1]后的无谓扫描，确保立即使用CRF=0编码
+1c0b3b4 第84步      fix: 控制台搜索目标以原生分数显示而非小数     - 将 HybridSearchCRFAsync 的初始提示改为使用 FormatScore 转换目标值     - VMAF 模式不再显示 0.9860 之类的小数，而是显示 VMAF=98.6000     - 其他模式同样显示对应的可读格式
+226cfe3 第83步      feat: CSV明确标记CRF=0不达标为失败并记录原因     - 在BuildResult中检测搜索无解且MinCRF=0导致使用CRF=0编码的场景     - 即使编码成功，状态也强制设为失败，CSV状态列显示“失败”     - 失败原因为“CRF=0仍无法达到质量目标，编码已用最佳质量但未达标”     - 辅助此前搜索逻辑，使极高VMAF目标下的结果完全透明
+059615c 第82步     fix: 极高VMAF目标搜索无解时正确使用CRF=0编码并通知用户     - 修改RunCRFSearchAsync：搜索失败且MinCRF=0时，不再回退到BaseCRF，而是使用CRF=0进行最终编码     - 搜索异常时同样强制CRF=0（若MinCRF=0）     - 控制台和日志均输出明确提示，告知用户目标无法达成但使用最佳质量
+6a0e9fb 第81步      fix: 自动消除输出文件名冲突，避免跳过同名文件     - 修改 GetOutputPath 方法，在生成最终路径时检查文件是否存在     - 若存在同名输出文件，自动追加 `_1`、`_2` 等递增序号，直至唯一     - 确保同名不同扩展名的源文件（如 photo.jpg 和 photo.png）       在模板为 {name}.avif 时均能正常编码，不再被跳过     - 保持第一个处理的文件使用原始文件名，后续冲突文件自动重命名
+e3a5271 第80步      feat: 进度条实时报告处理进度，修复字段二义性编译错误     - 新增 _guiProgress 字段取代重复的 _progress，消除 CS0535 二义性     - 在 AvifPipeline 构造函数中正确注入 IProgress<int> 进度对象     - 在 MarkProcessed 方法中按每文件完成百分比调用 _guiProgress.Report     - Form1 构造 Progress<int> 实例并绑定 UpdateProgress 方法安全更新 UI     - 确保进度条从 Marquee 模式自动切换到 Blocks 并显示实际进度值
+470eea4 第79步      feat: 完善 GUI 所有控件交互逻辑，支持双日志输出并修复弹窗 bug     - 补全质量控制相关控件：编码器选择、度量模式、质量目标、CRF 模式范围、色度采样、位深等     - 初始化所有控件默认值，完整映射命令行参数到图形界面     - 实现联动逻辑：无损模式自动禁用搜索与 CRF 控制；质量模式切换时动态调整数值范围     - 引入 CompositeLogger 同时向界面 RichTextBox 和输出目录 log 文件夹写入日志     - 消除全部可空引用编译器警告（使用 null 条件运算符并提供安全默认值）     - 修复浏览按钮重复弹出文件夹对话框问题（删除手动重复事件绑定）     - 清理设计器中的无效空事件方法，保持代码整洁     - 位深默认设为 auto，与命令行未指定 -b 时的自适应行为完全一致     - 增强干运行模式输出，打印完整配置信息便于核查
+1a9b497 第78步  feat: 完成 Windows GUI 项目并适配 Logger 接口 - 创建 AvifEncoder.Gui WinForms 项目 - 设计主界面：输入/输出目录选择、预设下拉、进度条和日志窗口 - 实现 GuiLogger，将日志实时输出到 RichTextBox - 修改 Logger 为 ILogger 接口，支持按需注入日志器 - 修复编译错误，GUI 可正常启动并调用核心编码流水线
+954ec65 第77步  重要更新  refactor: 将核心业务逻辑提取到 AvifEncoder.Core 类库 - 新增类库项目 AvifEncoder.Core，包含所有编码、缓存、配置等类 - 从原 Program.cs 中移出 AvifPipeline、PresetConfig、Logger 等 20+ 个类 - 原控制台项目仅保留 Program 入口，添加对 AvifEncoder.Core 的项目引用 - 调整部分类的访问修饰符为 public，保证跨程序集可见 - 编译通过，控制台功能完整
+9f41895 第76步  fix: serial-encode 宽图瓦片超限导致编码失败
+002febb 第75步 refactor: 允许 -j 参数直接控制最大编码并发数
+338a4a7 第74步  docs: 改进帮助文本，调整 --max-resolution 默认值，修正版本描述
+c92d5de 第73步  refactor: 优化VMAF先验插值方法，采用分段线性插值替代最近邻外推
+36c579f 第72步  chore: 移除废弃搜索路径及相关死代码
+cb4d5f5 第71步  feat: 添加 --prior-search 选项，默认关闭先验搜索
+ff1c994 第70步  perf: 引入动态哨兵偏移，依据目标VMAF自动选择最优Δ
+19e15f1 第69步  refactor: 统一 CSV 与进度行质量指标显示精度
+e406534 第68步  perf: 移除StandardBinarySearch中的冗余下界验证，搜索评估次数降至1+log2(区间宽度)
+bb337ab 第67步   refactor: 重构搜索策略为标准右边界二分，并修复 CS0136 编译错误
+0af4bab 第66步    perf: 优化搜索策略，搜索评估次数稳定在log2(区间宽度)次
+41682b5 第65步   feat: 默认关闭Proxy搜索，改为中位数初始化+标准二分；新增--proxy选项
+2af3b2b 第64步 refactor: 实现中位数初始化+保守Proxy验证+安全二分CRF搜索策略
+3227332 第63步 修改默认搜索CRF范围为0~63
+450bf45 第62步  重构: 将 --disable-tile-parallel 选项重命名为 --serial-encode
+9191733 第61步  feat: 实现 --disable-tile-parallel 极限压缩模式，全链路强制单线程
+54bf94e 第60步  fix: --disable-tile-parallel 在安全模式、参数集与缓存键中的完整性修复
+c94c3e6 第59步  feat: 添加极限压缩参数和 --disable-tile-parallel 选项
+7e19db3 第58步   chore: 追加四个分块/变换参数到 AomParams 默认配置
+5b31c61 第57步  fix: 优化 ComputeAllMetrics 路径兼容并切换 VMAF 模型
+577b1f3 第56步  feat(AvifPipeline): 运行结束后清理 avif_metrics_tmp 临时目录
+80877c3 第55步  fix(AvifPipeline): 修复 ComputeAllMetrics 中 libvmaf 滤镜路径解析失败
+1cc1d92 第54步 fix(console): 恢复运行时自动禁用快速编辑模式
+48741d0 第53步 fix(cli): 修复交互模式下含空格路径的引号解析
+13de07b 第52步  fix(libvmaf): 对Windows路径中的冒号进行双重反斜杠转义
+0c24e6b 第51步     refactor(cli): 全面重构命令行参数为 Linux 风格
+38ff558 第50步     feat: 添加递归遍历子文件夹功能，通过 -R/--recursive 启用
+8bd2ac6 第49步     feat: 支持长路径输入输出目录，允许程序目录优先查找 ffmpeg
+f3063f8 第48步     fix: 支持从应用程序目录查找 ffmpeg/ffprobe 并优先使用本地版本
+a003da0 第47步，删除BinarySearchWithSkip，FindLowBoundWithRetry，PerformBinarySearchLoop，SolveCrfBySecant
+a6e544f 第46步，修复硬件编码器并发逻辑可能覆盖用户设置
+ce218b0 第45步，删除getCachedScore，private static void Swap<T>， FillGapsAsync，
+0fd8ea3  第44步
+8880d60 feat(CRF 搜索): 实现自适应混合搜索并修复缓存缺失问题
+6215a27 第42步 feat: 混合搜索(Brent+二分补洞+右侧扫描)保证最大可行CRF
+912a950 第41步 fix: 彻底修复Brent搜索遗漏最大可行CRF的问题
+be134d5 第40步 feat: 实现 Proxy 粗定位（三点采样 + 安全区间收缩）
+193d15b 第39步 refactor: 消除编译警告并优化缓存与日志分级
+0e5e0d4 第38步 feat: 交换 CSV 输出中“完整命令行”与“AOM参数”列的顺序
+4c1632b 第37步 feat: 实施 tile 尺寸双边约束，杜绝“最小 tile 宽度不足”错误
+f7a4e61 第37步
+a69b8bf 第36步feat: 实现文件级隔离的失败跟踪并增强诊断能力
+d46c634 第35步 feat: 强制执行 AV1 tile 宽度 ≤ 4096 的合法约束
+e462815 commit: [第34步] 搜索评估次数精确化：仅记录 Brent 迭代次数
+3fde3ea commit: [第33步] 搜索阶段优化：用动态安全 tile 替代固定单 tile 兜底
+2b6d58d 第33步    Step 33: 修复编码器“Nothing was written”误判与参数保底策略     - 将 FFmpeg 退出码 -22（Nothing was written）重新分类为 Level 1 参数失败，       不再将其视为像素格式致命错误。     - 在 BuildParamSets 中新增无 tile 保底参数组合（tile-columns=0, cpu-used=0），       作为像素格式的最后尝试，避免因 libaom 的 tile 兼容性问题导致整个格式被禁用。     - 增强重试逻辑：循环遍历所有参数集，仅当所有参数集都失败时才标记该像素格式无效。     - 更新编码状态缓存键，区分不同参数集的失败计数，防止保底参数的成功被错误跳过。     - 添加详细的错误归因日志，输出当前失败参数集与重试次数。     - 修正并发场景下可能共享的状态污染，确保每个 CRF 搜索独立使用自己的参数尝试栈。     - 回归测试：61.jpg 等此前因 tile 崩溃的图片现在可通过无 tile 保底成功编码，       且不影响其他正常图片的性能与质量。
+380dd1c 第32步step32: 控制台与代理阶段数值显示精度优化 - 修改 GetTargetDisplayString，智能格式化 VMAF 目标值：   浮点值保留一位小数，整数保留整数，避免 -q 92.5 被截断为 92 - 优化代理阶段(Proxy)三点采样的百分比输出，统一使用 F1 格式   确保 CRF 搜索过程回归精确的可视化反馈，提升调试效率"
+2fc81ee feat(search): 第31步优化 - CRF搜索硬失败黑名单与动态区间收缩
+be6709e 第30步     fix: 彻底消除CRF搜索提前退出导致的次优解（#30）     问题根因：     Brent搜索中存在两个不安全的提前退出条件 ——     1. 当|fbVal|<tol时认为已足够接近目标     2. 当bestScore与目标差值<tol且区间宽度≤2时提前结束     这两种情况均可能遗漏区间内唯一未测的中间整数CRF，     使算法返回次优点而非全局最大可行值。     修复方案：     - 移除所有基于|fbVal|或|bestScore-target|<tol的提前退出     - 唯一允许的提前退出改为 xMax - xMin <= 1（区间无可测整数点）     - 强化内点选择：当预测点落在区间端点时，若区间宽度≥2则强制       选择中间点，避免重复评估已测端点     - 保持Brent插值/割线/二分核心逻辑不变，效率无明显下降     验证结果：     曾遗漏的61.jpg（CRF 29）和おむたつ（CRF 27）现在均被正确探测，     所有图片最终最佳CRF均为满足质量目标的最大可行整数解。     影响范围：     - 文件: Core/Av1SearchStrategy.cs (SolveCrfBrent方法)     - 日志中BRENT迭代次数可能增加1~2次，但总耗时浮动<5%
+4d1748c 第29步 refactor(crf-search): 使用 Brent 方法替代割线 + 二分回退 - 新增 SolveCrfBrent 方法，动态混合逆二次插值、割线法和二分法 - 每次迭代自动选择最优策略，保证全局收敛且不超出搜索区间 - 减少了 CRF 评估次数（典型场景减少 25%~40%），搜索速度显著提升 - 解决了割线法因早期跳跃失败而必须从头二分的问题 - 已移除废弃的 SolveCrfBySecant 和 BinarySearchWithSkip 逻辑 - 代码行数基本持平，但逻辑更统一、更易维护 本步骤在第 28 步资源泄漏与早停优化基础上， 将 CRF 精搜索阶段的割线 + 二分流程统一为 Brent 方法， 消除了手动切换策略时的重复评估，并提升了整体搜索鲁棒性。
+6060500 第28步 feat(CRF搜索): 修复资源泄漏和异常处理，并优化搜索性能     - fix: Dispose 后设置 _globalCts = null，防止已释放对象被再次访问     - fix: PerformProxyPhaseAsync 中临时文件清理移到 try-finally，确保删除     - fix: SolveCrfBySecant 在评分返回 -1 时提前终止，避免无效迭代     - perf: HybridSearchCRFAsync 增加 MaxCRF 早停检查，若已达目标直接返回     - perf: SolveCrfBySecant 最大迭代次数由 5 减为 3，减少编码与评估次数     - perf: SearchCoreAsync 回退二分容差从 0.01 放宽至 0.025，进一步降低二分开销     此次提交修复了搜索过程中可能的内存/文件泄漏问题，     同时通过早停和减少迭代大幅缩短搜索耗时，尤其在大批量处理时     整体吞吐量提升约 15-30%。
+85987dd 删除RunProcessAndGetOutputAsync
+a11237a     [27.1] 提取缓存管理器为独立服务（完成清理）
+15803c4     [26.2] 删除旧构造函数，修复 CS8618/CS1729 编译错误
+dbe957f     [26] 引入 IFileSystem 接口，抽象文件系统操作
+7ec1ccb     [25] 移除遗留的 _resolutionCache 死代码
+280c1d2     [24] 统一日志初始化入口，消除 Logger 初始化不一致
+a05b2ff     - 修改 GetOrComputeMetrics 的并发异常处理，区分确定性失败与意外异常     - 删除废弃的 GetOrComputeSSIM 和 FindHighBoundWithRetry 方法     - 意外异常将通过 TrySetException 传播给并发等待者，避免静默丢失
+034ebaf 移除 AvifPipeline 中旧的 FindExecutable 静态方法。
+156d6c4     refactor(步骤22): 引入 EncoderUtils 工具类，集中管理编码器类型判断
+63a63c2     refactor(步骤21): 优化 ExportCsv，引入列名常量和行生成方法
+03fbd1b refactor(步骤20): 引入 ILogger 接口，解耦日志系统
+10e5e25     refactor(步骤19): 引入 ProgressTracker 封装进度统计与显示
+d858286 refactor(步骤18): 抽象外部进程调用，引入 IProcessRunner 接口
+b2728a1 refactor(步骤17): 消除搜索方法重复代码
+d0a9167 feat(步骤16): 增强搜索稳定性与效率
+6350d45 commit b2c3d4e5f6g7h8i9j0k1（HEAD -> main） Author: <用户> Date:   2026-05-09 18:00:00 +0800
+0609e72 commit a1b2c3d4e5f6g7h8i9j0（HEAD -> main） Author: <用户> Date:   2026-05-09 16:00:00 +0800
+1fba361 refactor(步骤13): 降低长方法复杂度，提取子方法
+6db6829 fix: 第12.5步——SolveCrfBySecant 日志显示修复
+6296a11 fix: 第12.4步——GetProbeInfoAsync 空视频流保护
+b894729 fix: 第12.3步——Dispose 防重入保护
+e556868 fix: 第12.2步——ParseVmafJson 容错缺失的 VMAF 字段
+6109df9 fix: 第12.1步——ComputeAllMetricsAsync 超时后等待异步读取
+3826a5e feat: 第11.5步——缩放过程保留Alpha通道
+902fbbe perf: 第11.4步——更新缓存键包含分辨率信息
+8d031a9 feat: 第11.3步——预缩放集成到主处理流程
+d3f64d2 feat: 第11.2步——实现图像缩放工具方法
+2aa15e0 feat: 第11.1步——添加预缩放配置与CLI参数
+a16f04c perf: 第10步优化——指标缓存复用，减少重复VMAF计算
+bc7ea13 perf: 第9步优化——最终编码阶段增加“降速保格式”回退参数集
+e838f1a perf: 第8步优化——提升搜索阶段原格式编码成功率，减少不必要降级
+c590783 feat: 第7步优化——Hybrid Secant + Proxy 粗定位搜索
+a931254 feat: 第6步优化——实施割线法智能CRF搜索
+67aa5c9 feat: 控制台目标显示动态适配度量模式，修复“SSIM目标”误导
+865c818 perf: 全面优化——并行编码器测试、ffprobe缓存、VMAF修复、原生指标输出
+7d93096 性能与显示优化：并行编码器测试、ffprobe缓存、VMAF修复、原生指标输出
+1b048ff 修复 VMAF 搜索失效与质量目标错误，恢复智能 CRF 搜索
+f985d1c 性能优化：并行编码器测试 + ffprobe 统一缓存
+42ba5e6 perf: 消除安全模式重复编码，增加扫描失败上限，保护无损目标值
+6cce39a chore: 修复SSIM分辨率检查、libvmaf特征声明及资源释放
+37bed52 fix: 修复无损模式手动覆盖、超时未读及全局取消异常问题
+8defb71 feat: 将默认度量模式由 mix 改为 vmaf
+871fec6 feat: 调整 mix 模式权重，VMAF 占比提升至 80%
+48985d1 feat: -q 选项支持各度量模式的原生数值输入
+5fc35df chore: 增强关键路径日志，提升问题诊断能力
+b92fbe4 feat: 将混合评分设为默认模式并自动调整质量目标
+0970ded feat(安全模式): 升级安全模式扫描为多指标驱动
+263739b feat: 添加多指标评分支持与 CLI --metric 选项
+0ada2d6 feat: 新增多指标缓存与获取方法，为感知质量搜索做准备
+55cdb92 feat: 在CSV中输出VMAF、PSNR-Y、MS-SSIM及混合评分
+c46d52a feat: 实现多指标感知质量评估与多项健壮性修复
+6063d8a fix(CSV): 修正导出文件中跳过条目的状态显示
+20b9d2b fix(CRF搜索): 修复安全模式扫描错误返回未达标CRF的严重问题
+9f5cd31 fix(像素格式): 无损模式携带 Alpha 通道信息
+bce2ab2 fix(CRF搜索): 避免高端边界小于低端边界导致的二分搜索失败
+eb127f6 refactor: 净化非 libaom-av1 编码器的冗余 -row-mt 参数
+c0fec9f 改动说明 移除了原来对 RGB/A 族的统一处理，改为先计算出对应的 yuv 基准，然后根据 hasAlpha 决定是否把 yuv 替换为 yuva。
+fe07943 这确实是一个显示一致性缺陷，而不是功能性 Bug。其原因在于：
+8e32673 Merge branch 'main' of github.com:CialloKing/AVIF-Console
+e9f17ab 添加项目文件。
+304bf39 添加 .gitattributes 和 .gitignore。
+e48d83b Initial commit
