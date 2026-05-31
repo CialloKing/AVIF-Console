@@ -528,7 +528,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[FAIL] ´íÎó: {ex.Message}");
+                Console.WriteLine($"[FAIL] ´íÎó: {ex.Message}"); try { string logDir = Path.Combine(opts.OutputDir, "log"); Directory.CreateDirectory(logDir); File.AppendAllText(Path.Combine(logDir, "crash.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}\n"); } catch { }
             }
             finally
             {
