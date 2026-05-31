@@ -4,11 +4,11 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using AvifEncoder;
-using AvifEncoder.GuiLakeUl.选项窗口;
+using AvifEncoder.GuiLakeUI.选项窗口;
 using LakeUI;
 using static LakeUI.D2DHelper;
 
-namespace AvifEncoder.GuiLakeUl
+namespace AvifEncoder.GuiLakeUI
 {
     public partial class Form1 : Form
     {

@@ -2,9 +2,9 @@
 using System.Drawing;
 using System.Windows.Forms;
 using LakeUI;
-using AvifEncoder.GuiLakeUl.选项窗口;
+using AvifEncoder.GuiLakeUI.选项窗口;
 
-namespace AvifEncoder.GuiLakeUl
+namespace AvifEncoder.GuiLakeUI
 {
     public partial class FormOtherOptions : Form
     {

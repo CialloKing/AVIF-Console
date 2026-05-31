@@ -1,4 +1,4 @@
-﻿namespace AvifEncoder.GuiLakeUl
+﻿namespace AvifEncoder.GuiLakeUI
 {
     partial class Form1
     {
@@ -78,7 +78,7 @@
             ForeColor = Color.Cyan;
             Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "Form1";
-            Text = "AvifEncoder.GuiLakeUl-net10.0";
+            Text = "AvifEncoder.GuiLakeUI-net10.0";
             Load += Form1_Load;
             ResumeLayout(false);
         }

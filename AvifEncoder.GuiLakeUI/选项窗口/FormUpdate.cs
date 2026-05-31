@@ -6,7 +6,7 @@ using System.Windows.Forms;
 using AvifEncoder;
 using LakeUI;
 
-namespace AvifEncoder.GuiLakeUl.选项窗口
+namespace AvifEncoder.GuiLakeUI.选项窗口
 {
     public partial class FormUpdate : Form
     {

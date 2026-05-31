@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows.Forms;
 using LakeUI;
 
-namespace AvifEncoder.GuiLakeUl.选项窗口
+namespace AvifEncoder.GuiLakeUI.选项窗口
 {
     public partial class FormLog : Form
     {

@@ -354,9 +354,9 @@ namespace AvifEncoder
                     .Select(a => a.GetName().Name ?? "")
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                if (asmNames.Contains("AvifEncoder.GuiLakeUl"))
+                if (asmNames.Contains("AvifEncoder.GuiLakeUI"))
                 {
-                    return "GuiLakeUl";
+                    return "GuiLakeUI";
                 }
                 if (asmNames.Contains("AvifEncoder.Gui"))
                 {

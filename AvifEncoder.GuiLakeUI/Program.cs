@@ -1,4 +1,4 @@
-namespace AvifEncoder.GuiLakeUl
+namespace AvifEncoder.GuiLakeUI
 {
     internal static class Program
     {

@@ -1,4 +1,4 @@
-﻿namespace AvifEncoder.GuiLakeUl.选项窗口
+﻿namespace AvifEncoder.GuiLakeUI.选项窗口
 {
     partial class FormHelp
     {

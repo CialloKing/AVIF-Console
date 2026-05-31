@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Windows.Forms;
 
-namespace AvifEncoder.GuiLakeUl.选项窗口
+namespace AvifEncoder.GuiLakeUI.选项窗口
 {
     public partial class FormHelp : Form
     {

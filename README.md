@@ -30,7 +30,7 @@
 ### 桌面 GUI
 
 ```bash
-./AvifEncoder.GuiLakeUl.exe
+./AvifEncoder.GuiLakeUI.exe
 ```
 
 1. 选择输入/输出目录，或拖拽文件夹到文本框
@@ -91,7 +91,7 @@
 dotnet build 图片avif压缩控制台.slnx
 
 # GUI
-dotnet run --project AvifEncoder.GuiLakeUl
+dotnet run --project AvifEncoder.GuiLakeUI
 
 # CLI
 dotnet run --project 图片avif压缩控制台 -- --help
@@ -103,7 +103,7 @@ dotnet test AvifEncoder.Core.Tests
 ### 发布
 
 ```bash
-dotnet publish AvifEncoder.GuiLakeUl -c Release -r win-x64 `
+dotnet publish AvifEncoder.GuiLakeUI -c Release -r win-x64 `
   -p:PublishSingleFile=true -p:SelfContained=true -o ./publish
 ```
 
@@ -115,7 +115,7 @@ dotnet publish AvifEncoder.GuiLakeUl -c Release -r win-x64 `
 
 ```
 AvifEncoder.Core/        核心引擎
-AvifEncoder.GuiLakeUl/   桌面 GUI（LakeUI 框架）
+AvifEncoder.GuiLakeUI/   桌面 GUI（LakeUI 框架）
 图片avif压缩控制台/       CLI 命令行
 AvifEncoder.Gui/         旧版 GUI（备用）
 AvifEncoder.Core.Tests/  单元测试
