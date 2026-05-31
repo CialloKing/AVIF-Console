@@ -363,4 +363,10 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # 测试用图片，不上传仓库
-1.jpg.reasonix/
+1.jpg
+
+# 工具运行时产生的临时文件
+.reasonix/
+
+# VMAF 输出文件，不属源码
+__vmaf.json
