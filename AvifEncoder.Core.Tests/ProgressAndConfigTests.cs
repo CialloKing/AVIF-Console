@@ -163,6 +163,28 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void MetricRegistry_Get_EveryKeyReturnsDefinition()
+        {
+            // 遍历所有注册的指标，确保每个都有有效定义
+            foreach (var k in MetricRegistry.AllKeys)
+            {
+                var def = MetricRegistry.Get(k);
+                Assert.IsNotNull(def, $"Key '{k}' should return a metric definition");
+                Assert.IsFalse(string.IsNullOrEmpty(def.DisplayName), $"Key '{k}' should have a display name");
+            }
+        }
+
+        [TestMethod]
+        public void GetEffectiveTarget_PresetPath_VmafConvertsFromSsim()
+        {
+            var cfg = PresetConfig.CreateFromPreset(CliPreset.Balanced);
+            cfg.MetricMode = "vmaf";
+            double target = cfg.GetEffectiveTarget();
+            Assert.IsTrue(target > 90 && target <= 100,
+                $"Expected VMAF 97±, got {target}");
+        }
+
+        [TestMethod]
         public void SetQualityTarget_Vmaf_IsNotAdvanced()
         {
             var def = MetricRegistry.Get("vmaf");
