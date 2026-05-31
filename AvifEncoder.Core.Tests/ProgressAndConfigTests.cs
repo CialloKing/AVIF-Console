@@ -86,6 +86,15 @@ namespace AvifEncoder.Core.Tests
         // ===== MetricRegistry 所有指标均可查询 =====
 
         [TestMethod]
+        public void ProgressTracker_ZeroTotalFiles_ProgressSafe()
+        {
+            var tracker = new ProgressTracker();
+            tracker.MarkFileProcessed();
+            Assert.AreEqual(1, tracker.ProcessedCount);
+            Assert.AreEqual(0, tracker.TotalFiles);
+        }
+
+        [TestMethod]
         public void MetricRegistry_AllKeys_ReturnsExpectedCount()
         {
             int count = 0;

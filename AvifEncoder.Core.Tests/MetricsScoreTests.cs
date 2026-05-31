@@ -78,6 +78,22 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void ComputeMixScore_NormalScores_ReturnsWeightedSum()
+        {
+            var m = new QualityMetrics { VMAF = 95, XPSNR_Y = 50, SSIM = 0.98, MS_SSIM = 0.97, PSNR_Y = 42 };
+            double score = MetricRegistry.ComputeMixScore(m);
+            Assert.IsTrue(score > 0 && score < 1, $"MixScore={score} out of expected range");
+        }
+
+        [TestMethod]
+        public void ComputeMixScore_ZeroScores_ReturnsZero()
+        {
+            var m = new QualityMetrics();
+            double score = MetricRegistry.ComputeMixScore(m);
+            Assert.AreEqual(0.0, score, 0.01);
+        }
+
+        [TestMethod]
         public void GetSearchScore_UnknownMode_ReturnsSsim()
         {
             var m = new QualityMetrics { SSIM = 0.88 };
