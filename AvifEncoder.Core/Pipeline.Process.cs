@@ -449,8 +449,7 @@ namespace AvifEncoder
                 var finalResult = BuildResult(index, Path.GetFileName(outputPath), name,
                                        inputPath, outputPath,
                                        encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey);
-                if (_config.Resume && finalResult.Success)
-                    AppendJournal(inputPath, "success", new { crf = finalResult.UsedCRF, size = finalResult.OutputSize });
+                { /* journal "success" 仅由指标完成后写入 */ }
                 return finalResult;
             }
             finally
@@ -590,7 +589,7 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        if (_config.Resume) AppendJournal(workingInputPath, "success");
+                        AppendJournal(workingInputPath, "success");
                         _progress.MarkFileProcessed();
                     }
                 }
@@ -662,7 +661,7 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        if (_config.Resume) AppendJournal(workingInputPath, "success");
+                        AppendJournal(workingInputPath, "success");
                         _progress.MarkFileProcessed();
                     }
                 }

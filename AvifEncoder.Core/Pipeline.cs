@@ -334,9 +334,10 @@ namespace AvifEncoder
             {
                 _advancedMetricSemaphore.Release();
             }
-            if (inputPath != null && _config.Resume)
+            if (inputPath != null)
                 AppendJournal(inputPath, "success");
             _progress.MarkFileProcessed();
+            _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
         }
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
@@ -1691,7 +1692,8 @@ namespace AvifEncoder
                         string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
                         if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
                             _logger.LogInfo(
-                                $"[RESUME] 输出文件存在但日志无记录: {Path.GetFileName(outPath)}，将重新编码");
+                                $"[RESUME] 输出文件存在但日志无记录: {Path.GetFileName(outPath)}，删除旧文件并重新编码");
+                        try { _fs.DeleteFile(outPath); } catch { }
                     }
 
                     // 过滤已完成
