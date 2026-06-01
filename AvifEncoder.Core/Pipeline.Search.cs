@@ -714,58 +714,8 @@ namespace AvifEncoder
 
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
-            string p = Path.Combine(_outputDir, "avif_stats.csv");
-
-            // ★ 用回填后的完整数据覆盖 CSV: 读旧行 + 写新行的并集
-            var existingRows = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (_fs.FileExists(p))
-            {
-                try
-                {
-                    var oldLines = File.ReadAllLines(p);
-                    for (int i = 1; i < oldLines.Length; i++)
-                    {
-                        var cols = SplitCsvLine(oldLines[i]);
-                        if (cols.Length > 0 && !string.IsNullOrEmpty(cols[0]))
-                            existingRows[cols[0]] = oldLines[i];
-                    }
-                }
-                catch { }
-            }
-
-            var sb = new StringBuilder();
-            sb.AppendLine(string.Join(",", CsvColumnNames));
-            foreach (var r in results)
-            {
-                string row = GetCsvRow(r);
-                var cols = row.Split(',');
-                if (cols.Length > 0)
-                {
-                    string key = cols[0];
-                    // ★ 新行指标不完整时保留旧行(包含完整数据)
-                    if (existingRows.TryGetValue(key, out var oldRow))
-                    {
-                        var oldCols = oldRow.Split(',');
-                        // 按列数统计非空指标列(从索引11开始: XPSNR-Y,U,V,W,SSIM2,ButterRaw,Butter3,GMSD)
-                        int newMetricCols = 0, oldMetricCols = 0;
-                        for (int c = 11; c <= 18 && c < cols.Length && c < oldCols.Length; c++)
-                        {
-                            if (!string.IsNullOrEmpty(cols[c])) newMetricCols++;
-                            if (!string.IsNullOrEmpty(oldCols[c])) oldMetricCols++;
-                        }
-                        if (oldMetricCols > newMetricCols) continue; // 保留指标更多的旧行
-                    }
-                    existingRows[key] = row;
-                }
-            }
-            foreach (var row in existingRows.Values)
-                sb.AppendLine(row);
-
-            lock (_csvLock)
-            {
-                _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
-                _csvHeaderWritten = true;
-            }
+            // ★ CSV 由 AppendCsvRow(编码后) + TryFlushCsvRow(指标后) 写入
+            // ExportCsv 仅在此验证 CSV 存在，不覆盖任何数据
         }
 
         private static string FormatSize(long b) => b switch
