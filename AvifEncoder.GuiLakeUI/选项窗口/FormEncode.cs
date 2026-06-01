@@ -1,4 +1,4 @@
-using AvifEncoder;
+﻿using AvifEncoder;
 using LakeUI;
 using System;
 using System.Collections.Generic;
@@ -36,6 +36,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private CancellationTokenSource? _cts;
         private bool _sweepPreviousCrfRangeMode;
         private bool _isResumeDetected;
+        private bool _stopping;  // 停止中，冻结进度
 
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
         private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
@@ -433,6 +434,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void CmbQualityMode_SelectedIndexChanged(object? sender, EventArgs e)
         {
+            if (cmbQualityMode.SelectedIndex < 0 || cmbQualityMode.Items.Count == 0) return;
             string? mode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString();
             if (mode == null) return;
 
@@ -561,10 +563,44 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         {
             using var dlg = new FolderBrowserDialog();
             if (dlg.ShowDialog() == DialogResult.OK)
+            {
                 txtOutput.Text = dlg.SelectedPath;
+                // 手动触发续传检测 (确保 TextChanged 已处理)
+                CheckResumeStatus(dlg.SelectedPath);
+            }
+        }
+
+        private void CheckResumeStatus(string outputDir)
+        {
+            if (_isEncoding || string.IsNullOrEmpty(outputDir)) return;
+            string snapshot = Path.Combine(outputDir, ".session", "snapshot.json");
+            if (File.Exists(snapshot))
+            {
+                var (_, configJson, inputPath) = LoadConfigFromSnapshot(snapshot);
+                if (configJson != null)
+                {
+                    if (!string.IsNullOrEmpty(inputPath))
+                        txtInput.Text = inputPath;
+                    EnterResumeMode(configJson);
+                }
+            }
         }
 
         private async void btnStart_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                await btnStart_ClickCore(sender, e);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"编码过程发生未处理错误:\n{ex.Message}", "编码异常",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                System.Diagnostics.Trace.WriteLine($"? 编码异常: {ex}");
+            }
+        }
+
+        private async Task btnStart_ClickCore(object? sender, EventArgs e)
         {
             string inputDir = txtInput.Text.Trim('"').Trim();
             string outputDir = txtOutput.Text.Trim('"').Trim();
@@ -719,27 +755,59 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
-                progressBar1.Value = 100;
+                if (!_stopping) progressBar1.Value = 100;
                 // 清除任务栏进度（恢复无进度状态）
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.Clear(_topLevelHandle);
+
+                // 正常完成时清除续传状态 + 删除快照
+                if (!_stopping) ExitResumeMode();
+                // 用户主动停止时才检测中断续传状态
+                if (_stopping && !string.IsNullOrEmpty(txtOutput.Text))
+                    CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
+                _stopping = false;
             }
         }
+        private static void KillAllFfmpegProcesses()
+        {
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName("ffmpeg"))
+                    try { p.Kill(entireProcessTree: true); } catch { }
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName("ffprobe"))
+                    try { p.Kill(entireProcessTree: true); } catch { }
+            }
+            catch { }
+        }
+
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
         {
-            if (_isEncoding)
+            if (_isEncoding && _cts != null && !_cts.IsCancellationRequested)
             {
-                // 主动取消编码任务（内部已通过 Job Object 兜底，此处只是提前通知）
-                _cts?.Cancel();
+                e.Cancel = true;  // 阻止关闭
+                LogPage?.AppendLog("正在安全停止所有 ffmpeg 进程...");
+                _cts.Cancel();
+                // 启动定时器，等待 Pipeline 清理后自动关闭
+                var timer = new System.Windows.Forms.Timer { Interval = 5000 };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop(); timer.Dispose();
+                    _isEncoding = false;
+                    this.Close();
+                };
+                timer.Start();
             }
         }
         private void btnStop_Click(object? sender, EventArgs e)
         {
             if (_cts != null && !_cts.IsCancellationRequested)
             {
-                LogPage?.AppendLog("正在请求取消编码...");
+                LogPage?.AppendLog("正在停止所有 ffmpeg 进程...");
                 _cts.Cancel();
+                // 强制杀掉本机所有 ffmpeg/ffprobe 子进程
+                KillAllFfmpegProcesses();
                 btnStop.Enabled = false;
+                _stopping = true;  // 冻结进度条
                 // 任务栏进度设为暂停状态（可选）
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Paused, (ulong)progressBar1.Value, 100u);
@@ -897,6 +965,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void UpdateProgress(int percent)
         {
+            if (_stopping) return;  // 停止中，冻结进度
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
             int clamped = Math.Max(0, Math.Min(percent, 100));
             progressBar1.Value = clamped;
@@ -1221,6 +1290,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             btnStart.Enabled = true;
             btnResume.Enabled = false;
             btnAbandon.Enabled = false;
+
+            // 删除中断快照（任务已完成，不需要续传）
+            if (!string.IsNullOrEmpty(txtOutput.Text))
+            {
+                string sessionDir = Path.Combine(txtOutput.Text.Trim('"').Trim(), ".session");
+                try { if (Directory.Exists(sessionDir)) Directory.Delete(sessionDir, true); } catch { }
+            }
 
             _isResumeDetected = false;
         }

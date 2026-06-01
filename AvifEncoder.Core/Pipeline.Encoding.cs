@@ -133,7 +133,8 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
             string depthSuffix = pixFmt.EndsWith("10le") ? "10le" : "";
 
             // 去掉后缀，得到纯净的基础格式（如 yuv444p 或 yuva444p）
-            string baseFmt = depthSuffix.Length > 0 ? pixFmt.Substring(0, pixFmt.Length - 4) : pixFmt;
+            string baseFmt = (depthSuffix.Length > 0 && pixFmt.Length > 4)
+                ? pixFmt.Substring(0, pixFmt.Length - 4) : pixFmt;
 
             // 分离出色彩采样部分
             if (baseFmt.Contains("444") && !isTrueLossless)
@@ -326,6 +327,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 }
 
                 return (false, TimeSpan.Zero, _maxRetries, $"CRF={crf}, 重试耗尽", false, null, null);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;  // 用户取消：直接向上传播，不要吞掉
             }
             catch (Exception ex)
             {

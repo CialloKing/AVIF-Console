@@ -73,6 +73,7 @@
             AllowDrop = true;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
+            BackColor = Color.Black;
             ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             DoubleBuffered = true;

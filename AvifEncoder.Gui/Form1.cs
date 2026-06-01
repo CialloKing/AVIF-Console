@@ -321,6 +321,20 @@ namespace AvifEncoder.Gui
 
         private async void btnStart_Click(object? sender, EventArgs e)
         {
+            try
+            {
+                await btnStart_ClickCore(sender, e);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"编码过程发生未处理错误:\n{ex.Message}", "编码异常",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                System.Diagnostics.Trace.WriteLine($"? 编码异常: {ex}");
+            }
+        }
+
+        private async Task btnStart_ClickCore(object? sender, EventArgs e)
+        {
             if (string.IsNullOrWhiteSpace(txtInput.Text) || string.IsNullOrWhiteSpace(txtOutput.Text))
             {
                 MessageBox.Show("请输入输入和输出目录");

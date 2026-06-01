@@ -139,6 +139,14 @@ namespace AvifEncoder.GuiLakeUI
         // ===== 原有代码保持不变 =====
         private async void Form1_Load(object sender, EventArgs e)
         {
+            try { await Form1_LoadCore(); } catch (Exception ex)
+            {
+                MessageBox.Show($"启动时发生错误: {ex.Message}", "错误",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private async Task Form1_LoadCore()
+        {
             thisIsYourWindow1.Attach(this);
 
             _helpPage = new FormHelp();

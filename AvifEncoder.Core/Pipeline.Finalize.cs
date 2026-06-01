@@ -559,14 +559,12 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
         private void MarkProcessed(EncodeResult? r)
         {
-            _progress.MarkFileProcessed();
-            PrintProgress(r);
-
-            // 持续写入 CSV：每完成一个文件追加一行
-            if (r != null)
+            if (r != null && r.Success && !r.Skipped)
             {
+                _progress.MarkFileProcessed();
                 AppendCsvRow(r);
             }
+            PrintProgress(r);
 
             // ★ 向 GUI 报告进度（0 ~ 95%，剩余 5% 等后台指标完成后补齐）
             if (_progress.TotalFiles > 0)

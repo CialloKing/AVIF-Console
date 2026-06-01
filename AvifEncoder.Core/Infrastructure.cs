@@ -60,6 +60,7 @@ namespace AvifEncoder
                     try { process.Kill(entireProcessTree: true); } catch { }
                     try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                 }
+                throw;  // 重新抛出，让调用方知道这是取消而非失败
             }
 
             string stdout = await stdoutTask;
@@ -236,7 +237,7 @@ namespace AvifEncoder
             if (tempJob == IntPtr.Zero)
             {
                 int err = Marshal.GetLastWin32Error();
-                Console.Error.WriteLine($"[Job] 创建失败 (Win32={err})，将使用内存进程列表兜底");
+                Console.Error.WriteLine($"[Job] CreateJobObject failed (Win32={err}), fallback to in-process list");
                 return;
             }
 
@@ -257,7 +258,7 @@ namespace AvifEncoder
                 if (!SetInformationJobObject(tempJob, JOBOBJECTINFOCLASS.ExtendedLimitInformation, ptr, (uint)size))
                 {
                     int err = Marshal.GetLastWin32Error();
-                    Console.Error.WriteLine($"[Job] 设置 KILL_ON_JOB_CLOSE 失败 (Win32={err})，将使用内存进程列表兜底");
+                    Console.Error.WriteLine($"[Job] Set KILL_ON_JOB_CLOSE failed (Win32={err}), fallback to in-process list");
                     CloseHandle(tempJob);
                     return;
                 }
@@ -270,7 +271,7 @@ namespace AvifEncoder
             // 3. 设置成功后才赋值给静态字段
             hJob = tempJob;
             // 输出到 stderr 确保控制台可见（Trace 默认写入调试输出，用户看不到）
-            Console.Error.WriteLine("[Job] 全局 Job Object 就绪 — 主进程退出时自动终止所有 ffmpeg 子进程");
+            Console.Error.WriteLine("[Job] Global Job Object ready - all ffmpeg children auto-killed on exit");
         }
 
         /// <summary>返回 Job Object 是否已激活，供启动诊断使用</summary>
@@ -289,8 +290,8 @@ namespace AvifEncoder
             {
                 int err = Marshal.GetLastWin32Error();
                 // ERROR_ACCESS_DENIED (5) 常见于调试器或已嵌套 Job 的场景
-                string hint = err == 5 ? " (进程可能已在调试器或其他 Job 中)" : "";
-                Console.Error.WriteLine($"[Job] 添加子进程 PID={process.Id} 失败 (Win32={err}){hint}");
+                string hint = err == 5 ? " (process may be in debugger or another Job)" : "";
+                Console.Error.WriteLine($"[Job] AssignProcess failed PID={process.Id} (Win32={err}){hint}");
             }
             return ok;
         }
