@@ -334,11 +334,27 @@ namespace AvifEncoder
             {
                 _advancedMetricSemaphore.Release();
             }
-            // ★ 先更新CSV行(原子操作), 再写journal(防止journal有记录但CSV为空)
-            if (outputFileName != null) { _logger.LogInfo($"[CSV-FLUSH] START {outputFileName}"); TryFlushCsvRow(outputFileName, cacheKey); }
-            if (inputPath != null)
-                AppendJournal(inputPath, "success");
-            _progress.MarkFileProcessed();
+            // ★ 仅在所有需要的指标都已缓存时才写 journal + CSV
+            bool allMetricsReady = true;
+            if (_cache.TryGetMetrics(cacheKey, out var finalMetrics))
+            {
+                if (needSsimu2 && !finalMetrics.SSIMULACRA2.HasValue) allMetricsReady = false;
+                if (needButter && (!finalMetrics.Butteraugli_Raw.HasValue || !finalMetrics.Butteraugli_3norm.HasValue)) allMetricsReady = false;
+                if (needGmsd && !finalMetrics.GMSD.HasValue) allMetricsReady = false;
+            }
+            else { allMetricsReady = false; }
+
+            if (allMetricsReady)
+            {
+                if (outputFileName != null) { _logger.LogInfo($"[CSV-FLUSH] START {outputFileName}"); TryFlushCsvRow(outputFileName, cacheKey); }
+                if (inputPath != null)
+                    AppendJournal(inputPath, "success");
+                _progress.MarkFileProcessed();
+            }
+            else
+            {
+                _logger.LogInfo($"[METRICS-SKIP] 指标不完整,cacheKey={cacheKey[..Math.Min(20,cacheKey.Length)]}... ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd}");
+            }
             _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
         }
 
