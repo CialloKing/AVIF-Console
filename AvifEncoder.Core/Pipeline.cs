@@ -1725,11 +1725,7 @@ namespace AvifEncoder
                         .Select(r => r!.InputPath);
                     SaveSnapshot(oldCompleted.Union(newCompleted));
                     int totalNonSkipped = results.Count(r => r != null && !r.Skipped);
-                    if (newCompleted.Count() == totalNonSkipped)
-                    {
-                        CloseJournal();
-                        try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
-                    }
+                    /* Journal 保留不删——Resume 依赖它 */
                 }
 
                 await PrintSummaryAndExport(results);
