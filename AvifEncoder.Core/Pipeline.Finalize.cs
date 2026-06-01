@@ -561,8 +561,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         {
             if (r != null && r.Success && !r.Skipped)
             {
-                _progress.MarkFileProcessed();
                 AppendCsvRow(r);
+                // ★ 进度由指标完成后推进 (ComputeAdvancedMetricsInBackgroundAsync)
             }
             PrintProgress(r);
 

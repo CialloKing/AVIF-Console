@@ -755,7 +755,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 }
 
                 LogPage?.AppendLog("===== 全部完成 =====");
-                MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (!_stopping)
+                    MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -769,12 +770,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
-                if (!_stopping) progressBar1.Value = 100;
+                // 进度由 Pipeline 指标回调推进
                 // 清除任务栏进度（恢复无进度状态）
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.Clear(_topLevelHandle);
 
-                // 正常完成时清除续传状态 + 删除快照
+                // 正常完成时恢复控件 + 删除快照
+                if (!_stopping) ExitResumeMode();
                 // 用户主动停止时才检测中断续传状态
                 if (_stopping && !string.IsNullOrEmpty(txtOutput.Text))
                     CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
@@ -1341,6 +1343,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void BtnResume_Click(object? sender, EventArgs e)
         {
+            _stopping = false;  // 确保进度条解锁
+            progressBar1.Value = 0;  // 重置进度条
             btnStart_Click(sender, e);
         }
 

@@ -716,22 +716,39 @@ namespace AvifEncoder
         {
             string p = Path.Combine(_outputDir, "avif_stats.csv");
 
-            // ★ CSV 由 AppendCsvRow 逐行写入，ExportCsv 不再覆盖（保留历史）
+            // ★ 用回填后的完整数据覆盖 CSV: 读旧行 + 写新行的并集
+            var existingRows = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (_fs.FileExists(p))
+            {
+                try
+                {
+                    var oldLines = File.ReadAllLines(p);
+                    for (int i = 1; i < oldLines.Length; i++)
+                    {
+                        var cols = SplitCsvLine(oldLines[i]);
+                        if (cols.Length > 0 && !string.IsNullOrEmpty(cols[0]))
+                            existingRows[cols[0]] = oldLines[i];
+                    }
+                }
+                catch { }
+            }
 
             var sb = new StringBuilder();
             sb.AppendLine(string.Join(",", CsvColumnNames));
-
             foreach (var r in results)
             {
-                sb.AppendLine(GetCsvRow(r));
+                string row = GetCsvRow(r);
+                var cols = row.Split(',');
+                if (cols.Length > 0) existingRows[cols[0]] = row;
             }
+            foreach (var row in existingRows.Values)
+                sb.AppendLine(row);
 
             lock (_csvLock)
             {
                 _fs.WriteAllText(p, sb.ToString(), new UTF8Encoding(true));
                 _csvHeaderWritten = true;
             }
-            SafeWriteLine($"CSV 已保存: {p}");
         }
 
         private static string FormatSize(long b) => b switch

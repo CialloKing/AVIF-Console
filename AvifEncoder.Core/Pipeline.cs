@@ -336,6 +336,7 @@ namespace AvifEncoder
             }
             if (inputPath != null && _config.Resume)
                 AppendJournal(inputPath, "success");
+            _progress.MarkFileProcessed();
         }
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
@@ -1564,6 +1565,13 @@ namespace AvifEncoder
                 var files = await ScanAndPrepareFilesAsync();
                 if (files == null || files.Count == 0) return;
 
+                // ★ 检测输出文件名冲突
+                var nameGroups = files.GroupBy(f => GetOutputFileName(f.path, f.index));
+                foreach (var g in nameGroups.Where(g => g.Count() > 1))
+                {
+                    _logger.LogInfo($"[NAME-CONFLICT] 输出重名: {g.Key} ← {string.Join(", ", g.Select(f => Path.GetFileName(f.path)))}");
+                }
+
                 // ★ 断点续传：清理草稿 + 回放日志 + 过滤已完成
                 if (_config.Resume)
                 {
@@ -1698,6 +1706,7 @@ namespace AvifEncoder
                     files = remaining;
                     // 总文件数不变（ScanAndPrepareFilesAsync 已设），只调整已完成计数
                     _progress.SetInitialProcessed(skipped);
+                    _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
                 }
 
                 // 初始化 Journal；非恢复模式先清理旧快照避免混淆
@@ -1960,8 +1969,7 @@ namespace AvifEncoder
                 }
             }
 
-            // ★ 全部流程真正完成 → 报告 100% 给 GUI
-            _guiProgress?.Report(100);
+            // ★ 进度由指标回调推进，此处不再强制 100%
 
             // 标注外部工具缺失导致的高级指标空缺
             bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
