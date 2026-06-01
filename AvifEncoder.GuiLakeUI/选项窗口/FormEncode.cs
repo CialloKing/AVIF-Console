@@ -780,18 +780,17 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             if (_completedNormally)
             {
-                // 1. 排空消息队列中所有待处理的 BeginInvoke(旧Report)
-                Application.DoEvents();
-                // 2. 同步设100%并强制重绘
-                progressBar1.Value = 100;
-                progressBar1.Refresh();
-                // 3. 恢复所有控件
+                // 恢复控件
                 SetEncodingControlsEnabled(true);
                 btnResume.Visible = false;
                 btnAbandon.Visible = false;
                 btnResume.Enabled = false;
                 btnAbandon.Enabled = false;
-                // 4. 弹窗
+                // 进度条100%
+                progressBar1.Value = 100;
+                // 等待UI线程处理完所有待处理消息(包括绘制)
+                await Task.Delay(50);
+                // 弹窗
                 MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
