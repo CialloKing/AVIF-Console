@@ -896,7 +896,7 @@ namespace AvifEncoder
                 _journalCountSinceSnapshot++;
 
                 // ★ 周期性快照：合并旧快照完成列表 + 本次新增
-                if (_config.Resume && _journalCountSinceSnapshot >= 50)
+                if (_journalCountSinceSnapshot >= 5)
                 {
                     var (oldDone, _, _) = LoadSnapshot();
                     var newDone = ReplayJournal(null);

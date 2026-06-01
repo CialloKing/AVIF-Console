@@ -71,6 +71,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             txtOutput.AllowDrop = true;
             txtOutput.DragEnter += TxtPath_DragEnter;
             txtOutput.DragDrop += TxtPath_DragDrop;
+            txtOutput.TextChanged += TxtOutput_TextChanged;
         }
 
         private void TxtPath_DragEnter(object? sender, DragEventArgs e)
@@ -919,7 +920,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             config.SerialEncode = chkSerialEncode.Checked;
             // 恢复模式
-            config.Resume = _isResumeDetected;
+            config.Resume = true;  // 始终启用断点续传日志
 
             // 从选项页读取自定义后缀、超时等
             if (Application.OpenForms["Form1"] is Form1 mainForm)

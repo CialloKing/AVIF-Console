@@ -58,8 +58,8 @@
             thisIsYourWindow1.BackdropBlurRadius = 5;
             thisIsYourWindow1.BackdropImage = (Image)resources.GetObject("thisIsYourWindow1.BackdropImage");
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;
-            thisIsYourWindow1.BackdropTintColor = Color.FromArgb(80, 32, 32, 32);
-            thisIsYourWindow1.BackdropTintInactiveColor = Color.FromArgb(80, 32, 32, 32);
+            thisIsYourWindow1.BackdropTintColor = Color.FromArgb(100, 32, 32, 32);
+            thisIsYourWindow1.BackdropTintInactiveColor = Color.FromArgb(100, 32, 32, 32);
             thisIsYourWindow1.BorderInactiveColor = Color.Transparent;
             thisIsYourWindow1.CaptionButtonGlyphColor = Color.FromArgb(200, 200, 200);
             thisIsYourWindow1.CaptionHeight = 40;
