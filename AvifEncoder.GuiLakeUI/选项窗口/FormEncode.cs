@@ -765,32 +765,33 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             finally
             {
                 _isEncoding = false;
-                _isResumeDetected = false;  // 编码完成后清除恢复状态
+                _isResumeDetected = false;
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 _cts?.Dispose(); _cts = null;
-                // 进度由 Pipeline 指标回调推进
-                // 清除任务栏进度（恢复无进度状态）
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.Clear(_topLevelHandle);
-
-                // 正常完成时恢复控件 + 删除快照
-                if (!_stopping) ExitResumeMode();
-                // 用户主动停止时才检测中断续传状态
-                if (_stopping && !string.IsNullOrEmpty(txtOutput.Text))
-                    CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
                 _stopping = false;
             }
 
-            // ★ 排空队列中的旧Report → 设100% → 刷新 → 恢复控件 → 弹窗
+            // 用户停止时检测中断续传
+            if (!_completedNormally && !string.IsNullOrEmpty(txtOutput.Text))
+                CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
+
             if (_completedNormally)
             {
-                Application.DoEvents();  // 排空队列中所有Pending的BeginInvoke(旧Report)
-                UpdateProgress(100);
+                // 1. 排空消息队列中所有待处理的 BeginInvoke(旧Report)
+                Application.DoEvents();
+                // 2. 同步设100%并强制重绘
+                progressBar1.Value = 100;
                 progressBar1.Refresh();
+                // 3. 恢复所有控件
                 SetEncodingControlsEnabled(true);
+                btnResume.Visible = false;
+                btnAbandon.Visible = false;
                 btnResume.Enabled = false;
                 btnAbandon.Enabled = false;
+                // 4. 弹窗
                 MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
