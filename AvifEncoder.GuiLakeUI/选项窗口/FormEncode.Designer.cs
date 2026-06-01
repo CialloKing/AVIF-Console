@@ -29,6 +29,8 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            btnAbandon = new LakeUI.ModernButton();
+            btnResume = new LakeUI.ModernButton();
             cmbTemplate = new LakeUI.ModernComboBox();
             cmbPreset = new LakeUI.ModernComboBox();
             cmbEncoder = new LakeUI.ModernComboBox();
@@ -78,8 +80,6 @@
             btnBrowseInput = new LakeUI.ModernButton();
             btnStart = new LakeUI.ModernButton();
             txtInput = new LakeUI.ModernTextBox();
-            btnResume = new LakeUI.ModernButton();
-            btnAbandon = new LakeUI.ModernButton();
             modernPanel1.SuspendLayout();
             grpCrfMode.SuspendLayout();
             SuspendLayout();
@@ -140,6 +140,38 @@
             modernPanel1.ScrollBarMode = LakeUI.ModernPanel.ScrollMode.None;
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
+            // 
+            // btnAbandon
+            // 
+            btnAbandon.AnimationFPS = 0;
+            btnAbandon.BackColor1 = Color.Transparent;
+            btnAbandon.BorderColor = Color.White;
+            btnAbandon.BorderRadius = 10;
+            btnAbandon.ForeColor = Color.WhiteSmoke;
+            btnAbandon.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnAbandon.Location = new Point(639, 489);
+            btnAbandon.Margin = new Padding(2);
+            btnAbandon.Name = "btnAbandon";
+            btnAbandon.PressedBackColor1 = Color.White;
+            btnAbandon.Size = new Size(120, 35);
+            btnAbandon.TabIndex = 67;
+            btnAbandon.Text = "放弃任务";
+            // 
+            // btnResume
+            // 
+            btnResume.AnimationFPS = 0;
+            btnResume.BackColor1 = Color.Transparent;
+            btnResume.BorderColor = Color.White;
+            btnResume.BorderRadius = 10;
+            btnResume.ForeColor = Color.WhiteSmoke;
+            btnResume.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnResume.Location = new Point(432, 489);
+            btnResume.Margin = new Padding(2);
+            btnResume.Name = "btnResume";
+            btnResume.PressedBackColor1 = Color.White;
+            btnResume.Size = new Size(120, 35);
+            btnResume.TabIndex = 66;
+            btnResume.Text = "恢复任务";
             // 
             // cmbTemplate
             // 
@@ -644,7 +676,6 @@
             label5.Size = new Size(56, 17);
             label5.TabIndex = 31;
             label5.Text = "范围上限";
-
             // 
             // rbCrfRange
             // 
@@ -666,10 +697,10 @@
             label4.Size = new Size(56, 17);
             label4.TabIndex = 30;
             label4.Text = "范围下限";
-
             // 
             // txtTemplate
             // 
+            txtTemplate.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtTemplate.BackColor1 = Color.Transparent;
             txtTemplate.BorderColorFocus = Color.White;
             txtTemplate.Cursor = Cursors.IBeam;
@@ -677,7 +708,7 @@
             txtTemplate.Location = new Point(230, 113);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
-            txtTemplate.Size = new Size(607, 32);
+            txtTemplate.Size = new Size(835, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
             // 
@@ -772,6 +803,7 @@
             // 
             // progressBar1
             // 
+            progressBar1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             progressBar1.AnimationFPS = 0;
             progressBar1.BorderColor = Color.White;
             progressBar1.BorderSize = 1;
@@ -780,7 +812,7 @@
             progressBar1.Location = new Point(37, 528);
             progressBar1.Margin = new Padding(2, 2, 2, 2);
             progressBar1.Name = "progressBar1";
-            progressBar1.Size = new Size(800, 20);
+            progressBar1.Size = new Size(1028, 20);
             progressBar1.TabIndex = 7;
             progressBar1.TabStop = false;
             progressBar1.TextPadding = new Padding(0);
@@ -806,13 +838,14 @@
             // txtOutput
             // 
             txtOutput.AllowDrop = true;
+            txtOutput.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtOutput.BackColor1 = Color.Transparent;
             txtOutput.BorderColorFocus = Color.White;
             txtOutput.ForeColor = Color.WhiteSmoke;
             txtOutput.Location = new Point(156, 67);
             txtOutput.Margin = new Padding(2);
             txtOutput.Name = "txtOutput";
-            txtOutput.Size = new Size(681, 32);
+            txtOutput.Size = new Size(909, 32);
             txtOutput.TabIndex = 5;
             txtOutput.WaterText = "输出路径，支持拖入文件夹";
             // 
@@ -853,47 +886,16 @@
             // txtInput
             // 
             txtInput.AllowDrop = true;
+            txtInput.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtInput.BackColor1 = Color.Transparent;
             txtInput.BorderColorFocus = Color.White;
             txtInput.ForeColor = Color.WhiteSmoke;
             txtInput.Location = new Point(156, 21);
             txtInput.Margin = new Padding(2);
             txtInput.Name = "txtInput";
-            txtInput.Size = new Size(681, 32);
+            txtInput.Size = new Size(909, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径，支持拖入文件夹";
-            // 
-            // btnResume
-            // 
-            btnResume.AnimationFPS = 0;
-            btnResume.BackColor1 = Color.Transparent;
-            btnResume.BorderColor = Color.White;
-            btnResume.BorderRadius = 10;
-            btnResume.ForeColor = Color.WhiteSmoke;
-            btnResume.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnResume.Location = new Point(432, 489);
-            btnResume.Margin = new Padding(2);
-            btnResume.Name = "btnResume";
-            btnResume.PressedBackColor1 = Color.White;
-            btnResume.Size = new Size(120, 35);
-            btnResume.TabIndex = 66;
-            btnResume.Text = "恢复任务";
-            // 
-            // btnAbandon
-            // 
-            btnAbandon.AnimationFPS = 0;
-            btnAbandon.BackColor1 = Color.Transparent;
-            btnAbandon.BorderColor = Color.White;
-            btnAbandon.BorderRadius = 10;
-            btnAbandon.ForeColor = Color.WhiteSmoke;
-            btnAbandon.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnAbandon.Location = new Point(639, 489);
-            btnAbandon.Margin = new Padding(2);
-            btnAbandon.Name = "btnAbandon";
-            btnAbandon.PressedBackColor1 = Color.White;
-            btnAbandon.Size = new Size(120, 35);
-            btnAbandon.TabIndex = 67;
-            btnAbandon.Text = "放弃任务";
             // 
             // FormEncode
             // 

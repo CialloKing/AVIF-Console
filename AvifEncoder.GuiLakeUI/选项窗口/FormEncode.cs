@@ -755,8 +755,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 }
 
                 LogPage?.AppendLog("===== 全部完成 =====");
-                if (!_stopping)
-                    MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _completedNormally = !_stopping;
             }
             catch (Exception ex)
             {
@@ -782,7 +781,16 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
                 _stopping = false;
             }
+
+            // ★ 先同步更新进度到100%, 再异步弹窗(避免BeginInvoke排队导致进度滞后)
+            if (_completedNormally)
+            {
+                UpdateProgress(100);
+                BeginInvoke(new Action(() =>
+                    MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+            }
         }
+        private bool _completedNormally;
         private static void KillAllFfmpegProcesses()
         {
             try
