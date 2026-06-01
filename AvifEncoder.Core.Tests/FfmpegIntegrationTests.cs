@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+#pragma warning disable MSTEST0037
 
 namespace AvifEncoder.Core.Tests
 {
