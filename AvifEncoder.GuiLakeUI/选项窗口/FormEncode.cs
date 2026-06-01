@@ -782,11 +782,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 _stopping = false;
             }
 
-            // ★ 同步设置进度 + 刷新 → 弹窗
+            // ★ 同步设置进度 + 刷新 → 弹窗 + 强制恢复所有控件
             if (_completedNormally)
             {
                 UpdateProgress(100);
                 progressBar1.Refresh();
+                SetEncodingControlsEnabled(true);
+                btnResume.Enabled = false;
+                btnAbandon.Enabled = false;
                 MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
