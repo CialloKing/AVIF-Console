@@ -264,7 +264,7 @@ namespace AvifEncoder
         private async Task ComputeAdvancedMetricsInBackgroundAsync(
             string refPath, string distPath, string outputDir, string cacheKey,
             bool needSsimu2, bool needButter, bool needGmsd,
-            CancellationToken cancellationToken, string? inputPath = null)
+            CancellationToken cancellationToken, string? inputPath = null, string? outputFileName = null)
         {
             await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
@@ -336,8 +336,41 @@ namespace AvifEncoder
             }
             if (inputPath != null)
                 AppendJournal(inputPath, "success");
+            // ★ 立即更新CSV行(防止×关闭丢失)
+            if (outputFileName != null) TryFlushCsvRow(outputFileName, cacheKey);
             _progress.MarkFileProcessed();
             _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
+        }
+
+        private void TryFlushCsvRow(string outputFileName, string cacheKey)
+        {
+            try
+            {
+                if (!_cache.TryGetMetrics(cacheKey, out var m)) return;
+                string p = Path.Combine(_outputDir, "avif_stats.csv");
+                if (!_fs.FileExists(p)) return;
+                var lines = File.ReadAllLines(p);
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    var cols = lines[i].Split(',');
+                    if (cols.Length > 0 && cols[0] == outputFileName && cols.Length >= 19)
+                    {
+                        cols[11] = FormatDbValue(m.XPSNR_Y);
+                        cols[12] = FormatDbValue(m.XPSNR_U);
+                        cols[13] = FormatDbValue(m.XPSNR_V);
+                        cols[14] = FormatDbValue(m.W_XPSNR);
+                        cols[15] = FormatMetric(m.SSIMULACRA2);
+                        cols[16] = FormatMetric(m.Butteraugli_Raw);
+                        cols[17] = FormatMetric(m.Butteraugli_3norm);
+                        cols[18] = FormatMetric(m.GMSD);
+                        lines[i] = string.Join(",", cols);
+                        lock (_csvLock)
+                            _fs.WriteAllText(p, string.Join("\n", lines) + "\n", new UTF8Encoding(true));
+                        return;
+                    }
+                }
+            }
+            catch { }
         }
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>

@@ -583,7 +583,7 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath);
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath));
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
                     }
@@ -656,7 +656,7 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath);
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath));
                         _advancedMetricTasks.Enqueue(bgTask);
                     }
                     else
