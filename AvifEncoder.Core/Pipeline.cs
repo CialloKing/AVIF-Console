@@ -997,14 +997,7 @@ namespace AvifEncoder
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
 
-                // 截断 Journal：原子替换，避免 AppendJournal 在窗口期丢失条目
-                lock (_journalLock)
-                {
-                    _journalWriter?.Flush();
-                    _journalWriter?.Dispose();
-                    try { if (_fs.FileExists(_journalPath)) _fs.DeleteFile(_journalPath); } catch { }
-                    _journalWriter = new StreamWriter(_journalPath, append: false, Encoding.UTF8) { AutoFlush = false };
-                }
+                // 快照已保存，Journal 保留（不删除，Resume 依赖它）
             }
             catch { }
         }
