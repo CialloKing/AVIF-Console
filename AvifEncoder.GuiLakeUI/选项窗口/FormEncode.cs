@@ -782,12 +782,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 _stopping = false;
             }
 
-            // ★ 先同步更新进度到100%, 再异步弹窗(避免BeginInvoke排队导致进度滞后)
+            // ★ 同步设置进度 + 刷新 → 弹窗
             if (_completedNormally)
             {
                 UpdateProgress(100);
-                BeginInvoke(new Action(() =>
-                    MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+                progressBar1.Refresh();
+                MessageBox.Show("转换完成！", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private bool _completedNormally;
