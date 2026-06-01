@@ -782,8 +782,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 // 恢复控件
                 SetEncodingControlsEnabled(true);
-                btnResume.Visible = false;
-                btnAbandon.Visible = false;
                 btnResume.Enabled = false;
                 btnAbandon.Enabled = false;
                 // 进度条100%
