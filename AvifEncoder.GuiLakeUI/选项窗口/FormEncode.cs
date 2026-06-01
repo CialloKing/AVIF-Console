@@ -782,9 +782,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 _stopping = false;
             }
 
-            // ★ 同步设置进度 + 刷新 → 弹窗 + 强制恢复所有控件
+            // ★ 排空队列中的旧Report → 设100% → 刷新 → 恢复控件 → 弹窗
             if (_completedNormally)
             {
+                Application.DoEvents();  // 排空队列中所有Pending的BeginInvoke(旧Report)
                 UpdateProgress(100);
                 progressBar1.Refresh();
                 SetEncodingControlsEnabled(true);
