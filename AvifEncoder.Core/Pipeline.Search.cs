@@ -739,7 +739,19 @@ namespace AvifEncoder
             {
                 string row = GetCsvRow(r);
                 var cols = row.Split(',');
-                if (cols.Length > 0) existingRows[cols[0]] = row;
+                if (cols.Length > 0)
+                {
+                    string key = cols[0];
+                    // ★ 新行指标不完整时保留旧行(包含完整数据)
+                    if (existingRows.TryGetValue(key, out var oldRow))
+                    {
+                        var oldCols = oldRow.Split(',');
+                        bool newHasMetrics = cols.Length >= 19 && !string.IsNullOrEmpty(cols[11]);
+                        bool oldHasMetrics = oldCols.Length >= 19 && !string.IsNullOrEmpty(oldCols[11]);
+                        if (oldHasMetrics && !newHasMetrics) continue; // 保留旧行
+                    }
+                    existingRows[key] = row;
+                }
             }
             foreach (var row in existingRows.Values)
                 sb.AppendLine(row);

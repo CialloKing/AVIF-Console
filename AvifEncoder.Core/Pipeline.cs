@@ -1947,6 +1947,7 @@ namespace AvifEncoder
 
 
             // 从缓存回填高级指标
+            foreach (var r in allResults) { _logger.LogInfo("[CSV-DIAG] " + r.FileName + " cacheKey=" + (r.AdvancedMetricsCacheKey ?? "null")); }
             foreach (var r in allResults)
             {
                 if (!string.IsNullOrEmpty(r.AdvancedMetricsCacheKey) && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var updated))
