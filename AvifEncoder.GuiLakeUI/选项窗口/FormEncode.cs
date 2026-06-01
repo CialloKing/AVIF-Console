@@ -788,6 +788,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 btnAbandon.Enabled = false;
                 // 进度条100%
                 progressBar1.Value = 100;
+                // 删除快照,防止轮询检测到resume状态
+                if (!string.IsNullOrEmpty(txtOutput.Text))
+                {
+                    string sessionDir = Path.Combine(txtOutput.Text.Trim('"').Trim(), ".session");
+                    try { if (Directory.Exists(sessionDir)) Directory.Delete(sessionDir, true); } catch { }
+                }
                 // 等待UI线程处理完所有待处理消息(包括绘制)
                 await Task.Delay(50);
                 // 弹窗
