@@ -366,6 +366,7 @@ namespace AvifEncoder
                         lines[i] = string.Join(",", cols);
                         lock (_csvLock)
                             _fs.WriteAllText(p, string.Join("\n", lines) + "\n", new UTF8Encoding(true));
+                        _logger.LogInfo($"[CSV-FLUSH] {outputFileName} XPSNR={m.XPSNR_Y:F2} SSIM2={m.SSIMULACRA2:F2}");
                         return;
                     }
                 }
