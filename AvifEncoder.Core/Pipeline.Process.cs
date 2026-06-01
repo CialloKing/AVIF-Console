@@ -588,6 +588,11 @@ namespace AvifEncoder
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
                     }
+                    else
+                    {
+                        if (_config.Resume) AppendJournal(workingInputPath, "success");
+                        _progress.MarkFileProcessed();
+                    }
                 }
 
                 if (needUpdate || advancedUpdated)
@@ -654,6 +659,11 @@ namespace AvifEncoder
                             needSsimu2, needButter, needGmsd,
                             _globalCts?.Token ?? CancellationToken.None, workingInputPath);
                         _advancedMetricTasks.Enqueue(bgTask);
+                    }
+                    else
+                    {
+                        if (_config.Resume) AppendJournal(workingInputPath, "success");
+                        _progress.MarkFileProcessed();
                     }
                 }
 
