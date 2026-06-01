@@ -262,9 +262,9 @@ namespace AvifEncoder
 
 
         private async Task ComputeAdvancedMetricsInBackgroundAsync(
-        string refPath, string distPath, string outputDir, string cacheKey,
-        bool needSsimu2, bool needButter, bool needGmsd,
-        CancellationToken cancellationToken)
+            string refPath, string distPath, string outputDir, string cacheKey,
+            bool needSsimu2, bool needButter, bool needGmsd,
+            CancellationToken cancellationToken, string? inputPath = null)
         {
             await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
@@ -334,6 +334,8 @@ namespace AvifEncoder
             {
                 _advancedMetricSemaphore.Release();
             }
+            if (inputPath != null && _config.Resume)
+                AppendJournal(inputPath, "success");
         }
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
@@ -896,7 +898,7 @@ namespace AvifEncoder
                 _journalCountSinceSnapshot++;
 
                 // ★ 周期性快照：合并旧快照完成列表 + 本次新增
-                if (_journalCountSinceSnapshot >= 5)
+                if (_journalCountSinceSnapshot >= 500)
                 {
                     var (oldDone, _, _) = LoadSnapshot();
                     var newDone = ReplayJournal(null);
@@ -1669,13 +1671,10 @@ namespace AvifEncoder
                     }
 
                     // 交集：三源全部确认 → 才视为完成
-                    var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
-                    completed.IntersectWith(journalDone);
-                    if (csvDone.Count > 0) completed.IntersectWith(csvDone);  // CSV 存在才参与交集
+                    var completed = new HashSet<string>(journalDone, StringComparer.OrdinalIgnoreCase);
 
                     _logger.LogInfo(
-                        $"[RESUME] 快照:{snapshotDone.Count} 日志:{journalDone.Count} " +
-                        $"CSV:{csvDone.Count} → 交集:{completed.Count}");
+                        $"[RESUME] journalDone={journalDone.Count} → completed={completed.Count}");
 
                     // 文件系统交叉验证：仅日志缺失时记录，不自动标记完成（避免参数变更误判）
                     foreach (var (path, idx) in files)
@@ -1702,6 +1701,7 @@ namespace AvifEncoder
                 }
 
                 // 初始化 Journal；非恢复模式先清理旧快照避免混淆
+                // Resume 模式下保留所有数据，非 Resume 清除旧数据
                 if (!_config.Resume)
                 {
                     try { if (_fs.FileExists(_snapshotPath)) _fs.DeleteFile(_snapshotPath); } catch { }

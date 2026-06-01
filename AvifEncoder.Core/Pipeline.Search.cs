@@ -699,9 +699,12 @@ namespace AvifEncoder
             {
                 if (!_csvHeaderWritten)
                 {
-                    _fs.WriteAllText(_csvPath,
-                        string.Join(",", CsvColumnNames) + "\n",
-                        new UTF8Encoding(true));
+                    if (!_fs.FileExists(_csvPath))
+                    {
+                        _fs.WriteAllText(_csvPath,
+                            string.Join(",", CsvColumnNames) + "\n",
+                            new UTF8Encoding(true));
+                    }
                     _csvHeaderWritten = true;
                 }
 
@@ -713,12 +716,7 @@ namespace AvifEncoder
         {
             string p = Path.Combine(_outputDir, "avif_stats.csv");
 
-            // 恢复模式：CSV 已通过 AppendCsvRow 增量写入，无需覆盖（避免丢失旧条目）
-            if (_config.Resume)
-            {
-                SafeWriteLine($"CSV 已更新: {p} (增量模式，保留历史记录)");
-                return;
-            }
+            // ★ CSV 由 AppendCsvRow 逐行写入，ExportCsv 不再覆盖（保留历史）
 
             var sb = new StringBuilder();
             sb.AppendLine(string.Join(",", CsvColumnNames));

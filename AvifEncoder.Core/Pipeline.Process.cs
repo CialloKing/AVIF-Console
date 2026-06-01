@@ -250,7 +250,7 @@ namespace AvifEncoder
                             }
 
                             if (_config.Resume && result.Success)
-                                AppendJournal(inputPath, "success", new { crf = capturedCrf, size = result.OutputSize });
+                            { /* journal 改由指标完成后写入 */ }
 
                             MarkProcessed(result);
                             results.Add(result);
@@ -584,7 +584,7 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None);
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath);
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
                     }
@@ -652,7 +652,7 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None);
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath);
                         _advancedMetricTasks.Enqueue(bgTask);
                     }
                 }
