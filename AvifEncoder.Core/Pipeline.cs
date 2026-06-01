@@ -335,7 +335,7 @@ namespace AvifEncoder
                 _advancedMetricSemaphore.Release();
             }
             // ★ 先更新CSV行(原子操作), 再写journal(防止journal有记录但CSV为空)
-            if (outputFileName != null) TryFlushCsvRow(outputFileName, cacheKey);
+            if (outputFileName != null) { _logger.LogInfo($"[CSV-FLUSH] START {outputFileName}"); TryFlushCsvRow(outputFileName, cacheKey); }
             if (inputPath != null)
                 AppendJournal(inputPath, "success");
             _progress.MarkFileProcessed();
@@ -346,23 +346,24 @@ namespace AvifEncoder
         {
             try
             {
-                if (!_cache.TryGetMetrics(cacheKey, out var m)) return;
+                if (!_cache.TryGetMetrics(cacheKey, out var m)) { _logger.LogInfo($"[CSV-FLUSH] FAIL cache miss: {outputFileName} key={cacheKey[..Math.Min(30,cacheKey.Length)]}..."); return; }
                 string p = Path.Combine(_outputDir, "avif_stats.csv");
-                if (!_fs.FileExists(p)) return;
+                if (!_fs.FileExists(p)) { _logger.LogInfo($"[CSV-FLUSH] FAIL no file: {p}"); return; }
                 var lines = File.ReadAllLines(p);
                 for (int i = 1; i < lines.Length; i++)
                 {
                     var cols = lines[i].Split(',');
                     if (cols.Length > 0 && cols[0] == outputFileName && cols.Length >= 19)
                     {
-                        cols[11] = FormatDbValue(m.XPSNR_Y);
-                        cols[12] = FormatDbValue(m.XPSNR_U);
-                        cols[13] = FormatDbValue(m.XPSNR_V);
-                        cols[14] = FormatDbValue(m.W_XPSNR);
-                        cols[15] = FormatMetric(m.SSIMULACRA2);
-                        cols[16] = FormatMetric(m.Butteraugli_Raw);
-                        cols[17] = FormatMetric(m.Butteraugli_3norm);
-                        cols[18] = FormatMetric(m.GMSD);
+                        // ★ 只覆盖有值的列, 不抹掉已有数据
+                        if (m.XPSNR_Y.HasValue) cols[11] = FormatDbValue(m.XPSNR_Y.Value);
+                        if (m.XPSNR_U.HasValue) cols[12] = FormatDbValue(m.XPSNR_U.Value);
+                        if (m.XPSNR_V.HasValue) cols[13] = FormatDbValue(m.XPSNR_V.Value);
+                        if (m.W_XPSNR.HasValue) cols[14] = FormatDbValue(m.W_XPSNR.Value);
+                        if (m.SSIMULACRA2.HasValue) cols[15] = FormatMetric(m.SSIMULACRA2.Value);
+                        if (m.Butteraugli_Raw.HasValue) cols[16] = FormatMetric(m.Butteraugli_Raw.Value);
+                        if (m.Butteraugli_3norm.HasValue) cols[17] = FormatMetric(m.Butteraugli_3norm.Value);
+                        if (m.GMSD.HasValue) cols[18] = FormatMetric(m.GMSD.Value);
                         lines[i] = string.Join(",", cols);
                         lock (_csvLock)
                             _fs.WriteAllText(p, string.Join("\n", lines) + "\n", new UTF8Encoding(true));
