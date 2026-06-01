@@ -1,8 +1,8 @@
-using System.Collections.Concurrent;
+ï»¿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;   // Èç¹ûÊ¹ÓÃ System.Text.Json
+using System.Text.Json;   // å¦‚æœä½¿ç”¨ System.Text.Json
 using System.Text.RegularExpressions;
 
 
@@ -12,12 +12,12 @@ namespace AvifEncoder
     partial class AvifPipeline
     {
 
-        // 3. CRF ËÑË÷
-        // ---------- Ö÷µ÷¶È ----------
-        // ĞŞ¸ÄÇ©Ãû£¬Ôö¼Ó originalFileName ²ÎÊı
+        // 3. CRF æœç´¢
+        // ---------- ä¸»è°ƒåº¦ ----------
+        // ä¿®æ”¹ç­¾åï¼Œå¢åŠ  originalFileName å‚æ•°
         private async Task<CRFSearchResult> RunCRFSearchAsync(string inputPath, PresetConfig config, EncodingInfo encInfo, string originalFileName)
         {
-            // Ê¹ÓÃ originalFileName ×÷ÎªËùÓĞÏÔÊ¾µÄ»ù×¼Ãû³Æ
+            // ä½¿ç”¨ originalFileName ä½œä¸ºæ‰€æœ‰æ˜¾ç¤ºçš„åŸºå‡†åç§°
             string displayName = originalFileName;
 
             int crf = encInfo.BaseCrf;
@@ -25,13 +25,13 @@ namespace AvifEncoder
             var searchTime = TimeSpan.Zero;
             bool searchBasedCRF = false, useSafeModeFinalEncode = false;
             int totalEvaluations = 0;
-            string name = displayName;   // ÓÃÓÚÈÕÖ¾ºÍÊä³ö
+            string name = displayName;   // ç”¨äºæ—¥å¿—å’Œè¾“å‡º
 
             if (!encInfo.IsLosslessMode && config.UseCRFSearch)
             {
                 string metricModeLabel = (config.MetricMode ?? "vmaf").ToUpper();
                 string targetDisplay = GetTargetDisplayString(config);
-                SafeWriteLine($"  [SEARCH] [{name}] ¿ªÊ¼ CRF ËÑË÷ (Ä¿±ê {metricModeLabel}={targetDisplay})£¬ÇëÄÍĞÄµÈ´ı...");
+                SafeWriteLine($"  [SEARCH] [{name}] å¼€å§‹ CRF æœç´¢ (ç›®æ ‡ {metricModeLabel}={targetDisplay})ï¼Œè¯·è€å¿ƒç­‰å¾…...");
 
                 try
                 {
@@ -40,21 +40,21 @@ namespace AvifEncoder
                     int finalCrf;
                     string usedPixFmt;
 
-                    // ¡ï ´«µİ displayName ¸øËÑË÷ºËĞÄ
+                    // â˜… ä¼ é€’ displayName ç»™æœç´¢æ ¸å¿ƒ
                     (searchOk, finalCrf, usedPixFmt, totalEvaluations) = await TrySearchWithFormatAttempts(
-                        inputPath, config, encInfo, actualPixFmt, name);   // ´«Èë name
+                        inputPath, config, encInfo, actualPixFmt, name);   // ä¼ å…¥ name
 
                     if (!searchOk)
                     {
-                        // µ± MinCRF=0 Ê±£¬CRF=0 ÒÑÊÇÖÊÁ¿ÉÏÏŞ£¬Ìø¹ıºÄÊ±µÄ°²È«É¨Ãè
+                        // å½“ MinCRF=0 æ—¶ï¼ŒCRF=0 å·²æ˜¯è´¨é‡ä¸Šé™ï¼Œè·³è¿‡è€—æ—¶çš„å®‰å…¨æ‰«æ
                         if (config.MinCRF == 0)
                         {
-                            SafeWriteLine($"  [WARN] [{name}] ËÑË÷Î´´ïÄ¿±ê£¬MinCRF=0£¬Ìø¹ı°²È«É¨Ãè£¬½«Ö±½ÓÊ¹ÓÃ CRF=0 ×îÖÕ±àÂë");
-                            // searchOk ±£³Ö false£¬ºóĞø else ·ÖÖ§»á´¦Àí
+                            SafeWriteLine($"  [WARN] [{name}] æœç´¢æœªè¾¾ç›®æ ‡ï¼ŒMinCRF=0ï¼Œè·³è¿‡å®‰å…¨æ‰«æï¼Œå°†ç›´æ¥ä½¿ç”¨ CRF=0 æœ€ç»ˆç¼–ç ");
+                            // searchOk ä¿æŒ falseï¼Œåç»­ else åˆ†æ”¯ä¼šå¤„ç†
                         }
                         else
                         {
-                            SafeWriteLine($" [RETRY] [{name}] ÆÕÍ¨ËÑË÷Ê§°Ü£¬¿ªÊ¼°²È«Ä£Ê½È«É¨Ãè (yuv420p, cpu?used 0)...");
+                            SafeWriteLine($" [RETRY] [{name}] æ™®é€šæœç´¢å¤±è´¥ï¼Œå¼€å§‹å®‰å…¨æ¨¡å¼å…¨æ‰«æ (yuv420p, cpu?used 0)...");
                             (searchOk, finalCrf, usedPixFmt, useSafeModeFinalEncode) = await RunSafeModeScan(
                                 inputPath, config, name, config.MinCRF, config.MaxCRF);
                         }
@@ -72,34 +72,34 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        // ¡ï ĞÂÂß¼­£ºÈôËÑË÷ÎŞ½âÇÒ MinCRF=0£¬ÔòÖ±½ÓÊ¹ÓÃ CRF=0 ½øĞĞ×îÖÕ±àÂë
+                        // â˜… æ–°é€»è¾‘ï¼šè‹¥æœç´¢æ— è§£ä¸” MinCRF=0ï¼Œåˆ™ç›´æ¥ä½¿ç”¨ CRF=0 è¿›è¡Œæœ€ç»ˆç¼–ç 
                         if (config.MinCRF == 0)
                         {
                             crf = 0;
-                            SafeWriteLine($"  [WARN] [{name}] ËÑË÷Î´´ïÄ¿±ê£¬CRF=0 Ò²ÎŞ·¨Âú×ã£¬½«Ê¹ÓÃ CRF=0 ½øĞĞ×îÖÕ±àÂë");
-                            _logger.LogInfo($"ËÑË÷Ê§°Üµ« MinCRF=0£¬Ç¿ÖÆÊ¹ÓÃ CRF=0 ±àÂë: {name}");
+                            SafeWriteLine($"  [WARN] [{name}] æœç´¢æœªè¾¾ç›®æ ‡ï¼ŒCRF=0 ä¹Ÿæ— æ³•æ»¡è¶³ï¼Œå°†ä½¿ç”¨ CRF=0 è¿›è¡Œæœ€ç»ˆç¼–ç ");
+                            _logger.LogInfo($"æœç´¢å¤±è´¥ä½† MinCRF=0ï¼Œå¼ºåˆ¶ä½¿ç”¨ CRF=0 ç¼–ç : {name}");
                         }
                         else
                         {
                             crf = config.BaseCRF;
-                            SafeWriteLine($"  [WARN] [{name}] ËùÓĞËÑË÷Ê§°Ü£¬Ê¹ÓÃ BaseCRF ({crf}) Ö±½Ó±àÂë");
+                            SafeWriteLine($"  [WARN] [{name}] æ‰€æœ‰æœç´¢å¤±è´¥ï¼Œä½¿ç”¨ BaseCRF ({crf}) ç›´æ¥ç¼–ç ");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    // Èô×îĞ¡CRFÎª0£¬Òì³£Ê±Ò²³¢ÊÔÊ¹ÓÃ0±àÂë£¨Ä¿±êÎŞ·¨´ï³É£¬µ«0ÊÇÖÊÁ¿ÉÏÏŞ£©
+                    // è‹¥æœ€å°CRFä¸º0ï¼Œå¼‚å¸¸æ—¶ä¹Ÿå°è¯•ä½¿ç”¨0ç¼–ç ï¼ˆç›®æ ‡æ— æ³•è¾¾æˆï¼Œä½†0æ˜¯è´¨é‡ä¸Šé™ï¼‰
                     if (config.MinCRF == 0)
                     {
                         crf = 0;
-                        _logger.LogInfo($"ËÑË÷Òì³£µ« MinCRF=0£¬Ç¿ÖÆÊ¹ÓÃ CRF=0 ±àÂë: {name} - {ex.Message}");
-                        SafeWriteLine($" [WARN] [{name}] ËÑË÷Òì³££¬Ê¹ÓÃ CRF=0 ½øĞĞ×îÖÕ±àÂë");
+                        _logger.LogInfo($"æœç´¢å¼‚å¸¸ä½† MinCRF=0ï¼Œå¼ºåˆ¶ä½¿ç”¨ CRF=0 ç¼–ç : {name} - {ex.Message}");
+                        SafeWriteLine($" [WARN] [{name}] æœç´¢å¼‚å¸¸ï¼Œä½¿ç”¨ CRF=0 è¿›è¡Œæœ€ç»ˆç¼–ç ");
                     }
                     else
                     {
                         crf = config.BaseCRF;
-                        _logger.LogInfo($"ËÑË÷Òì³££¬»ØÍËÖ±½Ó±àÂë: {name} - {ex.Message}");
-                        SafeWriteLine($" [WARN] [{name}] CRFËÑË÷Òì³££¬Ê¹ÓÃ BaseCRF ({crf}) Ö±½Ó±àÂë");
+                        _logger.LogInfo($"æœç´¢å¼‚å¸¸ï¼Œå›é€€ç›´æ¥ç¼–ç : {name} - {ex.Message}");
+                        SafeWriteLine($" [WARN] [{name}] CRFæœç´¢å¼‚å¸¸ï¼Œä½¿ç”¨ BaseCRF ({crf}) ç›´æ¥ç¼–ç ");
                     }
                 }
             }
@@ -115,9 +115,9 @@ namespace AvifEncoder
             };
         }
 
-        // ---------- ³¢ÊÔÄ¿±ê¸ñÊ½ÁĞ±íËÑË÷ ----------
-        // ---------- ³¢ÊÔÄ¿±ê¸ñÊ½ÁĞ±íËÑË÷ ----------
-        // ĞŞ¸ÄÇ©Ãû£¬Ôö¼Ó displayName ²ÎÊı
+        // ---------- å°è¯•ç›®æ ‡æ ¼å¼åˆ—è¡¨æœç´¢ ----------
+        // ---------- å°è¯•ç›®æ ‡æ ¼å¼åˆ—è¡¨æœç´¢ ----------
+        // ä¿®æ”¹ç­¾åï¼Œå¢åŠ  displayName å‚æ•°
         private async Task<(bool ok, int crf, string pixFmt, int totalEvalCount)> TrySearchWithFormatAttempts(
             string inputPath, PresetConfig config, EncodingInfo encInfo,
             string actualPixFmt, string displayName)
@@ -132,10 +132,10 @@ namespace AvifEncoder
                     string desc = fmt.Contains("422") ? "422" :
                                   (fmt.Contains("420") && !actualPixFmt.Contains("420") ? "420" : "");
                     if (!string.IsNullOrEmpty(desc))
-                        SafeWriteLine($"  [RETRY] [{displayName}] ³¢ÊÔ {desc} {fmt} ...");
+                        SafeWriteLine($"  [RETRY] [{displayName}] å°è¯• {desc} {fmt} ...");
                 }
 
-                // ¡ï ½« displayName ´«¸ø»ìºÏËÑË÷
+                // â˜… å°† displayName ä¼ ç»™æ··åˆæœç´¢
                 (int crfResult, bool failed, bool qualityInsufficient, int evalCount) =
                     await HybridSearchCRFAsync(inputPath, encInfo.TileCols, config, fmt, IsJpeg(inputPath), displayName);
                 totalEvalCount += evalCount;
@@ -149,7 +149,7 @@ namespace AvifEncoder
             return (false, config.BaseCRF, actualPixFmt, totalEvalCount);
         }
 
-        // ---------- °²È«Ä£Ê½È«É¨Ãè ----------
+        // ---------- å®‰å…¨æ¨¡å¼å…¨æ‰«æ ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
 RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow, int scanHigh)
         {
@@ -160,7 +160,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             double target = config.GetEffectiveTarget() + SSIMMargin;
             int bestSafeCRF = -1;
-            // ¡ï Ê¹ÓÃ´«ÈëµÄÇø¼ä£¬¶ø·ÇÈ«¾Ö MinCRF/MaxCRF
+            // â˜… ä½¿ç”¨ä¼ å…¥çš„åŒºé—´ï¼Œè€Œéå…¨å±€ MinCRF/MaxCRF
             int start = scanHigh;
             int end = scanLow;
             int totalSteps = start - end + 1;
@@ -173,7 +173,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 if (safeToken.IsCancellationRequested) break;
 
                 if (step == 1 || step == totalSteps || step % 5 == 0)
-                    SafeWriteLine($"  [{name}] °²È«É¨Ãè {step}/{totalSteps} (CRF={testCrf})...");
+                    SafeWriteLine($"  [{name}] å®‰å…¨æ‰«æ {step}/{totalSteps} (CRF={testCrf})...");
 
                 double curSSIM = await SafeModeSSIM(inputPath, config, testCrf, safeToken);
                 if (curSSIM >= target)
@@ -187,7 +187,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     consecutiveFailures++;
                     if (consecutiveFailures >= 5)
                     {
-                        SafeWriteLine($"  [{name}] °²È«É¨ÃèÁ¬ĞøÊ§°Ü {consecutiveFailures} ´Î£¬ÖÕÖ¹É¨Ãè");
+                        SafeWriteLine($"  [{name}] å®‰å…¨æ‰«æè¿ç»­å¤±è´¥ {consecutiveFailures} æ¬¡ï¼Œç»ˆæ­¢æ‰«æ");
                         break;
                     }
                 }
@@ -199,13 +199,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             if (bestSafeCRF > 0)
             {
-                SafeWriteLine($"  -> [{name}] °²È«Ä£Ê½É¨Ãè³É¹¦£¬×î¼Ñ CRF = {bestSafeCRF}");
+                SafeWriteLine($"  -> [{name}] å®‰å…¨æ¨¡å¼æ‰«ææˆåŠŸï¼Œæœ€ä½³ CRF = {bestSafeCRF}");
                 return (true, bestSafeCRF, "yuv420p", true);
             }
             return (false, config.BaseCRF, "yuv420p", false);
         }
 
-        // ---------- °²È«Ä£Ê½µ¥´Î SSIM ----------
+        // ---------- å®‰å…¨æ¨¡å¼å•æ¬¡ SSIM ----------
         private async Task<double> SafeModeSSIM(string inputPath, PresetConfig config, int testCrf,
                                         CancellationToken token)
         {
@@ -222,7 +222,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 string aomPart = string.IsNullOrEmpty(effectiveAom) ? "" : $"-aom-params {effectiveAom}";
                 try
                 {
-                    // ÌáÇ°»ñÈ¡·Ö±æÂÊ£¬ÓÃÓÚºÏ·¨ tile ¼ÆËã
+                    // æå‰è·å–åˆ†è¾¨ç‡ï¼Œç”¨äºåˆæ³• tile è®¡ç®—
                     var (w, h) = await GetResolutionAsync(inputPath);
 
                     string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart, w);
@@ -243,8 +243,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                         return GetSearchScore(metrics, config.MetricMode ?? "ssim");
                     }
 
-                    // »ØÍË´«Í³ SSIM
-                    _logger.LogInfo($"°²È«Ä£Ê½»ØÍË´«Í³ SSIM: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
+                    // å›é€€ä¼ ç»Ÿ SSIM
+                    _logger.LogInfo($"å®‰å…¨æ¨¡å¼å›é€€ä¼ ç»Ÿ SSIM: [{Path.GetFileName(inputPath)}] CRF={testCrf}");
                     return await SSIMDirect(inputPath, tmpAvif, "yuv420p");
                 }
                 finally
@@ -258,10 +258,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             }
         }
 
-        // 4. ¹¹½¨ÏñËØ¸ñÊ½³¢ÊÔÁĞ±í£¨´ÓÔ­ËÑË÷´úÂëÖĞÌáÈ¡£©
+        // 4. æ„å»ºåƒç´ æ ¼å¼å°è¯•åˆ—è¡¨ï¼ˆä»åŸæœç´¢ä»£ç ä¸­æå–ï¼‰
         internal static List<string> BuildPixFmtAttempts(PresetConfig config, string actualPixFmt, bool hasAlpha)
         {
-            // ÌáÈ¡Î»Éîºó×ººÍ»ù´¡¸ñÊ½
+            // æå–ä½æ·±åç¼€å’ŒåŸºç¡€æ ¼å¼
             string depthSuffix = actualPixFmt.EndsWith("10le") ? "10le" : "";
             string baseFmt = depthSuffix.Length > 0 ? actualPixFmt[..^4] : actualPixFmt;
 
@@ -279,7 +279,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             {
                 string chroma = level switch { 0 => "444", 1 => "422", _ => "420" };
 
-                // ¡ï ĞŞ¸´£ºÕıÈ·Éú³É yuva / yuv ¸ñÊ½
+                // â˜… ä¿®å¤ï¼šæ­£ç¡®ç”Ÿæˆ yuva / yuv æ ¼å¼
                 string fmt8 = effectiveAlpha ? $"yuva{chroma}p" : $"yuv{chroma}p";
                 string fmt10 = $"{fmt8}10le";
 
@@ -306,7 +306,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             return [.. attempts.Distinct()];
         }
 
-        // 5. Ö´ĞĞ×îÖÕ±àÂë
+        // 5. æ‰§è¡Œæœ€ç»ˆç¼–ç 
         private async Task<FinalEncodeResult> PerformFinalEncodeAsync(
     string inputPath, string outputPath, PresetConfig config,
     EncodingInfo encInfo, CRFSearchResult searchResult)
@@ -321,7 +321,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             if (searchResult.UseSafeModeFinalEncode)
             {
-                // °²È«Ä£Ê½×îÖÕ±àÂë£º´«ÈëÍ¼Ïñ¿í¶È£¬È·±£ tile ºÏ·¨
+                // å®‰å…¨æ¨¡å¼æœ€ç»ˆç¼–ç ï¼šä¼ å…¥å›¾åƒå®½åº¦ï¼Œç¡®ä¿ tile åˆæ³•
                 return await EncodeSafeMode(inputPath, outputPath, config, searchResult,
                                             timeoutMinutes, aomPart, encInfo.Width);
             }
@@ -336,15 +336,15 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
 
                 if (!result.Success && string.IsNullOrEmpty(result.FailReason))
-                    result.FailReason = $"±àÂëÊ§°Ü£¨¶à´ÎÖØÊÔºó£©: {result.FailReason}";
+                    result.FailReason = $"ç¼–ç å¤±è´¥ï¼ˆå¤šæ¬¡é‡è¯•åï¼‰: {result.FailReason}";
 
                 return result;
             }
         }
 
         /// <summary>
-        /// ¹¹Ôì°²È«Ä£Ê½£¨yuv420p + µ¥ tile + È«É«Óò£©µÄ ffmpeg ²ÎÊı×Ö·û´®¡£
-        /// ÈôÆôÓÃÁË SerialEncode£¬ÔòÇ¿ÖÆ tile=0 ÇÒ¹Ø±Õ row?mt¡£
+        /// æ„é€ å®‰å…¨æ¨¡å¼ï¼ˆyuv420p + å• tile + å…¨è‰²åŸŸï¼‰çš„ ffmpeg å‚æ•°å­—ç¬¦ä¸²ã€‚
+        /// è‹¥å¯ç”¨äº† SerialEncodeï¼Œåˆ™å¼ºåˆ¶ tile=0 ä¸”å…³é—­ row?mtã€‚
         /// </summary>
         private static string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
                                  int crf, string aomPart, int imageWidth)
@@ -358,7 +358,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             if (imageWidth < 256 || minCols > maxCols)
                 safeTileCols = 0;
             else
-                safeTileCols = minCols;   // minCols ÒÑÈ·±£ tile ¿í¶È ¡Ü4096£¬ÎŞĞè¶îÍâÇ¿ÖÆ ¡İ2
+                safeTileCols = minCols;   // minCols å·²ç¡®ä¿ tile å®½åº¦ â‰¤4096ï¼Œæ— éœ€é¢å¤–å¼ºåˆ¶ â‰¥2
 
             string safeRowMt;
             var enc = Av1EncoderFactory.Get(config.Encoder);
@@ -376,7 +376,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string safeTile = enc.SupportsTiles
                 ? $"-tile-columns {safeTileCols} -tile-rows 0" : "";
             string encArgs = EncodeHelpers.BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
-            string threadsArg = config.SerialEncode ? "-threads 1" : "";  // ĞÂÊôĞÔÃû
+            string threadsArg = config.SerialEncode ? "-threads 1" : "";  // æ–°å±æ€§å
 
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt yuv420p " +
@@ -402,17 +402,17 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string? finalCommand;
             bool usedSafeModeFallback = false;
 
-            // 1. ³¢ÊÔ³£¹æ±àÂë
+            // 1. å°è¯•å¸¸è§„ç¼–ç 
             (success, encodeTime, retries, failReason, fromCache, actualAom, finalCommand) =
                 await EncodeToFileExAsync(inputPath, outputPath, crf, encInfo.TileCols, config.FinalCpuUsed,
                     config, IsJpeg(inputPath), actualPixFmt, encInfo.IsTrulyLossless, timeoutMinutes);
 
-            // 2. CRF µİÔöÖØÊÔ
+            // 2. CRF é€’å¢é‡è¯•
             if (!success && searchResult.SearchBasedCRF && crf < config.MaxCRF)
             {
                 for (int attemptCRF = crf + 1; attemptCRF <= config.MaxCRF; attemptCRF++)
                 {
-                    SafeWriteLine($" [WARN] [{name}] CRF={crf} ±àÂëÊ§°Ü£¬³¢ÊÔ CRF={attemptCRF}...");
+                    SafeWriteLine($" [WARN] [{name}] CRF={crf} ç¼–ç å¤±è´¥ï¼Œå°è¯• CRF={attemptCRF}...");
                     (success, encodeTime, retries, failReason, fromCache, actualAom, finalCommand) =
                         await EncodeToFileExAsync(inputPath, outputPath, attemptCRF, encInfo.TileCols, config.FinalCpuUsed,
                             config, IsJpeg(inputPath), actualPixFmt, encInfo.IsTrulyLossless, timeoutMinutes);
@@ -420,11 +420,11 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
             }
 
-            // 3. ×îÖÕ°²È«Ä£Ê½»ØÍË£¨Ê¹ÓÃºÏ·¨ tile ³ß´ç£©
+            // 3. æœ€ç»ˆå®‰å…¨æ¨¡å¼å›é€€ï¼ˆä½¿ç”¨åˆæ³• tile å°ºå¯¸ï¼‰
             if (!success)
             {
-                SafeWriteLine($" [WARN] [{name}] ³£¹æ/½µ¼¶¾ùÊ§°Ü£¬³¢ÊÔ×îÖÕ°²È«Ä£Ê½£¨yuv420p£©...");
-                // ¹¹½¨°²È«Ä£Ê½²ÎÊı£¬´«ÈëÍ¼Ïñ¿í¶ÈÒÔÂú×ã tile ºÏ·¨ĞÔ
+                SafeWriteLine($" [WARN] [{name}] å¸¸è§„/é™çº§å‡å¤±è´¥ï¼Œå°è¯•æœ€ç»ˆå®‰å…¨æ¨¡å¼ï¼ˆyuv420pï¼‰...");
+                // æ„å»ºå®‰å…¨æ¨¡å¼å‚æ•°ï¼Œä¼ å…¥å›¾åƒå®½åº¦ä»¥æ»¡è¶³ tile åˆæ³•æ€§
                 string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, encInfo.Width);
                 var swSafe = Stopwatch.StartNew();
                 (bool safeOk, string safeErr) = await RunFfmpegExAsync(_ffmpegPath, safeArgs, TimeSpan.FromMinutes(timeoutMinutes * 2));
@@ -499,7 +499,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 ActualPixFmt = "yuv420p",
                 EncodeTime = swSafe.Elapsed,
                 Retries = 0,
-                FailReason = success ? "" : $"°²È«Ä£Ê½±àÂëÊ§°Ü: {failReason}",
+                FailReason = success ? "" : $"å®‰å…¨æ¨¡å¼ç¼–ç å¤±è´¥: {failReason}",
                 FromCache = false,
                 ActualAom = safeDesc,
                 FinalCommand = success ? safeArgs : null,
@@ -516,12 +516,12 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
     EncodingInfo encInfo, CRFSearchResult searchResult,
     int timeoutMinutes, string aomPart, string effectiveAom)
         {
-            SafeWriteLine($" [WARN] [{Path.GetFileName(inputPath)}] ÕæÎŞËğÊ§°Ü£¬³¢ÊÔ -crf 0 ...");
+            SafeWriteLine($" [WARN] [{Path.GetFileName(inputPath)}] çœŸæ— æŸå¤±è´¥ï¼Œå°è¯• -crf 0 ...");
 
             var fallbackConfig = new PresetConfig
             {
                 BaseCRF = 0,
-                Lossless = false,                           // Ê¹ÓÃ -crf 0 ¶ø·ÇÕæÎŞËğÄ£Ê½
+                Lossless = false,                           // ä½¿ç”¨ -crf 0 è€ŒéçœŸæ— æŸæ¨¡å¼
                 PixelFormat = searchResult.ActualPixFmt,
                 AomParams = effectiveAom,
                 FinalCpuUsed = 0,
@@ -544,7 +544,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 ActualPixFmt = searchResult.ActualPixFmt,
                 EncodeTime = encodeTime,
                 Retries = retries,
-                FailReason = success ? "" : "ÕæÎŞËğ»ØÍËÈÔÈ»Ê§°Ü",
+                FailReason = success ? "" : "çœŸæ— æŸå›é€€ä»ç„¶å¤±è´¥",
                 FromCache = fromCache,
                 ActualAom = actualAom,
                 FinalCommand = finalCommand,
@@ -566,7 +566,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             }
             PrintProgress(r);
 
-            // ¡ï Ïò GUI ±¨¸æ½ø¶È£¨0 ~ 95%£¬Ê£Óà 5% µÈºóÌ¨Ö¸±êÍê³Éºó²¹Æë£©
+            // â˜… å‘ GUI æŠ¥å‘Šè¿›åº¦ï¼ˆ0 ~ 95%ï¼Œå‰©ä½™ 5% ç­‰åå°æŒ‡æ ‡å®Œæˆåè¡¥é½ï¼‰
             if (_progress.TotalFiles > 0)
             {
                 int pct = _progress.ProcessedCount * 95 / _progress.TotalFiles;

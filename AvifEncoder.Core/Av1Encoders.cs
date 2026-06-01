@@ -1,4 +1,4 @@
-namespace AvifEncoder
+﻿namespace AvifEncoder
 {
     public interface IAv1Encoder
     {

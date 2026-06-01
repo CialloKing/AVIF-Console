@@ -1,4 +1,4 @@
-namespace AvifEncoder
+﻿namespace AvifEncoder
 {
     /// <summary> 一次 libvmaf 计算得到的全部常用指标 </summary>
     public sealed class QualityMetrics

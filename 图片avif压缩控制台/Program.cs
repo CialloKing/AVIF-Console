@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+ï»¿using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -30,13 +30,13 @@ namespace AvifEncoder
 
         static int GetDefaultThreads() => Math.Max(2, (int)Math.Sqrt(Environment.ProcessorCount));
 
-        // ========== °ïÖúÎÄ±¾ ==========
+        // ========== å¸®åŠ©æ–‡æœ¬ ==========
         static void PrintHelp()
         {
             Console.WriteLine(HelpText.CliHelp);
         }
 
-        // ========== ²ÎÊý½âÎöÊý¾ÝÀà ==========
+        // ========== å‚æ•°è§£æžæ•°æ®ç±» ==========
         private class ParsedOptions
         {
             public string InputDir = "input";
@@ -79,7 +79,7 @@ namespace AvifEncoder
             public string? Extensions { get; set; }
         }
 
-        // ========== ²ÎÊý½âÎö ==========
+        // ========== å‚æ•°è§£æž ==========
         private static ParsedOptions ParseCommandLineArgs(string[] args)
         {
             var opts = new ParsedOptions();
@@ -94,7 +94,7 @@ namespace AvifEncoder
                     string? value = null;
                     int eq = key.IndexOf('=');
                     if (eq >= 0) { value = key[(eq + 1)..]; key = key[..eq]; }
-                    string GetValue() => value ?? (++i < args.Length ? args[i] : throw new Exception($"Ñ¡Ïî --{key} È±ÉÙÖµ"));
+                    string GetValue() => value ?? (++i < args.Length ? args[i] : throw new Exception($"é€‰é¡¹ --{key} ç¼ºå°‘å€¼"));
                     switch (key)
                     {
                         case "input": opts.InputDir = GetValue(); break;
@@ -106,7 +106,7 @@ namespace AvifEncoder
                                 "balanced" => CliPreset.Balanced,
                                 "best" => CliPreset.Best,
                                 "extreme" => CliPreset.Extreme,
-                                _ => throw new Exception("Ô¤Éè²ÎÊý´íÎó")
+                                _ => throw new Exception("é¢„è®¾å‚æ•°é”™è¯¯")
                             };
                             break;
                         case "search": opts.EnableSearch = true; opts.ForceNoSearch = false; break;
@@ -154,33 +154,33 @@ namespace AvifEncoder
                                     int.TryParse(parts[0], out int min) && min >= 0 && min <= 63 &&
                                     int.TryParse(parts[1], out int max) && max >= 0 && max <= 63 && min < max)
                                 { opts.CrfMin = min; opts.CrfMax = max; opts.EnableSearch = true; }
-                                else throw new Exception("CRF ·¶Î§¸ñÊ½´íÎó");
+                                else throw new Exception("CRF èŒƒå›´æ ¼å¼é”™è¯¯");
                             }
                             else
                             {
                                 if (int.TryParse(crfVal, out int r) && r >= 0 && r <= 63)
                                 { opts.ManualCrf = r; opts.ForceNoSearch = true; }
-                                else throw new Exception("CRF Ó¦Îª 1-50 µÄÕûÊý");
+                                else throw new Exception("CRF åº”ä¸º 1-50 çš„æ•´æ•°");
                             }
                             break;
                         case "chroma":
                             string c = GetValue().ToLower();
                             if (new[] { "420", "422", "444", "auto" }.Contains(c))
                                 opts.Chroma = c;
-                            else throw new Exception("--chroma ½öÖ§³Ö 420/422/444/auto");
+                            else throw new Exception("--chroma ä»…æ”¯æŒ 420/422/444/auto");
                             break;
                         case "bit-depth":
                             {
                                 string bdStr = GetValue();
                                 if (string.Equals(bdStr, "auto", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    opts.BitDepth = null; // Ê¹ÓÃ×Ô¶¯¼ì²â
+                                    opts.BitDepth = null; // ä½¿ç”¨è‡ªåŠ¨æ£€æµ‹
                                 }
                                 else if (int.TryParse(bdStr, out int bd) && (bd == 8 || bd == 10))
                                 {
                                     opts.BitDepth = bd;
                                 }
-                                else throw new Exception("--bit-depth ±ØÐëÎª 8¡¢10 »ò auto");
+                                else throw new Exception("--bit-depth å¿…é¡»ä¸º 8ã€10 æˆ– auto");
                             }
                             break;
                         case "lossless": opts.Lossless = true; break;
@@ -189,13 +189,13 @@ namespace AvifEncoder
                         case "jobs":
                             if (int.TryParse(GetValue(), out int jobs) && jobs > 0)
                                 opts.Jobs = jobs;
-                            else throw new Exception("--jobs ÐèÒªÕýÕûÊý");
+                            else throw new Exception("--jobs éœ€è¦æ­£æ•´æ•°");
                             break;
                         case "recursive": opts.Recursive = true; break;
                         case "max-resolution":
                             if (int.TryParse(GetValue(), out int mr) && mr >= 0)
                                 opts.MaxResolution = mr;
-                            else throw new Exception("--max-resolution ÐèÒª·Ç¸ºÕûÊý");
+                            else throw new Exception("--max-resolution éœ€è¦éžè´Ÿæ•´æ•°");
                             break;
                         case "output-full-res": opts.OutputFullRes = true; break;
                         case "verbose": opts.Verbose = true; break;
@@ -211,12 +211,12 @@ namespace AvifEncoder
                         case "search-cpu-used":
                             if (int.TryParse(GetValue(), out int searchCpu) && searchCpu >= 0 && searchCpu <= 13)
                                 opts.SearchCpuUsed = searchCpu;
-                            else throw new Exception("--search-cpu-used ÐèÒª 0-13 Ö®¼äµÄÕûÊý");
+                            else throw new Exception("--search-cpu-used éœ€è¦ 0-13 ä¹‹é—´çš„æ•´æ•°");
                             break;
                         case "final-cpu-used":
                             if (int.TryParse(GetValue(), out int finalCpu) && finalCpu >= 0 && finalCpu <= 13)
                                 opts.FinalCpuUsed = finalCpu;
-                            else throw new Exception("--final-cpu-used ÐèÒª 0-13 Ö®¼äµÄÕûÊý");
+                            else throw new Exception("--final-cpu-used éœ€è¦ 0-13 ä¹‹é—´çš„æ•´æ•°");
                             break;
                         case "sweep":
                             opts.SweepMode = true;
@@ -235,7 +235,7 @@ namespace AvifEncoder
                             {
                                 string type = key["timeout-".Length..];
                                 if (!int.TryParse(GetValue(), out int val) || val <= 0)
-                                    throw new Exception($"--{key} ÐèÒªÕýÕûÊý");
+                                    throw new Exception($"--{key} éœ€è¦æ­£æ•´æ•°");
                                 switch (type)
                                 {
                                     case "encode": opts.EncodeTimeout = val; break;
@@ -244,10 +244,10 @@ namespace AvifEncoder
                                     case "safe-encode": opts.SafeEncodeTimeout = val; break;
                                     case "search-encode": opts.SearchEncodeTimeout = val; break;
                                     case "ssim": opts.SsimTimeout = val; break;
-                                    default: throw new Exception($"Î´Öª³¬Ê±Ñ¡Ïî --{key}");
+                                    default: throw new Exception($"æœªçŸ¥è¶…æ—¶é€‰é¡¹ --{key}");
                                 }
                             }
-                            else throw new Exception($"Î´ÖªÑ¡Ïî --{key}");
+                            else throw new Exception($"æœªçŸ¥é€‰é¡¹ --{key}");
                             break;
                     }
                     i++;
@@ -259,7 +259,7 @@ namespace AvifEncoder
                     if (flags == "i" || flags == "o" || flags == "p" || flags == "c" || flags == "b" ||
                         flags == "t" || flags == "e" || flags == "j" || flags == "x")
                     {
-                        if (++i >= args.Length) throw new Exception($"Ñ¡Ïî -{flags} È±ÉÙÖµ");
+                        if (++i >= args.Length) throw new Exception($"é€‰é¡¹ -{flags} ç¼ºå°‘å€¼");
                         string val = args[i];
                         switch (flags)
                         {
@@ -272,30 +272,30 @@ namespace AvifEncoder
                                     "balanced" => CliPreset.Balanced,
                                     "best" => CliPreset.Best,
                                     "extreme" => CliPreset.Extreme,
-                                    _ => throw new Exception("Ô¤Éè²ÎÊý´íÎó")
+                                    _ => throw new Exception("é¢„è®¾å‚æ•°é”™è¯¯")
                                 };
                                 break;
                             case "c":
                                 if (new[] { "420", "422", "444", "auto" }.Contains(val.ToLower()))
                                     opts.Chroma = val.ToLower();
-                                else throw new Exception("-c ½öÖ§³Ö 420/422/444/auto");
+                                else throw new Exception("-c ä»…æ”¯æŒ 420/422/444/auto");
                                 break;
                             case "b":
                                 if (string.Equals(val, "auto", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    opts.BitDepth = null; // Ê¹ÓÃ×Ô¶¯¼ì²â
+                                    opts.BitDepth = null; // ä½¿ç”¨è‡ªåŠ¨æ£€æµ‹
                                 }
                                 else if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10))
                                 {
                                     opts.BitDepth = bd2;
                                 }
-                                else throw new Exception("-b ±ØÐëÎª 8¡¢10 »ò auto");
+                                else throw new Exception("-b å¿…é¡»ä¸º 8ã€10 æˆ– auto");
                                 break;
                             case "t": opts.OutputTemplate = val.Trim('"', '\''); break;
                             case "e": opts.Encoder = val; break;
                             case "j":
                                 if (int.TryParse(val, out int j) && j > 0) opts.Jobs = j;
-                                else throw new Exception("-j ÐèÒªÕýÕûÊý");
+                                else throw new Exception("-j éœ€è¦æ­£æ•´æ•°");
                                 break;
                             case "x": opts.Extensions = val; break;
                         }
@@ -316,18 +316,18 @@ namespace AvifEncoder
                             case 'y': opts.Overwrite = true; break;
                             case 'n': opts.NoClobber = true; break;
                             case 'h': PrintHelp(); return null!;
-                            default: throw new Exception($"Î´Öª¶ÌÑ¡Ïî -{c}");
+                            default: throw new Exception($"æœªçŸ¥çŸ­é€‰é¡¹ -{c}");
                         }
                     }
                     i++;
                     continue;
                 }
-                throw new Exception($"ÎÞ·¨Ê¶±ðµÄ²ÎÊý: {arg}");
+                throw new Exception($"æ— æ³•è¯†åˆ«çš„å‚æ•°: {arg}");
             }
             return opts;
         }
 
-        // ========== ÅäÖÃ¹¹½¨ ==========
+        // ========== é…ç½®æž„å»º ==========
         private static PresetConfig BuildPresetConfig(ParsedOptions opts)
         {
             PresetConfig config;
@@ -388,14 +388,14 @@ namespace AvifEncoder
             if (opts.ManualCrf.HasValue)
             {
                 config.BaseCRF = opts.ManualCrf.Value;
-                config.UseCRFSearch = false;   // ¹Ì¶¨ CRF Ç¿ÖÆ¹Ø±ÕËÑË÷
+                config.UseCRFSearch = false;   // å›ºå®š CRF å¼ºåˆ¶å…³é—­æœç´¢
             }
             if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
             if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
             if (config.MinCRF >= config.MaxCRF)
                 throw new Exception(
-                    $"CRF ·¶Î§ÎÞÐ§£º×îÐ¡Öµ {config.MinCRF} ±ØÐëÐ¡ÓÚ×î´óÖµ {config.MaxCRF}¡£" +
-                    " Ê¾Àý: --crf 20:40 »ò -crf 20:40");
+                    $"CRF èŒƒå›´æ— æ•ˆï¼šæœ€å°å€¼ {config.MinCRF} å¿…é¡»å°äºŽæœ€å¤§å€¼ {config.MaxCRF}ã€‚" +
+                    " ç¤ºä¾‹: --crf 20:40 æˆ– -crf 20:40");
             if (opts.Jobs.HasValue) { config.MaxJobs = opts.Jobs.Value; config.UserSpecifiedMaxJobs = true; }
             if (!string.IsNullOrEmpty(opts.OutputTemplate)) config.OutputNameFormat = opts.OutputTemplate;
             if (opts.MaxResolution.HasValue) config.MaxResolution = opts.MaxResolution.Value;
@@ -414,7 +414,7 @@ namespace AvifEncoder
             if (opts.FinalCpuUsed.HasValue) config.FinalCpuUsed = opts.FinalCpuUsed.Value;
             if (opts.Overwrite) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Overwrite;
             else if (opts.NoClobber) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Skip;
-            // ±éÀúÄ£Ê½£ºÇ¿ÖÆ¹Ø±ÕËÑË÷£¬Ê¹ÓÃ MinCRF/MaxCRF
+            // éåŽ†æ¨¡å¼ï¼šå¼ºåˆ¶å…³é—­æœç´¢ï¼Œä½¿ç”¨ MinCRF/MaxCRF
             if (opts.SweepMode)
             {
                 config.SweepMode = true;
@@ -434,29 +434,29 @@ namespace AvifEncoder
 
 
 
-        // ========== Ö÷º¯Êý ==========
+        // ========== ä¸»å‡½æ•° ==========
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
             if (EncoderUtils.FindExecutable("ffmpeg") == null)
             {
-                Console.WriteLine("[FAIL] ´íÎó: ffmpeg Î´ÕÒµ½£¬ÇëÈ·ÈÏ ffmpeg ÒÑ°²×°²¢Ìí¼Óµ½ PATH »·¾³±äÁ¿ÖÐ¡£");
-                Console.WriteLine("°´ÈÎÒâ¼üÍË³ö...");
+                Console.WriteLine("[FAIL] é”™è¯¯: ffmpeg æœªæ‰¾åˆ°ï¼Œè¯·ç¡®è®¤ ffmpeg å·²å®‰è£…å¹¶æ·»åŠ åˆ° PATH çŽ¯å¢ƒå˜é‡ä¸­ã€‚");
+                Console.WriteLine("æŒ‰ä»»æ„é”®é€€å‡º...");
                 Console.ReadKey();
                 return;
             }
             if (args.Length == 0)
             {
                 PrintHelp();
-                Console.WriteLine("\nÕýÔÚ×Ô¶¯¼ì²â»·¾³£¨ffmpeg¡¢±àÂëÆ÷¡¢Íâ²¿¹¤¾ß£©...");
+                Console.WriteLine("\næ­£åœ¨è‡ªåŠ¨æ£€æµ‹çŽ¯å¢ƒï¼ˆffmpegã€ç¼–ç å™¨ã€å¤–éƒ¨å·¥å…·ï¼‰...");
                 var cliLogger = new ConsoleLogger();
                 await AvifEnvironmentChecker.CheckEnvironmentAsync(cliLogger);
-                Console.WriteLine("\nÇëÊäÈëÃüÁî²ÎÊý (ÀýÈç -s -p best)");
+                Console.WriteLine("\nè¯·è¾“å…¥å‘½ä»¤å‚æ•° (ä¾‹å¦‚ -s -p best)");
                 Console.Write("> ");
                 string? line = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(line))
                     args = ParseCommandLineInteractive(line);
-                else { Console.WriteLine("Î´ÊäÈë²ÎÊý£¬ÍË³ö¡£"); Console.ReadKey(); return; }
+                else { Console.WriteLine("æœªè¾“å…¥å‚æ•°ï¼Œé€€å‡ºã€‚"); Console.ReadKey(); return; }
             }
             ParsedOptions? opts = ParseCommandLineArgs(args);
             if (opts == null) return;
@@ -465,15 +465,15 @@ namespace AvifEncoder
                 Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
                 return;
             }
-            // Â·¾¶Ð£Ñé
+            // è·¯å¾„æ ¡éªŒ
             if (string.IsNullOrWhiteSpace(opts.InputDir))
             {
-                Console.WriteLine("[ERROR] ÊäÈëÄ¿Â¼²»ÄÜÎª¿Õ");
+                Console.WriteLine("[ERROR] è¾“å…¥ç›®å½•ä¸èƒ½ä¸ºç©º");
                 return;
             }
             if (string.IsNullOrWhiteSpace(opts.OutputDir))
             {
-                Console.WriteLine("[ERROR] Êä³öÄ¿Â¼²»ÄÜÎª¿Õ");
+                Console.WriteLine("[ERROR] è¾“å‡ºç›®å½•ä¸èƒ½ä¸ºç©º");
                 return;
             }
 
@@ -528,7 +528,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[FAIL] ´íÎó: {ex.Message}"); try { string logDir = Path.Combine(opts.OutputDir, "log"); Directory.CreateDirectory(logDir); File.AppendAllText(Path.Combine(logDir, "crash.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}\n"); } catch { }
+                Console.WriteLine($"[FAIL] é”™è¯¯: {ex.Message}"); try { string logDir = Path.Combine(opts.OutputDir, "log"); Directory.CreateDirectory(logDir); File.AppendAllText(Path.Combine(logDir, "crash.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}\n"); } catch { }
             }
             finally
             {
@@ -537,7 +537,7 @@ namespace AvifEncoder
                 {
                     try { SetConsoleMode(consoleHandle, originalMode); } catch { }
                 }
-                Console.WriteLine("°´ÈÎÒâ¼üÍË³ö...");
+                Console.WriteLine("æŒ‰ä»»æ„é”®é€€å‡º...");
                 Console.ReadKey();
             }
         }
@@ -562,7 +562,7 @@ namespace AvifEncoder
         }
     }
 
-    // ========== ¼òµ¥¿ØÖÆÌ¨ Logger ==========
+    // ========== ç®€å•æŽ§åˆ¶å° Logger ==========
     internal class ConsoleLogger : ILogger
     {
         public void LogInfo(string msg) => Console.WriteLine(msg);

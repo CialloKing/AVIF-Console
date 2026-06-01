@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
+ï»¿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using System.Text.Json;   // Èç¹ûÊ¹ÓÃ System.Text.Json
+using System.Text.Json;   // å¦‚æœä½¿ç”¨ System.Text.Json
 using System.Text.RegularExpressions;
 
 
@@ -26,7 +26,7 @@ namespace AvifEncoder
         public int Width { get; set; }
         public int Height { get; set; }
 
-        // ĞÂÔöÉ«²ÊÔªÊı¾İ×Ö¶Î£¨¿ÉÄÜÎª null/unknown£©
+        // æ–°å¢è‰²å½©å…ƒæ•°æ®å­—æ®µï¼ˆå¯èƒ½ä¸º null/unknownï¼‰
         public string? ColorPrimaries { get; set; }
         public string? ColorTransfer { get; set; }
         public string? ColorSpace { get; set; }
@@ -36,14 +36,14 @@ namespace AvifEncoder
 
 
 
-    /// <summary>»º´æ¹ÜÀíÆ÷½Ó¿Ú</summary>
+    /// <summary>ç¼“å­˜ç®¡ç†å™¨æ¥å£</summary>
     public interface ICacheManager
     {
         bool TryGetEncode(string key, out (string file, TimeSpan encodeTime, string commandLine) cached);
         void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine);
         bool TryGetMetrics(string key, out QualityMetrics? metrics);
         void SetMetrics(string key, QualityMetrics metrics);
-        /// <summary>Ô­×Ó¸üĞÂ»º´æÖĞµÄ QualityMetrics£¬È·±£Ïß³Ì°²È«</summary>
+        /// <summary>åŸå­æ›´æ–°ç¼“å­˜ä¸­çš„ QualityMetricsï¼Œç¡®ä¿çº¿ç¨‹å®‰å…¨</summary>
         void UpdateMetrics(string key, Action<QualityMetrics> updateAction);
         bool TryGetSSIM(string key, out double ssim);
         void SetSSIM(string key, double ssim);
@@ -63,15 +63,15 @@ namespace AvifEncoder
         public void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine)
             => _encodeCache[key] = (cacheFile, encodeTime, commandLine);
 
-        public bool TryGetMetrics(string key, out QualityMetrics? metrics)   // ¸ÄÎª QualityMetrics?
+        public bool TryGetMetrics(string key, out QualityMetrics? metrics)   // æ”¹ä¸º QualityMetrics?
             => _metricsCache.TryGetValue(key, out metrics);
 
         public void SetMetrics(string key, QualityMetrics metrics)
             => _metricsCache[key] = metrics;
 
         /// <summary>
-        /// Ïß³Ì°²È«µØ¸üĞÂ»º´æÖĞµÄ QualityMetrics ¶ÔÏó¡£
-        /// Èô key ²»´æÔÚÔò´´½¨ĞÂ¶ÔÏóºóÖ´ĞĞ updateAction¡£
+        /// çº¿ç¨‹å®‰å…¨åœ°æ›´æ–°ç¼“å­˜ä¸­çš„ QualityMetrics å¯¹è±¡ã€‚
+        /// è‹¥ key ä¸å­˜åœ¨åˆ™åˆ›å»ºæ–°å¯¹è±¡åæ‰§è¡Œ updateActionã€‚
         /// </summary>
         public void UpdateMetrics(string key, Action<QualityMetrics> updateAction)
         {
@@ -103,7 +103,7 @@ namespace AvifEncoder
 
     public partial class AvifPipeline : IDisposable
     {
-        #region ×Ö¶ÎÓë¹¹Ôì
+        #region å­—æ®µä¸æ„é€ 
 
         private readonly string _inputDir;
         private readonly string _outputDir;
@@ -117,7 +117,7 @@ namespace AvifEncoder
 
         private readonly ProgressTracker _progress = new();
 
-        private readonly IProgress<int>? _guiProgress;   // ¡ï ĞÂÔö×Ö¶Î£¬²»Óë _progress ³åÍ»
+        private readonly IProgress<int>? _guiProgress;   // â˜… æ–°å¢å­—æ®µï¼Œä¸ä¸ _progress å†²çª
 
         private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
 
@@ -150,14 +150,14 @@ namespace AvifEncoder
 
 
 
-        private readonly PresetConfig.IFileSystem _fs;   // ¸ÄÎªÍêÕûÏŞ¶¨Ãû
+        private readonly PresetConfig.IFileSystem _fs;   // æ”¹ä¸ºå®Œæ•´é™å®šå
 
-        // ÎÄ¼ş¼¶Ê§°Ü¸ú×ÙÆ÷£¨µ±Ç°Î´Ê¹ÓÃ£¬±£ÁôÒÔ¹©½«À´À©Õ¹£©
+        // æ–‡ä»¶çº§å¤±è´¥è·Ÿè¸ªå™¨ï¼ˆå½“å‰æœªä½¿ç”¨ï¼Œä¿ç•™ä»¥ä¾›å°†æ¥æ‰©å±•ï¼‰
         private readonly ConcurrentDictionary<string, FileScopedFailTracker> _failTrackers = new();
 
 
-        // ¼ÇÂ¼Ä³ÎÄ¼şµÄÄ³ÏñËØ¸ñÊ½ÊÇ·ñÒÑ·¢Éú¡°ÍêÈ«ÎŞ·¨Ğ´Èë¡±µÄÖÂÃü´íÎó£¬ÓÃÓÚÌø¹ıºóĞø³¢ÊÔ
-        // ¼ÇÂ¼Ä³ÎÄ¼şµÄÄ³ÏñËØ¸ñÊ½ÊÇ·ñÒÑ·¢Éú¡°ÍêÈ«ÎŞ·¨Ğ´Èë¡±µÄÖÂÃü´íÎó£¬ÓÃÓÚÌø¹ıºóĞø³¢ÊÔ
+        // è®°å½•æŸæ–‡ä»¶çš„æŸåƒç´ æ ¼å¼æ˜¯å¦å·²å‘ç”Ÿâ€œå®Œå…¨æ— æ³•å†™å…¥â€çš„è‡´å‘½é”™è¯¯ï¼Œç”¨äºè·³è¿‡åç»­å°è¯•
+        // è®°å½•æŸæ–‡ä»¶çš„æŸåƒç´ æ ¼å¼æ˜¯å¦å·²å‘ç”Ÿâ€œå®Œå…¨æ— æ³•å†™å…¥â€çš„è‡´å‘½é”™è¯¯ï¼Œç”¨äºè·³è¿‡åç»­å°è¯•
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _fatalFmts = new();
         private readonly ConcurrentDictionary<string, byte> _allocatedOutputs = new();
         private readonly ConcurrentBag<System.Diagnostics.Process> _spawnedProcesses = new();
@@ -167,17 +167,17 @@ namespace AvifEncoder
         private readonly ConcurrentQueue<Task> _xpsnrTasks = new();
         private readonly SemaphoreSlim _advancedMetricSemaphore;
 
-        // ÎŞËğÑéÖ¤±¨¸æÏà¹Ø
+        // æ— æŸéªŒè¯æŠ¥å‘Šç›¸å…³
         private readonly object _failedCsvLock = new();
         private string _failedCsvPath = "";
         private string _failedVerificationDir = "";
 
-        // CSV ³ÖĞøĞ´Èë
+        // CSV æŒç»­å†™å…¥
         private readonly object _csvLock = new();
         private string _csvPath = "";
         private bool _csvHeaderWritten;
 
-        // Journal ¶ÏµãĞø´«
+        // Journal æ–­ç‚¹ç»­ä¼ 
         private string _journalPath = "";
         private string _snapshotPath = "";
         private StreamWriter? _journalWriter;
@@ -192,27 +192,27 @@ namespace AvifEncoder
 
 
 
-        // ===== ¹¤¾ß£º½«ÈÎÒâÍ¼Æ¬×ªÎª PNG£¨SSIMULACRA2/Butteraugli ĞèÒª£© =====
+        // ===== å·¥å…·ï¼šå°†ä»»æ„å›¾ç‰‡è½¬ä¸º PNGï¼ˆSSIMULACRA2/Butteraugli éœ€è¦ï¼‰ =====
         private async Task<string?> ConvertToPngAsync(string inputPath, string tempDir)
         {
             string tempPng = Path.Combine(tempDir, $"_tool_{Guid.NewGuid():N}.png");
             string cleanInput = NormalizePathForExternalTool(inputPath);
             string cleanOutput = NormalizePathForExternalTool(tempPng);
-            // ¡ï Ê¹ÓÃÒÑÑéÖ¤¿É¹¤×÷µÄÃüÁî£º-y -loglevel error -i "ÊäÈë" -pix_fmt rgb24 -frames:v 1 "Êä³ö"
+            // â˜… ä½¿ç”¨å·²éªŒè¯å¯å·¥ä½œçš„å‘½ä»¤ï¼š-y -loglevel error -i "è¾“å…¥" -pix_fmt rgb24 -frames:v 1 "è¾“å‡º"
             string args = $"-y -loglevel error -i \"{cleanInput}\" -pix_fmt rgb24 -frames:v 1 \"{cleanOutput}\"";
             var (ok, _) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(1));
             return ok && _fs.FileExists(tempPng) ? tempPng : null;
         }
 
 
-        // ===== PNG Î²²¿ÇåÏ´ =====
+        // ===== PNG å°¾éƒ¨æ¸…æ´— =====
         /// <summary>
-        /// Èô PNG ÎÄ¼ş IEND ºóÓĞ¶îÍâ×Ö½Ú£¬Ôò´´½¨ÇåÏ´ºóµÄÁÙÊ±ÎÄ¼ş²¢·µ»ØÆäÂ·¾¶£»
-        /// ·ñÔò·µ»ØÔ­Â·¾¶£¨²»ĞŞ¸ÄÔ­ÎÄ¼ş£©¡£
+        /// è‹¥ PNG æ–‡ä»¶ IEND åæœ‰é¢å¤–å­—èŠ‚ï¼Œåˆ™åˆ›å»ºæ¸…æ´—åçš„ä¸´æ—¶æ–‡ä»¶å¹¶è¿”å›å…¶è·¯å¾„ï¼›
+        /// å¦åˆ™è¿”å›åŸè·¯å¾„ï¼ˆä¸ä¿®æ”¹åŸæ–‡ä»¶ï¼‰ã€‚
         /// </summary>
         private async Task<string> SanitizePngIfNeededAsync(string originalPath, string tempDir)
         {
-            // ½ö´¦Àí .png ÎÄ¼ş
+            // ä»…å¤„ç† .png æ–‡ä»¶
             if (!originalPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 return originalPath;
 
@@ -220,43 +220,43 @@ namespace AvifEncoder
             int iendEnd = FindIendEndOffset(bytes);
             if (iendEnd < 0 || iendEnd == bytes.Length)
             {
-                // Ã»ÕÒµ½ IEND »ò¸É¾»ÎÄ¼ş£¬Ö±½Ó·µ»Ø
+                // æ²¡æ‰¾åˆ° IEND æˆ–å¹²å‡€æ–‡ä»¶ï¼Œç›´æ¥è¿”å›
                 return originalPath;
             }
 
-            // ÓĞÎ²²¿À¬»ø£¬´´½¨ÇåÏ´°æ±¾
+            // æœ‰å°¾éƒ¨åƒåœ¾ï¼Œåˆ›å»ºæ¸…æ´—ç‰ˆæœ¬
             string cleanFileName = $"_clean_{Guid.NewGuid():N}.png";
             string cleanPath = Path.Combine(tempDir, cleanFileName);
             byte[] cleanBytes = new byte[iendEnd];
             Array.Copy(bytes, cleanBytes, iendEnd);
             await _fs.WriteAllBytesAsync(cleanPath, cleanBytes);
-            _logger.LogInfo($"PNG Î²²¿ÇåÏ´: {Path.GetFileName(originalPath)} ÒÆ³ı {bytes.Length - iendEnd} ×Ö½Ú -> {cleanFileName}");
+            _logger.LogInfo($"PNG å°¾éƒ¨æ¸…æ´—: {Path.GetFileName(originalPath)} ç§»é™¤ {bytes.Length - iendEnd} å­—èŠ‚ -> {cleanFileName}");
             return cleanPath;
         }
 
         /// <summary>
-        /// ²éÕÒ PNG ÎÄ¼şÖĞ±ê×¼ IEND ¿é½áÊøµÄÆ«ÒÆÁ¿£¨¼´µÚÒ»¸ö²»ÊôÓÚ PNG µÄ×Ö½ÚÎ»ÖÃ£©¡£
-        /// Ê§°Ü·µ»Ø -1£¬¸É¾»ÎÄ¼ş·µ»ØÎÄ¼ş×Ü³¤¶È¡£
+        /// æŸ¥æ‰¾ PNG æ–‡ä»¶ä¸­æ ‡å‡† IEND å—ç»“æŸçš„åç§»é‡ï¼ˆå³ç¬¬ä¸€ä¸ªä¸å±äº PNG çš„å­—èŠ‚ä½ç½®ï¼‰ã€‚
+        /// å¤±è´¥è¿”å› -1ï¼Œå¹²å‡€æ–‡ä»¶è¿”å›æ–‡ä»¶æ€»é•¿åº¦ã€‚
         /// </summary>
         private static int FindIendEndOffset(byte[] bytes)
         {
-            // ±ê×¼ IEND chunk: ³¤¶È 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
-            int limit = bytes.Length - 12; // ÖÁÉÙĞèÒª 8 ×Ö½ÚµÄ¿é + ×îºó¿ÉÄÜµÄ CRC
+            // æ ‡å‡† IEND chunk: é•¿åº¦ 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
+            int limit = bytes.Length - 12; // è‡³å°‘éœ€è¦ 8 å­—èŠ‚çš„å— + æœ€åå¯èƒ½çš„ CRC
 
             for (int i = 0; i <= limit; i++)
             {
                 if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
                 {
-                    // ÕÒµ½ "IEND"£¬¼ì²éÇ° 4 ×Ö½ÚÊÇ·ñÎª 0£¨¿é³¤¶È±ØĞëÎª 0£©
+                    // æ‰¾åˆ° "IEND"ï¼Œæ£€æŸ¥å‰ 4 å­—èŠ‚æ˜¯å¦ä¸º 0ï¼ˆå—é•¿åº¦å¿…é¡»ä¸º 0ï¼‰
                     if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
                     {
-                        // IEND ¿é½áÊø = ÀàĞÍÆğÊ¼ + 8£¨ÀàĞÍ + CRC£©
+                        // IEND å—ç»“æŸ = ç±»å‹èµ·å§‹ + 8ï¼ˆç±»å‹ + CRCï¼‰
                         return i + 8;
                     }
                 }
             }
 
-            // Î´ÕÒµ½ÈÎºÎÓĞĞ§ IEND ¿é
+            // æœªæ‰¾åˆ°ä»»ä½•æœ‰æ•ˆ IEND å—
             return -1;
         }
 
@@ -297,7 +297,7 @@ namespace AvifEncoder
                             var s = await ComputeSSIMULACRA2Async(refPng, distPng);
                             if (s.HasValue) UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s);
                         }
-                        catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 ºóÌ¨Òì³£: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 åå°å¼‚å¸¸: {ex.Message}"); }
                     }
 
                     if (needButter && refPng != null && distPng != null)
@@ -308,7 +308,7 @@ namespace AvifEncoder
                             if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
                             if (p3.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3);
                         }
-                        catch (Exception ex) { _logger.LogInfo($"Butteraugli ºóÌ¨Òì³£: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"Butteraugli åå°å¼‚å¸¸: {ex.Message}"); }
                     }
 
                     if (needGmsd)
@@ -318,7 +318,7 @@ namespace AvifEncoder
                             var g = await ComputeGMSDAsync(cleanRef, distPath);
                             if (g.HasValue) UpdateCachedMetrics(cacheKey, m => m.GMSD = g);
                         }
-                        catch (Exception ex) { _logger.LogInfo($"GMSD ºóÌ¨Òì³£: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"GMSD åå°å¼‚å¸¸: {ex.Message}"); }
                     }
 
                     if (ownClean && _fs.FileExists(cleanRef))
@@ -336,8 +336,8 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary> Ïß³Ì°²È«µØ¸üĞÂ»º´æÖĞµÄ QualityMetrics ¶ÔÏó </summary>
-        /// <summary> Ïß³Ì°²È«µØ¸üĞÂ»º´æÖĞµÄ QualityMetrics ¶ÔÏó£¨Ê¹ÓÃÔ­×Ó AddOrUpdate£© </summary>
+        /// <summary> çº¿ç¨‹å®‰å…¨åœ°æ›´æ–°ç¼“å­˜ä¸­çš„ QualityMetrics å¯¹è±¡ </summary>
+        /// <summary> çº¿ç¨‹å®‰å…¨åœ°æ›´æ–°ç¼“å­˜ä¸­çš„ QualityMetrics å¯¹è±¡ï¼ˆä½¿ç”¨åŸå­ AddOrUpdateï¼‰ </summary>
         private void UpdateCachedMetrics(string cacheKey, Action<QualityMetrics> updateAction)
         {
             _cache.UpdateMetrics(cacheKey, updateAction);
@@ -352,10 +352,10 @@ namespace AvifEncoder
             string cleanRef = NormalizePathForExternalTool(refPath);
             string cleanDist = NormalizePathForExternalTool(distPath);
             string args = $"\"{cleanRef}\" \"{cleanDist}\"";
-            _logger.LogInfo($"?? SSIMULACRA2 µ÷ÓÃ: {exe} {args}");   // ¡û ĞÂÔö
+            _logger.LogInfo($"?? SSIMULACRA2 è°ƒç”¨: {exe} {args}");   // â† æ–°å¢
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
-            _logger.LogInfo($"?? SSIMULACRA2 ·µ»Ø: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ¡û ĞÂÔö
+            _logger.LogInfo($"?? SSIMULACRA2 è¿”å›: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // â† æ–°å¢
             if (exitCode != 0) return null;
             string output = (stdout + stderr).Trim();
             if (double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
@@ -372,10 +372,10 @@ namespace AvifEncoder
             string cleanDist = NormalizePathForExternalTool(distPath);
             string cleanDiff = NormalizePathForExternalTool(diffPng);
             string args = $"\"{cleanRef}\" \"{cleanDist}\" --distmap \"{cleanDiff}\"";
-            _logger.LogInfo($"?? Butteraugli µ÷ÓÃ: {exe} {args}");   // ¡ï ĞÂÔö
+            _logger.LogInfo($"?? Butteraugli è°ƒç”¨: {exe} {args}");   // â˜… æ–°å¢
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
-            _logger.LogInfo($"?? Butteraugli ·µ»Ø: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ¡ï ĞÂÔö
+            _logger.LogInfo($"?? Butteraugli è¿”å›: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // â˜… æ–°å¢
 
             if (_fs.FileExists(diffPng)) try { _fs.DeleteFile(diffPng); } catch { }
 
@@ -395,26 +395,26 @@ namespace AvifEncoder
             return (raw, p3);
         }
 
-        // ===== GMSD£¨×Ô¶¨ÒåÊµÏÖ£º·Â C++ °æ±¾£¬Ê¹ÓÃ ffmpeg ½âÂë»Ò¶ÈÍ¼¼ÆËã£© =====
+        // ===== GMSDï¼ˆè‡ªå®šä¹‰å®ç°ï¼šä»¿ C++ ç‰ˆæœ¬ï¼Œä½¿ç”¨ ffmpeg è§£ç ç°åº¦å›¾è®¡ç®—ï¼‰ =====
         private async Task<double?> ComputeGMSDAsync(string refPath, string distPath)
         {
-            // 1. ½âÂëÁ½ÕÅÍ¼µ½ 8 Î»»Ò¶ÈÔ­Ê¼Êı¾İ
+            // 1. è§£ç ä¸¤å¼ å›¾åˆ° 8 ä½ç°åº¦åŸå§‹æ•°æ®
             var refGray = await DecodeGrayRawAsync(refPath);
             if (refGray == null) return null;
             var distGray = await DecodeGrayRawAsync(distPath);
             if (distGray == null) return null;
 
-            // 2. ³ß´ç±ØĞëÒ»ÖÂ
+            // 2. å°ºå¯¸å¿…é¡»ä¸€è‡´
             if (refGray.Value.w != distGray.Value.w || refGray.Value.h != distGray.Value.h)
                 return null;
 
-            // 3. ¼ÆËã GMSD
+            // 3. è®¡ç®— GMSD
             double score = ComputeGMSD_C(refGray.Value.data, refGray.Value.w, refGray.Value.h,
                                           distGray.Value.data);
             return score >= 0 ? score : null;
         }
 
-        /// <summary> ÓÃ ffmpeg ½«ÈÎÒâÍ¼Æ¬½âÂëÎª 8 Î»»Ò¶ÈÔ­Ê¼×Ö½ÚÊı×é£¬²¢·µ»Ø¿í¡¢¸ß¡£Ê§°Ü·µ»Ø null¡£ </summary>
+        /// <summary> ç”¨ ffmpeg å°†ä»»æ„å›¾ç‰‡è§£ç ä¸º 8 ä½ç°åº¦åŸå§‹å­—èŠ‚æ•°ç»„ï¼Œå¹¶è¿”å›å®½ã€é«˜ã€‚å¤±è´¥è¿”å› nullã€‚ </summary>
         private async Task<(int w, int h, byte[] data)?> DecodeGrayRawAsync(string imagePath)
         {
             string cleanPath = NormalizePathForExternalTool(imagePath);
@@ -446,7 +446,7 @@ namespace AvifEncoder
 
                 byte[] rawData = ms.ToArray();
 
-                // »ñÈ¡Í¼Ïñ·Ö±æÂÊ
+                // è·å–å›¾åƒåˆ†è¾¨ç‡
                 var (w, h) = await GetResolutionAsync(imagePath);
                 if (w <= 0 || h <= 0) return null;
                 int expectedSize = w * h;
@@ -456,12 +456,12 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"DecodeGrayRawAsync Ê§°Ü: {ex.Message}");
+                _logger.LogInfo($"DecodeGrayRawAsync å¤±è´¥: {ex.Message}");
                 return null;
             }
         }
 
-        /// <summary> ¼ÆËã GMSD£¨Ìİ¶È·ùÖµÏàËÆ¶ÈÆ«²î£©¡£C = 0.0026£¬Êä³öÎª±ê×¼²î¡£Ê§°Ü·µ»Ø -1¡£ </summary>
+        /// <summary> è®¡ç®— GMSDï¼ˆæ¢¯åº¦å¹…å€¼ç›¸ä¼¼åº¦åå·®ï¼‰ã€‚C = 0.0026ï¼Œè¾“å‡ºä¸ºæ ‡å‡†å·®ã€‚å¤±è´¥è¿”å› -1ã€‚ </summary>
         private static double ComputeGMSD_C(byte[] refData, int w, int h, byte[] distData)
         {
             if (refData.Length != distData.Length || w < 3 || h < 3)
@@ -496,7 +496,7 @@ namespace AvifEncoder
             if (count == 0) return -1;
             double mean = sum / count;
             double variance = (sumSq / count) - (mean * mean);
-            return Math.Sqrt(Math.Max(0, variance));   // ±ê×¼²î
+            return Math.Sqrt(Math.Max(0, variance));   // æ ‡å‡†å·®
         }
 
 
@@ -506,8 +506,8 @@ namespace AvifEncoder
 
 
         /// <summary>
-        /// ¸ù¾İÍ¼Ïñ¿í¶ÈºÍ×îĞ¡ tile ¿í¶ÈÏŞÖÆ£¬¼ÆËã×î´óºÏ·¨µÄ tile-columns Öµ£¨log2 ÁĞÊı£©¡£
-        /// ÀıÈç£º¿í¶È ¡Ü 255 ¡ú 0£»256~511 ¡ú 0£»512~1023 ¡ú 1£»1024~2047 ¡ú 2£»ÒÔ´ËÀàÍÆ¡£
+        /// æ ¹æ®å›¾åƒå®½åº¦å’Œæœ€å° tile å®½åº¦é™åˆ¶ï¼Œè®¡ç®—æœ€å¤§åˆæ³•çš„ tile-columns å€¼ï¼ˆlog2 åˆ—æ•°ï¼‰ã€‚
+        /// ä¾‹å¦‚ï¼šå®½åº¦ â‰¤ 255 â†’ 0ï¼›256~511 â†’ 0ï¼›512~1023 â†’ 1ï¼›1024~2047 â†’ 2ï¼›ä»¥æ­¤ç±»æ¨ã€‚
         /// </summary>
         private static int GetMaxLegalTileCols(int imageWidth, int minTileWidth = 256)
         {
@@ -535,15 +535,15 @@ namespace AvifEncoder
         : $"-tile-columns {tileCols} -tile-rows 0";
 
         /// <summary>
-        /// ¸ù¾İÊäÈëÎÄ¼şÂ·¾¶ÓëË÷ÒıÉú³ÉÊä³öÍêÕûÂ·¾¶£¬²¢±£³Ö×ÓÄ¿Â¼½á¹¹¡£
+        /// æ ¹æ®è¾“å…¥æ–‡ä»¶è·¯å¾„ä¸ç´¢å¼•ç”Ÿæˆè¾“å‡ºå®Œæ•´è·¯å¾„ï¼Œå¹¶ä¿æŒå­ç›®å½•ç»“æ„ã€‚
         /// </summary>
         /// <summary>
-        /// ¸ù¾İÊäÈëÎÄ¼şÂ·¾¶ÓëË÷ÒıÉú³ÉÊä³öÍêÕûÂ·¾¶£¬²¢±£³Ö×ÓÄ¿Â¼½á¹¹¡£
-        /// ¡ï ĞÂÔöÍ¬Ãû¼ì²â£ºÈôÎÄ¼şÃûÒÑ´æÔÚ£¬×Ô¶¯×·¼Ó _1¡¢_2 ¡­ ÒÔ±ÜÃâ¸²¸Ç¡£
+        /// æ ¹æ®è¾“å…¥æ–‡ä»¶è·¯å¾„ä¸ç´¢å¼•ç”Ÿæˆè¾“å‡ºå®Œæ•´è·¯å¾„ï¼Œå¹¶ä¿æŒå­ç›®å½•ç»“æ„ã€‚
+        /// â˜… æ–°å¢åŒåæ£€æµ‹ï¼šè‹¥æ–‡ä»¶åå·²å­˜åœ¨ï¼Œè‡ªåŠ¨è¿½åŠ  _1ã€_2 â€¦ ä»¥é¿å…è¦†ç›–ã€‚
         /// </summary>
         private string GetOutputPath(string inputFilePath, int index)
         {
-            // ¡ï Í¬²½È¥³ı¿ÉÄÜµÄ³¤Â·¾¶Ç°×º£¬±£Ö¤ Path.GetRelativePath ÕıÈ·¹¤×÷
+            // â˜… åŒæ­¥å»é™¤å¯èƒ½çš„é•¿è·¯å¾„å‰ç¼€ï¼Œä¿è¯ Path.GetRelativePath æ­£ç¡®å·¥ä½œ
             string safeInputDir = NormalizePathForExternalTool(_inputDir);
             string safeInputPath = NormalizePathForExternalTool(inputFilePath);
             string relPath = Path.GetRelativePath(safeInputDir, safeInputPath);
@@ -562,7 +562,7 @@ namespace AvifEncoder
                         NormalizePathForExternalTool(candidate).ToLowerInvariant(), 0);
                     return candidate;
                 default: // Rename
-                    // ×Ô¶¯×·¼ÓĞòºÅÒÔ±ÜÃâÍ¬Ãû³åÍ»£¨ÄÚ´æ+´ÅÅÌË«ÖØ¼ì²â£©
+                    // è‡ªåŠ¨è¿½åŠ åºå·ä»¥é¿å…åŒåå†²çªï¼ˆå†…å­˜+ç£ç›˜åŒé‡æ£€æµ‹ï¼‰
                     string allocatedKey = NormalizePathForExternalTool(candidate).ToLowerInvariant();
                     if (_allocatedOutputs.ContainsKey(allocatedKey) || _fs.FileExists(candidate))
                     {
@@ -578,19 +578,19 @@ namespace AvifEncoder
                                  _allocatedOutputs.ContainsKey(
                                      NormalizePathForExternalTool(Path.Combine(targetDir, fileName)).ToLowerInvariant()));
                     }
-                    // ±ê¼ÇÒÑ·ÖÅä£¬·ÀÖ¹Í¬Åú´ÎÍ¬Ãû¸²¸Ç
+                    // æ ‡è®°å·²åˆ†é…ï¼Œé˜²æ­¢åŒæ‰¹æ¬¡åŒåè¦†ç›–
                     _allocatedOutputs.TryAdd(
                         NormalizePathForExternalTool(candidate).ToLowerInvariant(), 0);
                     return candidate;
             }
         }
 
-        /// <summary> Íâ²¿¹¤¾ß£¨ffmpeg µÈ£©²»½ÓÊÜ \\?\ ³¤Â·¾¶£¬ĞèÒª°şÀë¡£ÕıÈ·´¦Àí UNC Â·¾¶ </summary>
+        /// <summary> å¤–éƒ¨å·¥å…·ï¼ˆffmpeg ç­‰ï¼‰ä¸æ¥å— \\?\ é•¿è·¯å¾„ï¼Œéœ€è¦å‰¥ç¦»ã€‚æ­£ç¡®å¤„ç† UNC è·¯å¾„ </summary>
         private static string NormalizePathForExternalTool(string path)
         {
             if (OperatingSystem.IsWindows() && path.StartsWith(@"\\?\"))
             {
-                // \\?\UNC\server\share\path ¡ú \\server\share\path
+                // \\?\UNC\server\share\path â†’ \\server\share\path
                 if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
                     return @"\" + path.Substring(7);
                 return path.Substring(4);
@@ -599,8 +599,8 @@ namespace AvifEncoder
         }
 
         /// <summary>
-        /// ¸ù¾İÍ¼Ïñ¿í¶È¼ÆËãÂú×ã AV1 tile ¿í¶È ¡Ü 4096 ÏŞÖÆµÄ×îĞ¡ tile-columns Öµ£¨log2 ÁĞÊı£©¡£
-        /// ÀıÈç£º¿í¶È ¡Ü 4096 ¡ú 0£»4097~8192 ¡ú 1£»8193~16384 ¡ú 2£»ÒÔ´ËÀàÍÆ¡£
+        /// æ ¹æ®å›¾åƒå®½åº¦è®¡ç®—æ»¡è¶³ AV1 tile å®½åº¦ â‰¤ 4096 é™åˆ¶çš„æœ€å° tile-columns å€¼ï¼ˆlog2 åˆ—æ•°ï¼‰ã€‚
+        /// ä¾‹å¦‚ï¼šå®½åº¦ â‰¤ 4096 â†’ 0ï¼›4097~8192 â†’ 1ï¼›8193~16384 â†’ 2ï¼›ä»¥æ­¤ç±»æ¨ã€‚
         /// </summary>
         private static int GetMinLegalTileCols(int imageWidth)
         {
@@ -608,7 +608,7 @@ namespace AvifEncoder
                 return 0;
 
             int colsLog2 = 0;
-            // Ã¿Ôö¼ÓÒ»ÁĞ£¬tile ¿í¶È¼õ°ë£¬Ö±µ½Âú×ã ¡Ü 4096
+            // æ¯å¢åŠ ä¸€åˆ—ï¼Œtile å®½åº¦å‡åŠï¼Œç›´åˆ°æ»¡è¶³ â‰¤ 4096
             while (Math.Ceiling((double)imageWidth / (1 << colsLog2)) > 4096)
                 colsLog2++;
             return colsLog2;
@@ -641,17 +641,17 @@ namespace AvifEncoder
         public AvifPipeline(string inputDir, string outputDir, PresetConfig config,
                     ILogger logger,
                     IProcessRunner? processRunner = null,
-                    PresetConfig.IFileSystem? fileSystem = null,   // ¸ÄÎªÍêÕûÏŞ¶¨Ãû
+                    PresetConfig.IFileSystem? fileSystem = null,   // æ”¹ä¸ºå®Œæ•´é™å®šå
                     ICacheManager? cacheManager = null,
                     IProgress<int>? progress = null)
         {
             _fs = fileSystem ?? new PresetConfig.RealFileSystem();
 
-            // ¡ï ÆôÓÃ³¤Â·¾¶Ö§³Ö£¨Windows ÏÂ×Ô¶¯Ìí¼Ó \\?\ Ç°×º£©
+            // â˜… å¯ç”¨é•¿è·¯å¾„æ”¯æŒï¼ˆWindows ä¸‹è‡ªåŠ¨æ·»åŠ  \\?\ å‰ç¼€ï¼‰
             _inputDir = EnsureLongPath(inputDir);
             _outputDir = EnsureLongPath(outputDir);
             _fs.CreateDirectory(_outputDir);
-            // ·À´ô£ºÊä³öÄ¿Â¼»¥³âËø£¬·ÀÖ¹¶à¸ö½ø³ÌÍ¬Ê±Ğ´Í¬Ò»Ä¿Â¼
+            // é˜²å‘†ï¼šè¾“å‡ºç›®å½•äº’æ–¥é”ï¼Œé˜²æ­¢å¤šä¸ªè¿›ç¨‹åŒæ—¶å†™åŒä¸€ç›®å½•
             string lockFile = Path.Combine(_outputDir, ".avifencoder.lock");
             try
             {
@@ -662,11 +662,11 @@ namespace AvifEncoder
             catch (IOException)
             {
                 throw new IOException(
-                    $"Êä³öÄ¿Â¼ {outputDir} ÒÑ±»ÁíÒ»¸ö±àÂë½ø³ÌÕ¼ÓÃ¡£" +
-                    "ÇëµÈ´ıÆäÍê³É»ò¸ü»»Êä³öÄ¿Â¼¡£");
+                    $"è¾“å‡ºç›®å½• {outputDir} å·²è¢«å¦ä¸€ä¸ªç¼–ç è¿›ç¨‹å ç”¨ã€‚" +
+                    "è¯·ç­‰å¾…å…¶å®Œæˆæˆ–æ›´æ¢è¾“å‡ºç›®å½•ã€‚");
             }
 
-            // ·À´ô£ºÊäÈëÊä³öÍ¬Ä¿Â¼Ê±£¬Èô´æÔÚ .avif Ô´ÎÄ¼şÔò×Ô¶¯´´½¨Êä³ö×ÓÄ¿Â¼
+            // é˜²å‘†ï¼šè¾“å…¥è¾“å‡ºåŒç›®å½•æ—¶ï¼Œè‹¥å­˜åœ¨ .avif æºæ–‡ä»¶åˆ™è‡ªåŠ¨åˆ›å»ºè¾“å‡ºå­ç›®å½•
             string normalizedInput = NormalizePathForExternalTool(_inputDir);
             string normalizedOutput = NormalizePathForExternalTool(_outputDir);
             if (string.Equals(normalizedInput, normalizedOutput,
@@ -684,57 +684,57 @@ namespace AvifEncoder
                 {
                     string subDir = Path.Combine(_outputDir, "Avifoutput");
                     _logger?.LogInfo(
-                        $"[INFO] ÊäÈëÊä³öÍ¬Ä¿Â¼ÇÒ´æÔÚ .avif Ô´ÎÄ¼ş£¬" +
-                        $"Êä³ö×Ô¶¯ÖØ¶¨Ïòµ½: {subDir}");
+                        $"[INFO] è¾“å…¥è¾“å‡ºåŒç›®å½•ä¸”å­˜åœ¨ .avif æºæ–‡ä»¶ï¼Œ" +
+                        $"è¾“å‡ºè‡ªåŠ¨é‡å®šå‘åˆ°: {subDir}");
                     SafeWriteLine(
-                        $"[INFO] ÊäÈëºÍÊä³öÄ¿Â¼ÏàÍ¬£¬Îª±ÜÃâ¸²¸ÇÔ´ .avif ÎÄ¼ş£¬" +
-                        $"Êä³öÄ¿Â¼×Ô¶¯±ä¸üÎª: {subDir}");
+                        $"[INFO] è¾“å…¥å’Œè¾“å‡ºç›®å½•ç›¸åŒï¼Œä¸ºé¿å…è¦†ç›–æº .avif æ–‡ä»¶ï¼Œ" +
+                        $"è¾“å‡ºç›®å½•è‡ªåŠ¨å˜æ›´ä¸º: {subDir}");
                     _outputDir = EnsureLongPath(subDir);
                 }
             }
 
             _config = config;
-            _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg Î´ÕÒµ½");
-            _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe Î´ÕÒµ½");
+            _ffmpegPath = EncoderUtils.FindExecutable("ffmpeg") ?? throw new Exception("ffmpeg æœªæ‰¾åˆ°");
+            _ffprobePath = EncoderUtils.FindExecutable("ffprobe") ?? throw new Exception("ffprobe æœªæ‰¾åˆ°");
             _processRunner = processRunner ?? new RealProcessRunner();
             _logger = logger;
             _cache = cacheManager ?? new CacheManager();
 
             bool isHardwareEncoder = !Av1EncoderFactory.Get(config.Encoder).SupportsLossless;
 
-            // ·À´ô£ºÓ²¼ş±àÂëÆ÷²»Ö§³ÖÎŞËğÄ£Ê½
+            // é˜²å‘†ï¼šç¡¬ä»¶ç¼–ç å™¨ä¸æ”¯æŒæ— æŸæ¨¡å¼
             if (config.Lossless && !Av1EncoderFactory.Get(config.Encoder).SupportsLossless)
             {
                 throw new ArgumentException(
-                    $"±àÂëÆ÷ {config.Encoder} ²»Ö§³ÖÎŞËğÄ£Ê½¡£" +
-                    "Çë¸ÄÓÃ libaom-av1 / libsvtav1 / librav1e µÈÈí¼ş±àÂëÆ÷¡£");
+                    $"ç¼–ç å™¨ {config.Encoder} ä¸æ”¯æŒæ— æŸæ¨¡å¼ã€‚" +
+                    "è¯·æ”¹ç”¨ libaom-av1 / libsvtav1 / librav1e ç­‰è½¯ä»¶ç¼–ç å™¨ã€‚");
             }
 
-            // ¾¯¸æ£º·Ç libaom ±àÂëÆ÷²»Ö§³Ö AOM ¸ß¼¶²ÎÊı
+            // è­¦å‘Šï¼šé libaom ç¼–ç å™¨ä¸æ”¯æŒ AOM é«˜çº§å‚æ•°
             if (!Av1EncoderFactory.Get(config.Encoder).SupportsAomParams)
             {
                 _logger.LogInfo(
-                    $"[INFO] ±àÂëÆ÷ {config.Encoder} ²»Ö§³Ö -aom-params£¬" +
-                    "aq-mode/deltaq-mode µÈ²ÎÊı½«±»ºöÂÔ");
+                    $"[INFO] ç¼–ç å™¨ {config.Encoder} ä¸æ”¯æŒ -aom-paramsï¼Œ" +
+                    "aq-mode/deltaq-mode ç­‰å‚æ•°å°†è¢«å¿½ç•¥");
             }
 
-            // ·À´ô£ºÊä³öÄ£°å²»º¬ {index} »ò {name} ¡ú ¶àÎÄ¼ş¿ÉÄÜ»¥Ïà¸²¸Ç
+            // é˜²å‘†ï¼šè¾“å‡ºæ¨¡æ¿ä¸å« {index} æˆ– {name} â†’ å¤šæ–‡ä»¶å¯èƒ½äº’ç›¸è¦†ç›–
             if (!config.OutputNameFormat.Contains("{index}") &&
                 !config.OutputNameFormat.Contains("{name}"))
             {
                 SafeWriteLine(
-                    "[WARN] Êä³öÄ£°å²»º¬ {index} »ò {name}£¬" +
-                    "±àÂë¶àÕÅÍ¼Æ¬Ê±¿ÉÄÜ»¥Ïà¸²¸Ç¡£");
+                    "[WARN] è¾“å‡ºæ¨¡æ¿ä¸å« {index} æˆ– {name}ï¼Œ" +
+                    "ç¼–ç å¤šå¼ å›¾ç‰‡æ—¶å¯èƒ½äº’ç›¸è¦†ç›–ã€‚");
             }
 
-            // ·À´ô£ºCPU-used ³¬¹ı±àÂëÆ÷ÉÏÏŞ ¡ú ×Ô¶¯Ç¯ÖÆ
+            // é˜²å‘†ï¼šCPU-used è¶…è¿‡ç¼–ç å™¨ä¸Šé™ â†’ è‡ªåŠ¨é’³åˆ¶
             var cpuEnc = Av1EncoderFactory.Get(config.Encoder);
             if (config.FinalCpuUsed > cpuEnc.MaxSpeed)
             {
                 SafeWriteLine(
                     $"[WARN] FinalCpuUsed={config.FinalCpuUsed} " +
-                    $"³¬¹ı {config.Encoder} ÉÏÏŞ ({cpuEnc.MaxSpeed})£¬" +
-                    $"ÒÑÇ¯ÖÆÎª {cpuEnc.MaxSpeed}");
+                    $"è¶…è¿‡ {config.Encoder} ä¸Šé™ ({cpuEnc.MaxSpeed})ï¼Œ" +
+                    $"å·²é’³åˆ¶ä¸º {cpuEnc.MaxSpeed}");
                 config.FinalCpuUsed = cpuEnc.MaxSpeed;
                 config.SearchCpuUsed = Math.Min(config.SearchCpuUsed, cpuEnc.MaxSpeed);
             }
@@ -742,34 +742,34 @@ namespace AvifEncoder
             {
                 SafeWriteLine(
                     $"[WARN] SearchCpuUsed={config.SearchCpuUsed} " +
-                    $"³¬¹ı {config.Encoder} ÉÏÏŞ ({cpuEnc.MaxSpeed})£¬" +
-                    $"ÒÑÇ¯ÖÆÎª {cpuEnc.MaxSpeed}");
+                    $"è¶…è¿‡ {config.Encoder} ä¸Šé™ ({cpuEnc.MaxSpeed})ï¼Œ" +
+                    $"å·²é’³åˆ¶ä¸º {cpuEnc.MaxSpeed}");
                 config.SearchCpuUsed = cpuEnc.MaxSpeed;
             }
 
             int cpuCount = Environment.ProcessorCount;
 
-            // ÈôÓÃ»§Î´Í¨¹ı -j Ö¸¶¨²¢·¢Êı£¬Ôò×Ô¶¯¼ÆËã
-            // ÈôÓÃ»§Î´Í¨¹ı -j Ö¸¶¨²¢·¢Êı£¬Ôò×Ô¶¯¼ÆËã
+            // è‹¥ç”¨æˆ·æœªé€šè¿‡ -j æŒ‡å®šå¹¶å‘æ•°ï¼Œåˆ™è‡ªåŠ¨è®¡ç®—
+            // è‹¥ç”¨æˆ·æœªé€šè¿‡ -j æŒ‡å®šå¹¶å‘æ•°ï¼Œåˆ™è‡ªåŠ¨è®¡ç®—
             if (!config.UserSpecifiedMaxJobs)
             {
                 config.MaxJobs = isHardwareEncoder
-                    ? Math.Max(2, cpuCount * 2)               // Ó²¼ş±àÂëÆ÷¿ÉÊÊµ±Ìá¸ß²¢ĞĞ
-                    : Math.Max(2, (int)Math.Sqrt(cpuCount));  // Èí¼ş±àÂëÆ÷£ººËĞÄÊıÆ½·½¸ù
+                    ? Math.Max(2, cpuCount * 2)               // ç¡¬ä»¶ç¼–ç å™¨å¯é€‚å½“æé«˜å¹¶è¡Œ
+                    : Math.Max(2, (int)Math.Sqrt(cpuCount));  // è½¯ä»¶ç¼–ç å™¨ï¼šæ ¸å¿ƒæ•°å¹³æ–¹æ ¹
             }
             if (config.MaxJobs < 1) config.MaxJobs = 1;
 
-            int ssimSlots = Math.Max(2, cpuCount);   // ÖÊÁ¿ÆÀ¹ÀÈÔ¿ÉÊ¹ÓÃÈ«²¿ºËĞÄ
+            int ssimSlots = Math.Max(2, cpuCount);   // è´¨é‡è¯„ä¼°ä»å¯ä½¿ç”¨å…¨éƒ¨æ ¸å¿ƒ
 
             _maxFfmpegConcurrency = config.MaxJobs;
             _ssimConcurrency = new SemaphoreSlim(ssimSlots);
-            _ffmpegSlots = new SemaphoreSlim(config.MaxJobs);   // ºËĞÄĞŞ¸´£ºÖ±½ÓÊ¹ÓÃ config.MaxJobs
+            _ffmpegSlots = new SemaphoreSlim(config.MaxJobs);   // æ ¸å¿ƒä¿®å¤ï¼šç›´æ¥ä½¿ç”¨ config.MaxJobs
 
-            _guiProgress = progress;       // ¡ï ¸ÄÎª _guiProgress
+            _guiProgress = progress;       // â˜… æ”¹ä¸º _guiProgress
 
             _advancedMetricSemaphore = new SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2));
 
-            // ³õÊ¼»¯ÎŞËğÑéÖ¤Ê§°Ü¸ôÀëÄ¿Â¼
+            // åˆå§‹åŒ–æ— æŸéªŒè¯å¤±è´¥éš”ç¦»ç›®å½•
             _failedVerificationDir = Path.Combine(_outputDir, "_failed_verification");
             if (!_fs.DirectoryExists(_failedVerificationDir))
             {
@@ -779,13 +779,13 @@ namespace AvifEncoder
 
             _csvPath = Path.Combine(_outputDir, "avif_stats.csv");
 
-            // Journal ¶ÏµãĞø´«
+            // Journal æ–­ç‚¹ç»­ä¼ 
             string sessionDir = Path.Combine(_outputDir, ".session");
             _fs.CreateDirectory(sessionDir);
             _journalPath = Path.Combine(sessionDir, "journal.ndjson");
             _snapshotPath = Path.Combine(sessionDir, "snapshot.json");
 
-            // ¡ï ¿çÆ½Ì¨¶µµ×£º½ø³ÌÍË³öÊ±£¨Ctrl+C¡¢´°¿Ú¹Ø±Õ¡¢Environment.Exit£©Ç¿ÖÆÇåÀí×Ó½ø³Ì
+            // â˜… è·¨å¹³å°å…œåº•ï¼šè¿›ç¨‹é€€å‡ºæ—¶ï¼ˆCtrl+Cã€çª—å£å…³é—­ã€Environment.Exitï¼‰å¼ºåˆ¶æ¸…ç†å­è¿›ç¨‹
             AppDomain.CurrentDomain.ProcessExit += (_, _) =>
             {
                 foreach (var p in _spawnedProcesses)
@@ -803,21 +803,21 @@ namespace AvifEncoder
 
         }
 
-        /// <summary> ÅĞ¶Ï±àÂëÆ÷ÊÇ·ñÖ§³Ö -still-picture 1 ²ÎÊı£¨AVIF µ¥Ö¡¾²Ö¹Í¼Ïñ±êÖ¾£© </summary>
+        /// <summary> åˆ¤æ–­ç¼–ç å™¨æ˜¯å¦æ”¯æŒ -still-picture 1 å‚æ•°ï¼ˆAVIF å•å¸§é™æ­¢å›¾åƒæ ‡å¿—ï¼‰ </summary>
         /// <summary>
-        /// µÈ±ÈËõ·ÅÍ¼Æ¬£¬Ê¹³¤±ß²»³¬¹ı maxDim£¬Êä³öÎª PNG ÁÙÊ±ÎÄ¼ş¡£
-        /// ±£Áô Alpha Í¨µÀ£¨Èç¹ûÔ´ÎÄ¼şÓĞÍ¸Ã÷ĞÅÏ¢£©¡£
+        /// ç­‰æ¯”ç¼©æ”¾å›¾ç‰‡ï¼Œä½¿é•¿è¾¹ä¸è¶…è¿‡ maxDimï¼Œè¾“å‡ºä¸º PNG ä¸´æ—¶æ–‡ä»¶ã€‚
+        /// ä¿ç•™ Alpha é€šé“ï¼ˆå¦‚æœæºæ–‡ä»¶æœ‰é€æ˜ä¿¡æ¯ï¼‰ã€‚
         /// </summary>
         private async Task ScaleImageAsync(string input, string output, int maxDim)
         {
             var (w, h) = await GetResolutionAsync(input);
             if (w <= 0 || h <= 0)
-                throw new Exception($"ÎŞ·¨»ñÈ¡·Ö±æÂÊ: {input}");
+                throw new Exception($"æ— æ³•è·å–åˆ†è¾¨ç‡: {input}");
 
             int longSide = Math.Max(w, h);
             if (longSide <= maxDim)
             {
-                _fs.CopyFile(input, output, true);   // Ìæ»» File.Copy
+                _fs.CopyFile(input, output, true);   // æ›¿æ¢ File.Copy
                 return;
             }
 
@@ -835,7 +835,7 @@ namespace AvifEncoder
 
             (bool ok, string err) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(2));
             if (!ok)
-                throw new Exception($"Ëõ·ÅÊ§°Ü: {err}");
+                throw new Exception($"ç¼©æ”¾å¤±è´¥: {err}");
         }
         private static double ComputeMixScore(QualityMetrics m)
         {
@@ -851,7 +851,7 @@ namespace AvifEncoder
 
 
 
-        #region Journal ¶ÏµãĞø´«
+        #region Journal æ–­ç‚¹ç»­ä¼ 
 
         private void InitJournal()
         {
@@ -892,10 +892,10 @@ namespace AvifEncoder
                 }
                 string line = System.Text.Json.JsonSerializer.Serialize(obj);
                 _journalWriter.WriteLine(line);
-                _journalWriter.Flush();  // ÖğĞĞË¢ÅÌ
+                _journalWriter.Flush();  // é€è¡Œåˆ·ç›˜
                 _journalCountSinceSnapshot++;
 
-                // ¡ï ÖÜÆÚĞÔ¿ìÕÕ£ººÏ²¢¾É¿ìÕÕÍê³ÉÁĞ±í + ±¾´ÎĞÂÔö
+                // â˜… å‘¨æœŸæ€§å¿«ç…§ï¼šåˆå¹¶æ—§å¿«ç…§å®Œæˆåˆ—è¡¨ + æœ¬æ¬¡æ–°å¢
                 if (_config.Resume && _journalCountSinceSnapshot >= 50)
                 {
                     var (oldDone, _, _) = LoadSnapshot();
@@ -934,7 +934,7 @@ namespace AvifEncoder
                     }
                     catch (JsonException)
                     {
-                        // Ëğ»µĞĞ£º½Ø¶Ï²¢ÍË³ö
+                        // æŸåè¡Œï¼šæˆªæ–­å¹¶é€€å‡º
                         break;
                     }
                 }
@@ -993,7 +993,7 @@ namespace AvifEncoder
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
 
-                // ½Ø¶Ï Journal£ºÔ­×ÓÌæ»»£¬±ÜÃâ AppendJournal ÔÚ´°¿ÚÆÚ¶ªÊ§ÌõÄ¿
+                // æˆªæ–­ Journalï¼šåŸå­æ›¿æ¢ï¼Œé¿å… AppendJournal åœ¨çª—å£æœŸä¸¢å¤±æ¡ç›®
                 lock (_journalLock)
                 {
                     _journalWriter?.Flush();
@@ -1040,7 +1040,7 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary>°´¶ººÅ·Ö¸î CSV ĞĞ£¬ÕıÈ·´¦ÀíË«ÒıºÅ°ü¹üµÄ×Ö¶Î£¨ÒıºÅÄÚ¶ººÅ²»·Ö¸î£©</summary>
+        /// <summary>æŒ‰é€—å·åˆ†å‰² CSV è¡Œï¼Œæ­£ç¡®å¤„ç†åŒå¼•å·åŒ…è£¹çš„å­—æ®µï¼ˆå¼•å·å†…é€—å·ä¸åˆ†å‰²ï¼‰</summary>
         private static string[] SplitCsvLine(string line)
         {
             var result = new List<string>();
@@ -1091,7 +1091,7 @@ namespace AvifEncoder
 
         #endregion
 
-        #region Probe Ì½²â
+        #region Probe æ¢æµ‹
 
         private readonly ConcurrentDictionary<string, ProbeInfo> _probeCache = new();
 
@@ -1100,7 +1100,7 @@ namespace AvifEncoder
             string key = GetNormalizedPathForCache(filePath);
             if (_probeCache.TryGetValue(key, out var cached)) return cached;
 
-            // Ò»´ÎĞÔ ffprobe »ñÈ¡ËùÓĞĞÅÏ¢
+            // ä¸€æ¬¡æ€§ ffprobe è·å–æ‰€æœ‰ä¿¡æ¯
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
             string json = await RunProbeAsync(_ffprobePath, args);
             if (string.IsNullOrEmpty(json)) return null;
@@ -1123,7 +1123,7 @@ namespace AvifEncoder
                     _ => false
                 };
 
-                // ³¢ÊÔÌáÈ¡É«²Ê×Ö¶Î£¬ºöÂÔ unknown/reserved
+                // å°è¯•æå–è‰²å½©å­—æ®µï¼Œå¿½ç•¥ unknown/reserved
                 static string? TryGetStringProperty(JsonElement element, string propertyName)
                 {
                     if (element.TryGetProperty(propertyName, out var prop))
@@ -1171,14 +1171,14 @@ namespace AvifEncoder
 
 
 
-        /// <summary> ·µ»Ø±àÂëÆ÷ÌØ¶¨µÄ²ÎÊıÆ¬¶Î£¬ÒÑ°üº¬ÍêÕûµÄËÙ¶È¿ØÖÆºÍ·Ö¿é²¿·Ö </summary>
+        /// <summary> è¿”å›ç¼–ç å™¨ç‰¹å®šçš„å‚æ•°ç‰‡æ®µï¼Œå·²åŒ…å«å®Œæ•´çš„é€Ÿåº¦æ§åˆ¶å’Œåˆ†å—éƒ¨åˆ† </summary>
 
         private static string GetNormalizedPathForCache(string input)
         {
             try
             {
                 string full = Path.GetFullPath(input).Trim();
-                // ÆôÓÃ³¤Â·¾¶Ö§³Ö£¬È·±£»º´æ¼üÒ»ÖÂ
+                // å¯ç”¨é•¿è·¯å¾„æ”¯æŒï¼Œç¡®ä¿ç¼“å­˜é”®ä¸€è‡´
                 full = EnsureLongPath(full);
                 return OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
             }
@@ -1190,8 +1190,8 @@ namespace AvifEncoder
 
 
         /// <summary>
-        /// Ê¹ÓÃ libvmaf Ò»´ÎĞÔ¼ÆËã ref (Ô­Í¼) Óë dist (±àÂëºó) µÄ SSIM / PSNR?Y / MS?SSIM / VMAF¡£
-        /// ·µ»Ø QualityMetrics£¬Ê§°Ü·µ»Ø null¡£»á×Ô¶¯´¦Àí·Ö±æÂÊ²»Ò»ÖÂµÄÇé¿ö£¨Ëõ·ÅÖÁÏàÍ¬³ß´ç£©¡£
+        /// ä½¿ç”¨ libvmaf ä¸€æ¬¡æ€§è®¡ç®— ref (åŸå›¾) ä¸ dist (ç¼–ç å) çš„ SSIM / PSNR?Y / MS?SSIM / VMAFã€‚
+        /// è¿”å› QualityMetricsï¼Œå¤±è´¥è¿”å› nullã€‚ä¼šè‡ªåŠ¨å¤„ç†åˆ†è¾¨ç‡ä¸ä¸€è‡´çš„æƒ…å†µï¼ˆç¼©æ”¾è‡³ç›¸åŒå°ºå¯¸ï¼‰ã€‚
         /// </summary>
         private async Task<QualityMetrics?> ComputeAllMetricsAsync(string refPath, string distPath)
         {
@@ -1243,10 +1243,10 @@ namespace AvifEncoder
 
                 process.Start();
 
-                // ¡ï ÄÚ´æ¶µµ××·×Ù£¨Job Object Ê§°ÜÊ±±¸ÓÃ£©
+                // â˜… å†…å­˜å…œåº•è¿½è¸ªï¼ˆJob Object å¤±è´¥æ—¶å¤‡ç”¨ï¼‰
                 _spawnedProcesses.Add(process);
 
-                // ¡ï ½öÔÚ Windows Æ½Ì¨½«×Ó½ø³Ì¼ÓÈëÈ«¾Ö Job Object
+                // â˜… ä»…åœ¨ Windows å¹³å°å°†å­è¿›ç¨‹åŠ å…¥å…¨å±€ Job Object
                 if (OperatingSystem.IsWindows())
                 {
                     JobObjectHelper.AssignProcess(process);
@@ -1282,13 +1282,13 @@ namespace AvifEncoder
 
                 if (exitCode != 0)
                 {
-                    _logger.LogInfo($"ComputeAllMetrics Ê§°Ü (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
+                    _logger.LogInfo($"ComputeAllMetrics å¤±è´¥ (exit {exitCode}) [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
                     return null;
                 }
 
                 if (!File.Exists(jsonPath))
                 {
-                    _logger.LogInfo($"ComputeAllMetrics: JSON ÎÄ¼şÎ´Éú³É: {jsonPath}");
+                    _logger.LogInfo($"ComputeAllMetrics: JSON æ–‡ä»¶æœªç”Ÿæˆ: {jsonPath}");
                     return null;
                 }
 
@@ -1296,25 +1296,25 @@ namespace AvifEncoder
                 QualityMetrics? metrics = ParseVmafJson(json);
                 if (metrics == null) return null;
 
-                // ºÏ²¢ stdout Óë stderr£¬Í³Ò»ÌáÈ¡ VMAF£¬±ÜÃâÒòÊä³öÎ»ÖÃ²»Í¬¶øÂ©µô
+                // åˆå¹¶ stdout ä¸ stderrï¼Œç»Ÿä¸€æå– VMAFï¼Œé¿å…å› è¾“å‡ºä½ç½®ä¸åŒè€Œæ¼æ‰
                 string combinedOutput = stdout + "\n" + stderr;
                 double? vmafFromConsole = TryExtractVmaf(combinedOutput);
 
                 if (vmafFromConsole.HasValue)
                 {
-                    // ¿ØÖÆÌ¨ÌáÈ¡³É¹¦£¬¸²¸Ç JSON Öµ£¨²¿·Ö°æ±¾ JSON ÖĞ VMAF È±Ê§»òÎª¼ÙÖµ£©
+                    // æ§åˆ¶å°æå–æˆåŠŸï¼Œè¦†ç›– JSON å€¼ï¼ˆéƒ¨åˆ†ç‰ˆæœ¬ JSON ä¸­ VMAF ç¼ºå¤±æˆ–ä¸ºå‡å€¼ï¼‰
                     metrics.VMAF = vmafFromConsole.Value;
                 }
                 else
                 {
-                    // ¿ØÖÆÌ¨Ò²Î´ÌáÈ¡µ½ ¡ú ¼ì²é JSON ÊÇ·ñÒÑ¸ø³öÓĞĞ§ VMAF
+                    // æ§åˆ¶å°ä¹Ÿæœªæå–åˆ° â†’ æ£€æŸ¥ JSON æ˜¯å¦å·²ç»™å‡ºæœ‰æ•ˆ VMAF
                     if (double.IsNaN(metrics.VMAF))
                     {
-                        _logger.LogInfo($"Î´ÌáÈ¡µ½ VMAF ·ÖÊı [{Path.GetFileName(refPath)}]");
+                        _logger.LogInfo($"æœªæå–åˆ° VMAF åˆ†æ•° [{Path.GetFileName(refPath)}]");
                     }
                 }
 
-                // PSNR-Y ½Ó½ü libvmaf ÉÏÏŞ 60dB Ê±£¬ÓÃ¶ÀÁ¢ PSNR ÂË¾µÖØËãÎŞÉÏÏŞÖµ
+                // PSNR-Y æ¥è¿‘ libvmaf ä¸Šé™ 60dB æ—¶ï¼Œç”¨ç‹¬ç«‹ PSNR æ»¤é•œé‡ç®—æ— ä¸Šé™å€¼
                 if (metrics.PSNR_Y >= 59.5)
                 {
                     var uncappedPsnr = await ComputePsnrUncappedAsync(
@@ -1329,7 +1329,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"ComputeAllMetrics Òì³£: {ex.Message}");
+                _logger.LogInfo($"ComputeAllMetrics å¼‚å¸¸: {ex.Message}");
                 return null;
             }
             finally
@@ -1343,8 +1343,8 @@ namespace AvifEncoder
         }
 
         /// <summary>
-        /// Ê¹ÓÃ¶ÀÁ¢ ffmpeg PSNR ÂË¾µ¼ÆËã Y Í¨µÀ PSNR£¬ÈÆ¹ı libvmaf µÄ 60dB ÉÏÏŞ¡£
-        /// ·µ»Ø PSNR-Y Öµ£¨¿ÉÎª inf ¼´ double.PositiveInfinity£©£¬Ê§°Ü·µ»Ø null¡£
+        /// ä½¿ç”¨ç‹¬ç«‹ ffmpeg PSNR æ»¤é•œè®¡ç®— Y é€šé“ PSNRï¼Œç»•è¿‡ libvmaf çš„ 60dB ä¸Šé™ã€‚
+        /// è¿”å› PSNR-Y å€¼ï¼ˆå¯ä¸º inf å³ double.PositiveInfinityï¼‰ï¼Œå¤±è´¥è¿”å› nullã€‚
         /// </summary>
         private async Task<double?> ComputePsnrUncappedAsync(
             string refPath, string distPath)
@@ -1363,7 +1363,7 @@ namespace AvifEncoder
                 if (exitCode != 0) return null;
 
                 string output = stdout + stderr;
-                // stats_file=- Êä³ö¸ñÊ½: "psnr_y:inf" »ò "psnr_y:48.1234"
+                // stats_file=- è¾“å‡ºæ ¼å¼: "psnr_y:inf" æˆ– "psnr_y:48.1234"
                 var match = Regex.Match(output,
                     @"psnr_y:\s*(inf|[0-9.]+)",
                     RegexOptions.IgnoreCase);
@@ -1384,7 +1384,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"ComputePsnrUncapped Òì³£: {ex.Message}");
+                _logger.LogInfo($"ComputePsnrUncapped å¼‚å¸¸: {ex.Message}");
                 return null;
             }
         }
@@ -1403,7 +1403,7 @@ namespace AvifEncoder
 
         private static double? TryExtractVmaf(string combinedOutput)
         {
-            // ÊÊÅä²»Í¬ FFmpeg °æ±¾µÄÊä³ö¸ñÊ½
+            // é€‚é…ä¸åŒ FFmpeg ç‰ˆæœ¬çš„è¾“å‡ºæ ¼å¼
             var patterns = new[]
             {
         @"VMAF score:\s*([0-9.]+)",
@@ -1431,12 +1431,12 @@ namespace AvifEncoder
 
                 double ssim = pooled.TryGetProperty("float_ssim", out var e) ? e.GetProperty("mean").GetDouble() : 0;
                 double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                // VMAF ×Ö¶ÎÈ±Ê§Ê±ÉèÎª NaN£¬±ÜÃâ -1 »ò 0 ±»ÎóÅĞÎªÓĞĞ§·ÖÊı
+                // VMAF å­—æ®µç¼ºå¤±æ—¶è®¾ä¸º NaNï¼Œé¿å… -1 æˆ– 0 è¢«è¯¯åˆ¤ä¸ºæœ‰æ•ˆåˆ†æ•°
                 double vmaf = pooled.TryGetProperty("vmaf", out e)
                                 ? e.GetProperty("mean").GetDouble()
                                 : double.NaN;
                 double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                // CAMBI/ADM Ôİ²»¿ÉÓÃ£¬Ôñ»ú»Ö¸´
+                // CAMBI/ADM æš‚ä¸å¯ç”¨ï¼Œæ‹©æœºæ¢å¤
                 // double cambi = TryGetPooledDouble(pooled, "cambi", "cambi");
                 // if (double.IsNaN(cambi)) cambi = TryGetPooledDouble(pooled, "cambi", "score");
                 // double adm = TryGetPooledDouble(pooled, "adm", "adm");
@@ -1452,7 +1452,7 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                _logger.LogInfo($"½âÎö VMAF JSON Ê§°Ü: {ex.Message}");
+                _logger.LogInfo($"è§£æ VMAF JSON å¤±è´¥: {ex.Message}");
                 return null;
             }
         }
@@ -1465,10 +1465,10 @@ namespace AvifEncoder
 
 
         /// <summary>
-        /// ¸ù¾İÄ£°åÉú³ÉÊä³öÎÄ¼şÃû£¨²»º¬Â·¾¶£©
+        /// æ ¹æ®æ¨¡æ¿ç”Ÿæˆè¾“å‡ºæ–‡ä»¶åï¼ˆä¸å«è·¯å¾„ï¼‰
         /// </summary>
         /// <summary>
-        /// ¸ù¾İÄ£°åºÍÔ´ÎÄ¼şĞÅÏ¢Éú³ÉÊä³öÎÄ¼şÃû£¨²»º¬Ä¿Â¼£©
+        /// æ ¹æ®æ¨¡æ¿å’Œæºæ–‡ä»¶ä¿¡æ¯ç”Ÿæˆè¾“å‡ºæ–‡ä»¶åï¼ˆä¸å«ç›®å½•ï¼‰
         /// </summary>
         private string GetOutputFileName(string inputFile, int index)
         {
@@ -1478,14 +1478,14 @@ namespace AvifEncoder
             string dir = Path.GetFileName(Path.GetDirectoryName(inputFile)) ?? "";
             var now = DateTime.Now;
 
-            // »ù´¡Õ¼Î»·û
+            // åŸºç¡€å ä½ç¬¦
             string result = template
                 .Replace("{name}", name)
                 .Replace("{filename}", name)
                 .Replace("{ext}", ext)
                 .Replace("{dir}", dir);
 
-            // ±àÂë²ÎÊıÕ¼Î»·û
+            // ç¼–ç å‚æ•°å ä½ç¬¦
             result = result
                 .Replace("{encoder}", _config.Encoder)
                 .Replace("{crf}", _config.BaseCRF.ToString())
@@ -1495,21 +1495,21 @@ namespace AvifEncoder
                 .Replace("{bitdepth}", _config.BitDepth.ToString())
                 .Replace("{lossless}", _config.Lossless ? "lossless" : "lossy");
 
-            // Ê±¼äÕ¼Î»·û
+            // æ—¶é—´å ä½ç¬¦
             result = result
                 .Replace("{date}", now.ToString("yyyy-MM-dd"))
                 .Replace("{time}", now.ToString("HH-mm-ss"))
                 .Replace("{datetime}", now.ToString("yyyy-MM-dd_HH-mm-ss"));
 
-            // {index} Ö§³Ö×Ô¶¨Òå¿í¶È: {index}¡ú01, {index:000}¡ú001
+            // {index} æ”¯æŒè‡ªå®šä¹‰å®½åº¦: {index}â†’01, {index:000}â†’001
             result = Regex.Replace(result, @"\{index(?::(\d+))?\}",
                 m => index.ToString("D" + (m.Groups[1].Success ? m.Groups[1].Value : "2")));
 
-            // È·±£À©Õ¹ÃûÎª .avif
+            // ç¡®ä¿æ‰©å±•åä¸º .avif
             if (!result.EndsWith(".avif", StringComparison.OrdinalIgnoreCase))
                 result += ".avif";
 
-            // Ìæ»»·Ç·¨ÎÄ¼şÃû×Ö·û
+            // æ›¿æ¢éæ³•æ–‡ä»¶åå­—ç¬¦
             foreach (char c in Path.GetInvalidFileNameChars())
                 result = result.Replace(c, '_');
 
@@ -1518,7 +1518,7 @@ namespace AvifEncoder
 
 
 
-        // ==================== Ö÷Èë¿Ú ====================
+        // ==================== ä¸»å…¥å£ ====================
         public async Task RunAsync(CancellationToken externalToken = default)
         {
             try
@@ -1527,7 +1527,7 @@ namespace AvifEncoder
                 _cancelKeyHandler = (s, e) =>
                 {
                     e.Cancel = true;
-                    SafeWriteLine("\n[WARN] ÕıÔÚ°²È«Í£Ö¹£¬ÇëÉÔºò...");
+                    SafeWriteLine("\n[WARN] æ­£åœ¨å®‰å…¨åœæ­¢ï¼Œè¯·ç¨å€™...");
                     _globalCts?.Cancel();
                 };
                 Console.CancelKeyPress += _cancelKeyHandler;
@@ -1535,13 +1535,13 @@ namespace AvifEncoder
                 Console.OutputEncoding = Encoding.UTF8;
                 _progress.Start(DateTime.Now);
 
-                // Æô¶¯Õï¶Ï£ºJob Object ×´Ì¬
+                // å¯åŠ¨è¯Šæ–­ï¼šJob Object çŠ¶æ€
                 if (OperatingSystem.IsWindows())
                 {
                     if (JobObjectHelper.IsActive)
-                        _logger.LogInfo("[Job] ×Ó½ø³Ì±£»¤ÒÑ¼¤»î ¡ª Ö÷½ø³ÌÍË³öÊ±×Ô¶¯ÖÕÖ¹ËùÓĞ ffmpeg");
+                        _logger.LogInfo("[Job] å­è¿›ç¨‹ä¿æŠ¤å·²æ¿€æ´» â€” ä¸»è¿›ç¨‹é€€å‡ºæ—¶è‡ªåŠ¨ç»ˆæ­¢æ‰€æœ‰ ffmpeg");
                     else
-                        _logger.LogInfo("[Job] ×Ó½ø³Ì±£»¤Î´¼¤»î ¡ª Ê¹ÓÃÄÚ´æ½ø³ÌÁĞ±í¶µµ×ÖÕÖ¹");
+                        _logger.LogInfo("[Job] å­è¿›ç¨‹ä¿æŠ¤æœªæ¿€æ´» â€” ä½¿ç”¨å†…å­˜è¿›ç¨‹åˆ—è¡¨å…œåº•ç»ˆæ­¢");
                 }
 
                 _logger.LogInfo($"Pipeline started: CRF={_config.BaseCRF} TargetSSIM={_config.TargetSSIM}");
@@ -1554,7 +1554,7 @@ namespace AvifEncoder
                     $"MaxJobs={_config.MaxJobs}");
                 if (_config.Lossless)
                 {
-                    _logger.LogInfo("ÎŞËğÄ£Ê½£º±àÂëºóÖğÏñËØÑéÖ¤£¬Ê§°ÜÎÄ¼ş¸ôÀëµ½ _failed_verification/");
+                    _logger.LogInfo("æ— æŸæ¨¡å¼ï¼šç¼–ç åé€åƒç´ éªŒè¯ï¼Œå¤±è´¥æ–‡ä»¶éš”ç¦»åˆ° _failed_verification/");
                 }
 
                 await PrintStartupInfoAsync();
@@ -1562,16 +1562,16 @@ namespace AvifEncoder
                 var files = await ScanAndPrepareFilesAsync();
                 if (files == null || files.Count == 0) return;
 
-                // ¡ï ¶ÏµãĞø´«£ºÇåÀí²İ¸å + »Ø·ÅÈÕÖ¾ + ¹ıÂËÒÑÍê³É
+                // â˜… æ–­ç‚¹ç»­ä¼ ï¼šæ¸…ç†è‰ç¨¿ + å›æ”¾æ—¥å¿— + è¿‡æ»¤å·²å®Œæˆ
                 if (_config.Resume)
                 {
-                    _logger.LogInfo("[RESUME] ¶ÏµãĞø´«Ä£Ê½£ºÇåÀíÁÙÊ±ÎÄ¼ş...");
-                    // ÇåÀí±àÂë²İ¸å
+                    _logger.LogInfo("[RESUME] æ–­ç‚¹ç»­ä¼ æ¨¡å¼ï¼šæ¸…ç†ä¸´æ—¶æ–‡ä»¶...");
+                    // æ¸…ç†ç¼–ç è‰ç¨¿
                     foreach (var f in _fs.GetFiles(_outputDir, "_tmp_*.avif"))
                         try { _fs.DeleteFile(f); } catch { }
                     foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
                         try { _fs.DeleteFile(f); } catch { }
-                    // ÇåÀíËÑË÷ÁÙÊ±Ä¿Â¼£¨ÓÃ Directory.GetDirectories ¶ø·Ç GetFiles£©
+                    // æ¸…ç†æœç´¢ä¸´æ—¶ç›®å½•ï¼ˆç”¨ Directory.GetDirectories è€Œé GetFilesï¼‰
                     try
                     {
                         foreach (var dir in Directory.GetDirectories(_outputDir, "_search_advanced_*"))
@@ -1581,11 +1581,11 @@ namespace AvifEncoder
                     }
                     catch { }
 
-                    // ¼ÓÔØ¿ìÕÕ²¢»Ø·ÅÈÕÖ¾
-                    // ¡ï ±£ÊØ²ßÂÔ£ºÈı¸öÊı¾İÔ´È¡½»¼¯£¨È«²¿È·ÈÏÍê³É²ÅËãÍê³É£©
+                    // åŠ è½½å¿«ç…§å¹¶å›æ”¾æ—¥å¿—
+                    // â˜… ä¿å®ˆç­–ç•¥ï¼šä¸‰ä¸ªæ•°æ®æºå–äº¤é›†ï¼ˆå…¨éƒ¨ç¡®è®¤å®Œæˆæ‰ç®—å®Œæˆï¼‰
                     var (snapshotDone, savedConfigJson, savedInputDir) = LoadSnapshot();
 
-                    // ´Ó¿ìÕÕ»Ö¸´±àÂëÅäÖÃ£¨--resume Ê±ÎŞĞèÖØĞÂÖ¸¶¨²ÎÊı£©
+                    // ä»å¿«ç…§æ¢å¤ç¼–ç é…ç½®ï¼ˆ--resume æ—¶æ— éœ€é‡æ–°æŒ‡å®šå‚æ•°ï¼‰
                     if (savedConfigJson != null)
                     {
                         try
@@ -1618,17 +1618,17 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("SweepMode", out var sw)) _config.SweepMode = sw.GetBoolean();
                             if (cfg.TryGetProperty("DryRun", out var dr)) _config.DryRun = dr.GetBoolean();
                             if (cfg.TryGetProperty("Verbose", out var vb)) _config.Verbose = vb.GetBoolean();
-                            _logger.LogInfo($"[RESUME] ÒÑ´Ó¿ìÕÕ»Ö¸´±àÂëÅäÖÃ: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
+                            _logger.LogInfo($"[RESUME] å·²ä»å¿«ç…§æ¢å¤ç¼–ç é…ç½®: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogInfo($"[RESUME] ÅäÖÃ»Ö¸´Ê§°Ü: {ex.Message}£¬Ê¹ÓÃµ±Ç°²ÎÊı");
+                            _logger.LogInfo($"[RESUME] é…ç½®æ¢å¤å¤±è´¥: {ex.Message}ï¼Œä½¿ç”¨å½“å‰å‚æ•°");
                         }
                     }
-                    var journalDone = ReplayJournal(null);  // »Ø·ÅÈ«²¿ÈÕÖ¾£¨²»ÏŞÊ±¼ä´Á£©
+                    var journalDone = ReplayJournal(null);  // å›æ”¾å…¨éƒ¨æ—¥å¿—ï¼ˆä¸é™æ—¶é—´æˆ³ï¼‰
                     var csvDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                    // CSV£ºÌáÈ¡ "³É¹¦" ĞĞ¶ÔÓ¦µÄÊäÈëÎÄ¼ş£¨ÕıÈ·´¦ÀíÒıºÅÄÚ¶ººÅ£©
+                    // CSVï¼šæå– "æˆåŠŸ" è¡Œå¯¹åº”çš„è¾“å…¥æ–‡ä»¶ï¼ˆæ­£ç¡®å¤„ç†å¼•å·å†…é€—å·ï¼‰
                     if (_fs.FileExists(_csvPath))
                     {
                         try
@@ -1642,17 +1642,17 @@ namespace AvifEncoder
                                 {
                                     for (int c = 0; c < cols.Length; c++)
                                     {
-                                        if (cols[c] == "×´Ì¬") statusIdx = c;
-                                        if (cols[c] == "ÎÄ¼şÃû") fileIdx = c;
+                                        if (cols[c] == "çŠ¶æ€") statusIdx = c;
+                                        if (cols[c] == "æ–‡ä»¶å") fileIdx = c;
                                     }
                                     continue;
                                 }
                                 if (statusIdx >= 0 && fileIdx >= 0 &&
                                     statusIdx < cols.Length && fileIdx < cols.Length &&
-                                    cols[statusIdx] == "³É¹¦")
+                                    cols[statusIdx] == "æˆåŠŸ")
                                 {
                                     string csvFileName = cols[fileIdx];
-                                    // ÓÃÊµ¼Ê index ·´ÏòÓ³Éä£¨¶ø·Ç -1£¬±ÜÃâË÷ÒıÄ£°å´íÎ»£©
+                                    // ç”¨å®é™… index åå‘æ˜ å°„ï¼ˆè€Œé -1ï¼Œé¿å…ç´¢å¼•æ¨¡æ¿é”™ä½ï¼‰
                                     foreach (var (path, idx) in files)
                                     {
                                         string outPath = GetOutputPath(path, idx);
@@ -1668,40 +1668,40 @@ namespace AvifEncoder
                         catch { }
                     }
 
-                    // ½»¼¯£ºÈıÔ´È«²¿È·ÈÏ ¡ú ²ÅÊÓÎªÍê³É
+                    // äº¤é›†ï¼šä¸‰æºå…¨éƒ¨ç¡®è®¤ â†’ æ‰è§†ä¸ºå®Œæˆ
                     var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
                     completed.IntersectWith(journalDone);
-                    if (csvDone.Count > 0) completed.IntersectWith(csvDone);  // CSV ´æÔÚ²Å²ÎÓë½»¼¯
+                    if (csvDone.Count > 0) completed.IntersectWith(csvDone);  // CSV å­˜åœ¨æ‰å‚ä¸äº¤é›†
 
                     _logger.LogInfo(
-                        $"[RESUME] ¿ìÕÕ:{snapshotDone.Count} ÈÕÖ¾:{journalDone.Count} " +
-                        $"CSV:{csvDone.Count} ¡ú ½»¼¯:{completed.Count}");
+                        $"[RESUME] å¿«ç…§:{snapshotDone.Count} æ—¥å¿—:{journalDone.Count} " +
+                        $"CSV:{csvDone.Count} â†’ äº¤é›†:{completed.Count}");
 
-                    // ÎÄ¼şÏµÍ³½»²æÑéÖ¤£º½öÈÕÖ¾È±Ê§Ê±¼ÇÂ¼£¬²»×Ô¶¯±ê¼ÇÍê³É£¨±ÜÃâ²ÎÊı±ä¸üÎóÅĞ£©
+                    // æ–‡ä»¶ç³»ç»Ÿäº¤å‰éªŒè¯ï¼šä»…æ—¥å¿—ç¼ºå¤±æ—¶è®°å½•ï¼Œä¸è‡ªåŠ¨æ ‡è®°å®Œæˆï¼ˆé¿å…å‚æ•°å˜æ›´è¯¯åˆ¤ï¼‰
                     foreach (var (path, idx) in files)
                     {
                         if (completed.Contains(path)) continue;
                         string outPath = GetOutputPath(path, idx);
                         if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
                             _logger.LogInfo(
-                                $"[RESUME] Êä³öÎÄ¼ş´æÔÚµ«ÈÕÖ¾ÎŞ¼ÇÂ¼: {Path.GetFileName(outPath)}£¬½«ÖØĞÂ±àÂë");
+                                $"[RESUME] è¾“å‡ºæ–‡ä»¶å­˜åœ¨ä½†æ—¥å¿—æ— è®°å½•: {Path.GetFileName(outPath)}ï¼Œå°†é‡æ–°ç¼–ç ");
                     }
 
-                    // ¹ıÂËÒÑÍê³É
+                    // è¿‡æ»¤å·²å®Œæˆ
                     var remaining = files.Where(f => !completed.Contains(f.path)).ToList();
                     int skipped = files.Count - remaining.Count;
-                    _logger.LogInfo($"[RESUME] {skipped}/{files.Count} ÒÑÍê³É£¬Ê£Óà {remaining.Count} ´ı´¦Àí");
+                    _logger.LogInfo($"[RESUME] {skipped}/{files.Count} å·²å®Œæˆï¼Œå‰©ä½™ {remaining.Count} å¾…å¤„ç†");
                     if (remaining.Count == 0)
                     {
-                        _logger.LogInfo("[RESUME] È«²¿ÒÑÍê³É£¬ÎŞĞè´¦Àí");
+                        _logger.LogInfo("[RESUME] å…¨éƒ¨å·²å®Œæˆï¼Œæ— éœ€å¤„ç†");
                         return;
                     }
                     files = remaining;
-                    // ×ÜÎÄ¼şÊı²»±ä£¨ScanAndPrepareFilesAsync ÒÑÉè£©£¬Ö»µ÷ÕûÒÑÍê³É¼ÆÊı
+                    // æ€»æ–‡ä»¶æ•°ä¸å˜ï¼ˆScanAndPrepareFilesAsync å·²è®¾ï¼‰ï¼Œåªè°ƒæ•´å·²å®Œæˆè®¡æ•°
                     _progress.SetInitialProcessed(skipped);
                 }
 
-                // ³õÊ¼»¯ Journal£»·Ç»Ö¸´Ä£Ê½ÏÈÇåÀí¾É¿ìÕÕ±ÜÃâ»ìÏı
+                // åˆå§‹åŒ– Journalï¼›éæ¢å¤æ¨¡å¼å…ˆæ¸…ç†æ—§å¿«ç…§é¿å…æ··æ·†
                 if (!_config.Resume)
                 {
                     try { if (_fs.FileExists(_snapshotPath)) _fs.DeleteFile(_snapshotPath); } catch { }
@@ -1712,10 +1712,10 @@ namespace AvifEncoder
                 var results = await ProcessInitialBatchAsync(files);
                 results = await RetryFailuresAsync(results);
 
-                // ÍË³öÇ°ºÏ²¢¾ÉÒÑÍê³É + ĞÂÍê³É ¡ú ±£´æ×îÖÕ¿ìÕÕ
+                // é€€å‡ºå‰åˆå¹¶æ—§å·²å®Œæˆ + æ–°å®Œæˆ â†’ ä¿å­˜æœ€ç»ˆå¿«ç…§
                 if (_config.Resume)
                 {
-                    // ºÏ²¢¿ìÕÕÖĞÒÑÓĞµÄÍê³ÉÁĞ±í
+                    // åˆå¹¶å¿«ç…§ä¸­å·²æœ‰çš„å®Œæˆåˆ—è¡¨
                     var (oldCompleted, _, _) = LoadSnapshot();
                     var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
                         .Select(r => r!.InputPath);
@@ -1732,38 +1732,38 @@ namespace AvifEncoder
             }
             finally
             {
-                FinalCleanup();   // ÎŞÂÛ³É¹¦¡¢Ê§°Ü¡¢Òì³£¶¼»áÖ´ĞĞ
+                FinalCleanup();   // æ— è®ºæˆåŠŸã€å¤±è´¥ã€å¼‚å¸¸éƒ½ä¼šæ‰§è¡Œ
             }
         }
 
         #endregion
 
-        #region Æô¶¯Óë±àÅÅ
+        #region å¯åŠ¨ä¸ç¼–æ’
 
-        /// <summary> ´òÓ¡Æô¶¯ĞÅÏ¢£¬°üÀ¨±àÂëÆ÷¼ì²â </summary>
+        /// <summary> æ‰“å°å¯åŠ¨ä¿¡æ¯ï¼ŒåŒ…æ‹¬ç¼–ç å™¨æ£€æµ‹ </summary>
         private async Task PrintStartupInfoAsync()
         {
-            SafeWriteLine("===== AVIF È«×Ô¶¯±àÂëÁ÷Ë®Ïß =====");
-            SafeWriteLine($"ÊäÈëÎÄ¼ş¼Ğ: {_inputDir}");
-            SafeWriteLine($"Êä³öÎÄ¼ş¼Ğ: {_outputDir}");
+            SafeWriteLine("===== AVIF å…¨è‡ªåŠ¨ç¼–ç æµæ°´çº¿ =====");
+            SafeWriteLine($"è¾“å…¥æ–‡ä»¶å¤¹: {_inputDir}");
+            SafeWriteLine($"è¾“å‡ºæ–‡ä»¶å¤¹: {_outputDir}");
 
             string crfInfo;
             if (_config.UseCRFSearch)
-                crfInfo = $"»ù´¡CRF: {_config.BaseCRF}, ËÑË÷·¶Î§: {_config.MinCRF}-{_config.MaxCRF}";
+                crfInfo = $"åŸºç¡€CRF: {_config.BaseCRF}, æœç´¢èŒƒå›´: {_config.MinCRF}-{_config.MaxCRF}";
             else
                 crfInfo = $"CRF: {_config.BaseCRF}";
 
-            // ¸ù¾İ MetricMode ¶¯Ì¬Éú³É±êÇ©ºÍÔ­ÉúÊıÖµ
+            // æ ¹æ® MetricMode åŠ¨æ€ç”Ÿæˆæ ‡ç­¾å’ŒåŸç”Ÿæ•°å€¼
             string metricMode = (_config.MetricMode ?? "vmaf").ToUpper();
             string targetDisplay = GetTargetDisplayString(_config);
 
-            SafeWriteLine($"±àÂëÆ÷: {_config.Encoder}");
-            SafeWriteLine($"Í¬Ê±µ÷ÓÃffmpeg±àÂëÊı: {_maxFfmpegConcurrency}");
-            SafeWriteLine($"{crfInfo}  {metricMode}Ä¿±ê: {targetDisplay}  ËÑË÷: {_config.UseCRFSearch}  ÏñËØ¸ñÊ½: {(_config.AutoSource ? "×ÔÊÊÓ¦" : (_config.PixelFormat ?? "¶¯Ì¬"))}");
-            SafeWriteLine($"ÎÄ¼şÃûÄ£°å: {_config.OutputNameFormat}");
+            SafeWriteLine($"ç¼–ç å™¨: {_config.Encoder}");
+            SafeWriteLine($"åŒæ—¶è°ƒç”¨ffmpegç¼–ç æ•°: {_maxFfmpegConcurrency}");
+            SafeWriteLine($"{crfInfo}  {metricMode}ç›®æ ‡: {targetDisplay}  æœç´¢: {_config.UseCRFSearch}  åƒç´ æ ¼å¼: {(_config.AutoSource ? "è‡ªé€‚åº”" : (_config.PixelFormat ?? "åŠ¨æ€"))}");
+            SafeWriteLine($"æ–‡ä»¶åæ¨¡æ¿: {_config.OutputNameFormat}");
         }
 
-        // ¸¨Öú·½·¨£º»ñÈ¡µ±Ç°ÅäÖÃµÄÄ¿±êÖµÏÔÊ¾×Ö·û´®£¨ÓÅÏÈÔ­ÉúÖµ£©
+        // è¾…åŠ©æ–¹æ³•ï¼šè·å–å½“å‰é…ç½®çš„ç›®æ ‡å€¼æ˜¾ç¤ºå­—ç¬¦ä¸²ï¼ˆä¼˜å…ˆåŸç”Ÿå€¼ï¼‰
         private static string GetTargetDisplayString(PresetConfig config)
         {
             string metricMode = config.MetricMode ?? "vmaf";
@@ -1788,17 +1788,17 @@ namespace AvifEncoder
             };
         }
 
-        /// <summary> É¨ÃèÊäÈëÄ¿Â¼£¬·µ»Ø°´ÎÄ¼ş´óĞ¡½µĞòÅÅÁĞµÄÎÄ¼şÁĞ±í </summary>
+        /// <summary> æ‰«æè¾“å…¥ç›®å½•ï¼Œè¿”å›æŒ‰æ–‡ä»¶å¤§å°é™åºæ’åˆ—çš„æ–‡ä»¶åˆ—è¡¨ </summary>
         private async Task<List<(string path, int index)>?> ScanAndPrepareFilesAsync()
         {
             if (!_fs.DirectoryExists(_inputDir))
             {
-                SafeWriteLine("ÊäÈëÎÄ¼ş¼Ğ²»´æÔÚ¡£");
+                SafeWriteLine("è¾“å…¥æ–‡ä»¶å¤¹ä¸å­˜åœ¨ã€‚");
                 return null;
             }
             _fs.CreateDirectory(_outputDir);
 
-            // ¸ù¾İÅäÖÃ¹¹½¨À©Õ¹ÃûÁĞ±í£ºÓÃ»§Î´Ö¸¶¨ÔòÊ¹ÓÃ 12 ÖÖÄ¬ÈÏÈ«²¿¸ñÊ½
+            // æ ¹æ®é…ç½®æ„å»ºæ‰©å±•ååˆ—è¡¨ï¼šç”¨æˆ·æœªæŒ‡å®šåˆ™ä½¿ç”¨ 12 ç§é»˜è®¤å…¨éƒ¨æ ¼å¼
             string[] extensions;
             if (!string.IsNullOrWhiteSpace(_config.InputExtensions))
             {
@@ -1813,7 +1813,7 @@ namespace AvifEncoder
             }
 
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            // ¡ï ĞŞ¸´£ºÈ¥³ı¿ÉÄÜµÄ \\?\ ³¤Â·¾¶Ç°×º£¬·ñÔò Directory.EnumerateFiles ÎŞ·¨µİ¹é×ÓÄ¿Â¼
+            // â˜… ä¿®å¤ï¼šå»é™¤å¯èƒ½çš„ \\?\ é•¿è·¯å¾„å‰ç¼€ï¼Œå¦åˆ™ Directory.EnumerateFiles æ— æ³•é€’å½’å­ç›®å½•
             string scanDir = NormalizePathForExternalTool(_inputDir);
             var sortedFiles = _fs.EnumerateFiles(scanDir, "*.*", searchOption)
                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
@@ -1823,23 +1823,23 @@ namespace AvifEncoder
 
             if (sortedFiles.Count == 0)
             {
-                SafeWriteLine("Î´ÕÒµ½Í¼Æ¬¡£");
+                SafeWriteLine("æœªæ‰¾åˆ°å›¾ç‰‡ã€‚");
                 return null;
             }
 
             _progress.SetTotalFiles(sortedFiles.Count);
-            SafeWriteLine($"´ı´¦Àí: {_progress.TotalFiles} ÕÅ\n");
+            SafeWriteLine($"å¾…å¤„ç†: {_progress.TotalFiles} å¼ \n");
 
-            // ·À´ô£º¼ì²â³¬´ó·Ö±æÂÊÍ¼Æ¬
+            // é˜²å‘†ï¼šæ£€æµ‹è¶…å¤§åˆ†è¾¨ç‡å›¾ç‰‡
             try
             {
                 var probe = await GetProbeInfoAsync(sortedFiles[0].path);
                 if (probe != null && Math.Max(probe.Width, probe.Height) > 3840)
                 {
                     SafeWriteLine(
-                        $"[INFO] ¼ì²âµ½¸ß·Ö±æÂÊÍ¼Æ¬ " +
-                        $"({probe.Width}x{probe.Height})£¬" +
-                        "AV1 ±àÂë¿ÉÄÜ½ÏÂı£¬½¨ÒéÊ¹ÓÃ --max-resolution ÏŞÖÆ·Ö±æÂÊ¡£");
+                        $"[INFO] æ£€æµ‹åˆ°é«˜åˆ†è¾¨ç‡å›¾ç‰‡ " +
+                        $"({probe.Width}x{probe.Height})ï¼Œ" +
+                        "AV1 ç¼–ç å¯èƒ½è¾ƒæ…¢ï¼Œå»ºè®®ä½¿ç”¨ --max-resolution é™åˆ¶åˆ†è¾¨ç‡ã€‚");
                 }
             }
             catch { }
@@ -1850,29 +1850,29 @@ namespace AvifEncoder
             return processingOrder;
         }
 
-        /// <summary> Ê×´ÎÅúÁ¿´¦ÀíËùÓĞÎÄ¼ş </summary>
+        /// <summary> é¦–æ¬¡æ‰¹é‡å¤„ç†æ‰€æœ‰æ–‡ä»¶ </summary>
         private async Task<List<EncodeResult?>> ProcessInitialBatchAsync(List<(string path, int index)> files)
         {
             var result = await ProcessFilesAsync(files, _config, isRetry: false);
             return [.. result.Select(r => (EncodeResult?)r)];
         }
 
-        /// <summary> ÖØÊÔÊ§°ÜµÄÎÄ¼ş£¬²¢·µ»ØºÏ²¢ºóµÄ½á¹ûÁĞ±í </summary>
-        /// <summary> ÖØÊÔÊ§°ÜµÄÎÄ¼ş£¬²¢·µ»ØºÏ²¢ºóµÄ½á¹ûÁĞ±í </summary>
+        /// <summary> é‡è¯•å¤±è´¥çš„æ–‡ä»¶ï¼Œå¹¶è¿”å›åˆå¹¶åçš„ç»“æœåˆ—è¡¨ </summary>
+        /// <summary> é‡è¯•å¤±è´¥çš„æ–‡ä»¶ï¼Œå¹¶è¿”å›åˆå¹¶åçš„ç»“æœåˆ—è¡¨ </summary>
         private async Task<List<EncodeResult?>> RetryFailuresAsync(List<EncodeResult?> results)
         {
             var failures = results.Where(r => r != null && !r.Success && !r.Skipped).ToList();
             if (failures.Count == 0) return results;
 
-            SafeWriteLine($"\n[RETRY] ¿ªÊ¼ÖØÊÔ {failures.Count} ¸öÊ§°ÜÎÄ¼ş...");
+            SafeWriteLine($"\n[RETRY] å¼€å§‹é‡è¯• {failures.Count} ä¸ªå¤±è´¥æ–‡ä»¶...");
 
-            // µ÷Õû×ÜÊı±ÜÃâ½ø¶È³¬¹ı 100%
+            // è°ƒæ•´æ€»æ•°é¿å…è¿›åº¦è¶…è¿‡ 100%
             _progress.SetTotalFiles(_progress.TotalFiles + failures.Count);
 
-            // Ê¹ÓÃ Result ÖĞ±£´æµÄÍêÕûÊäÈëÂ·¾¶£¬²»ÔÙÆ´½Ó
+            // ä½¿ç”¨ Result ä¸­ä¿å­˜çš„å®Œæ•´è¾“å…¥è·¯å¾„ï¼Œä¸å†æ‹¼æ¥
             var retryFiles = failures.Select(f => (filePath: f!.InputPath, index: f.Index)).ToList();
 
-            // É¾³ıÒÑÓĞµÄÊä³öÎÄ¼ş£¬±ÜÃâ¸ÉÈÅ
+            // åˆ é™¤å·²æœ‰çš„è¾“å‡ºæ–‡ä»¶ï¼Œé¿å…å¹²æ‰°
             foreach (var (filePath, index) in retryFiles)
             {
                 string outPath = GetOutputPath(filePath, index);
@@ -1892,23 +1892,23 @@ namespace AvifEncoder
             return resultList;
         }
 
-        /// <summary> Í³¼Æ²¢´òÓ¡×îÖÕ×Ü½á£¬µ¼³ö CSV </summary>
-        /// <summary> Í³¼Æ²¢´òÓ¡×îÖÕ×Ü½á£¬µ¼³ö CSV </summary>
+        /// <summary> ç»Ÿè®¡å¹¶æ‰“å°æœ€ç»ˆæ€»ç»“ï¼Œå¯¼å‡º CSV </summary>
+        /// <summary> ç»Ÿè®¡å¹¶æ‰“å°æœ€ç»ˆæ€»ç»“ï¼Œå¯¼å‡º CSV </summary>
         private async Task PrintSummaryAndExport(List<EncodeResult?> results)
         {
-            // ¡ï µÈ´ıËùÓĞºóÌ¨¸ß¼¶Ö¸±ê¼ÆËãÍê³É
+            // â˜… ç­‰å¾…æ‰€æœ‰åå°é«˜çº§æŒ‡æ ‡è®¡ç®—å®Œæˆ
             if (!_advancedMetricTasks.IsEmpty)
             {
-                SafeWriteLine("?? µÈ´ıºóÌ¨¸ß¼¶Ö¸±ê¼ÆËãÍê³É...");
+                SafeWriteLine("?? ç­‰å¾…åå°é«˜çº§æŒ‡æ ‡è®¡ç®—å®Œæˆ...");
                 try { await Task.WhenAll([.. _advancedMetricTasks]); }
-                catch (Exception ex) { _logger.LogError($"ºóÌ¨¸ß¼¶ÈÎÎñÒì³£: {ex.Message}"); }
+                catch (Exception ex) { _logger.LogError($"åå°é«˜çº§ä»»åŠ¡å¼‚å¸¸: {ex.Message}"); }
             }
 
-            // ¡ï µÈ´ıËùÓĞºóÌ¨ XPSNR ¼ÆËãÍê³É²¢»ØÌî
+            // â˜… ç­‰å¾…æ‰€æœ‰åå° XPSNR è®¡ç®—å®Œæˆå¹¶å›å¡«
             if (!_xpsnrTasks.IsEmpty)
             {
                 try { await Task.WhenAll([.. _xpsnrTasks]); }
-                catch (Exception ex) { _logger.LogInfo($"XPSNR ºóÌ¨Òì³£: {ex.Message}"); }
+                catch (Exception ex) { _logger.LogInfo($"XPSNR åå°å¼‚å¸¸: {ex.Message}"); }
             }
 
             var totalTime = DateTime.Now - _progress.StartTime;
@@ -1921,14 +1921,14 @@ namespace AvifEncoder
             long totalOutput = allResults.Where(r => !r.Skipped && r.Success).Sum(r => r.OutputSize);
             double overallRatio = totalOriginal == 0 ? 0 : 1.0 - (double)totalOutput / totalOriginal;
 
-            SafeWriteLine("\n================ ×ª»»Íê³É ================");
-            SafeWriteLine($"×ÜÎÄ¼şÊı: {_progress.TotalFiles}  ³É¹¦: {successCount}  Ê§°Ü: {failCount}  Ìø¹ı: {skipCount}");
-            SafeWriteLine($"Ô­Ê¼´óĞ¡: {FormatSize(totalOriginal)}  Êä³ö´óĞ¡: {FormatSize(totalOutput)}");
-            SafeWriteLine($"ÕûÌåÑ¹ËõÂÊ: {overallRatio:P1}  ×ÜºÄÊ±: {FormatTimeSpan(totalTime)}");
-            // ÒÆ³ı¾ÉµÄ»º´æ¼ÆÊıÊä³ö£¬ÒòÎª ICacheManager Î´±©Â¶¼ÆÊıÊôĞÔ
+            SafeWriteLine("\n================ è½¬æ¢å®Œæˆ ================");
+            SafeWriteLine($"æ€»æ–‡ä»¶æ•°: {_progress.TotalFiles}  æˆåŠŸ: {successCount}  å¤±è´¥: {failCount}  è·³è¿‡: {skipCount}");
+            SafeWriteLine($"åŸå§‹å¤§å°: {FormatSize(totalOriginal)}  è¾“å‡ºå¤§å°: {FormatSize(totalOutput)}");
+            SafeWriteLine($"æ•´ä½“å‹ç¼©ç‡: {overallRatio:P1}  æ€»è€—æ—¶: {FormatTimeSpan(totalTime)}");
+            // ç§»é™¤æ—§çš„ç¼“å­˜è®¡æ•°è¾“å‡ºï¼Œå› ä¸º ICacheManager æœªæš´éœ²è®¡æ•°å±æ€§
             _logger.LogInfo(
-                $"Finished. ³É¹¦: {successCount}, Ê§°Ü: {failCount}, " +
-                $"Ìø¹ı: {skipCount}, ºÄÊ±: {FormatTimeSpan(totalTime)}");
+                $"Finished. æˆåŠŸ: {successCount}, å¤±è´¥: {failCount}, " +
+                $"è·³è¿‡: {skipCount}, è€—æ—¶: {FormatTimeSpan(totalTime)}");
             if (successCount > 0)
             {
                 double avgEncode = allResults
@@ -1936,13 +1936,13 @@ namespace AvifEncoder
                     .Select(r => r.EncodeTime.TotalSeconds)
                     .DefaultIfEmpty(0).Average();
                 _logger.LogInfo(
-                    $"Æ½¾ù±àÂëºÄÊ±: {avgEncode:F1}s, " +
-                    $"ÕûÌåÑ¹ËõÂÊ: {overallRatio:P1}, " +
-                    $"×ÜÊä³ö: {FormatSize(totalOutput)}");
+                    $"å¹³å‡ç¼–ç è€—æ—¶: {avgEncode:F1}s, " +
+                    $"æ•´ä½“å‹ç¼©ç‡: {overallRatio:P1}, " +
+                    $"æ€»è¾“å‡º: {FormatSize(totalOutput)}");
             }
 
 
-            // ´Ó»º´æ»ØÌî¸ß¼¶Ö¸±ê
+            // ä»ç¼“å­˜å›å¡«é«˜çº§æŒ‡æ ‡
             foreach (var r in allResults)
             {
                 if (!string.IsNullOrEmpty(r.AdvancedMetricsCacheKey) && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var updated))
@@ -1955,15 +1955,15 @@ namespace AvifEncoder
                     r.FinalXPSNR_U = updated?.XPSNR_U;
                     r.FinalXPSNR_V = updated?.XPSNR_V;
                     r.FinalWXPSNR = updated?.W_XPSNR;
-                    // r.FinalCAMBI = updated?.CAMBI;   // Ôİ²»¿ÉÓÃ
-                    // r.FinalADM = updated?.ADM;       // Ôİ²»¿ÉÓÃ
+                    // r.FinalCAMBI = updated?.CAMBI;   // æš‚ä¸å¯ç”¨
+                    // r.FinalADM = updated?.ADM;       // æš‚ä¸å¯ç”¨
                 }
             }
 
-            // ¡ï È«²¿Á÷³ÌÕæÕıÍê³É ¡ú ±¨¸æ 100% ¸ø GUI
+            // â˜… å…¨éƒ¨æµç¨‹çœŸæ­£å®Œæˆ â†’ æŠ¥å‘Š 100% ç»™ GUI
             _guiProgress?.Report(100);
 
-            // ±ê×¢Íâ²¿¹¤¾ßÈ±Ê§µ¼ÖÂµÄ¸ß¼¶Ö¸±ê¿ÕÈ±
+            // æ ‡æ³¨å¤–éƒ¨å·¥å…·ç¼ºå¤±å¯¼è‡´çš„é«˜çº§æŒ‡æ ‡ç©ºç¼º
             bool hasSsimu2 = EncoderUtils.FindExecutable("ssimulacra2") != null;
             bool hasButter = EncoderUtils.FindExecutable("butteraugli_main") != null;
             if (!hasSsimu2 || !hasButter)
@@ -1971,7 +1971,7 @@ namespace AvifEncoder
                 var missingTools = new List<string>();
                 if (!hasSsimu2) missingTools.Add("SSIMULACRA2(ssimulacra2.exe)");
                 if (!hasButter) missingTools.Add("Butteraugli(butteraugli_main.exe)");
-                string note = $"Íâ²¿¹¤¾ßÈ±Ê§: {string.Join(", ", missingTools)}";
+                string note = $"å¤–éƒ¨å·¥å…·ç¼ºå¤±: {string.Join(", ", missingTools)}";
 
                 foreach (var r in allResults)
                 {
@@ -1986,19 +1986,19 @@ namespace AvifEncoder
                     }
                 }
                 SafeWriteLine(
-                    $"[INFO] Íâ²¿¹¤¾ßÈ±Ê§£¬¸ß¼¶Ö¸±êµ¥Ôª¸ñÁô¿Õ: {string.Join(", ", missingTools)}");
+                    $"[INFO] å¤–éƒ¨å·¥å…·ç¼ºå¤±ï¼Œé«˜çº§æŒ‡æ ‡å•å…ƒæ ¼ç•™ç©º: {string.Join(", ", missingTools)}");
             }
 
             ExportCsv(allResults);
         }
 
-        /// <summary> ÇåÀí±àÂë»º´æ¼°ÁÙÊ±ÎÄ¼ş </summary>
+        /// <summary> æ¸…ç†ç¼–ç ç¼“å­˜åŠä¸´æ—¶æ–‡ä»¶ </summary>
         private void FinalCleanup()
         {
             try { foreach (var p in Process.GetProcessesByName("ffmpeg")) try { p.Kill(true); } catch { } } catch { }
             try { foreach (var p in Process.GetProcessesByName("ffprobe")) try { p.Kill(true); } catch { } } catch { }
 
-            // ¡ï ¶µµ×£ºÇ¿ÖÆÉ±µôËùÓĞÔøÆô¶¯µÄ ffmpeg ×Ó½ø³Ì£¨Job Object Ê§°ÜÊ±±£µ×£©
+            // â˜… å…œåº•ï¼šå¼ºåˆ¶æ€æ‰æ‰€æœ‰æ›¾å¯åŠ¨çš„ ffmpeg å­è¿›ç¨‹ï¼ˆJob Object å¤±è´¥æ—¶ä¿åº•ï¼‰
             foreach (var p in _spawnedProcesses)
             {
                 try
@@ -2006,35 +2006,35 @@ namespace AvifEncoder
                     if (!p.HasExited)
                     {
                         p.Kill(entireProcessTree: true);
-                        _logger.LogInfo($"Ç¿ÖÆÖÕÖ¹²ĞÁô½ø³Ì PID={p.Id}");
+                        _logger.LogInfo($"å¼ºåˆ¶ç»ˆæ­¢æ®‹ç•™è¿›ç¨‹ PID={p.Id}");
                     }
                 }
                 catch { }
             }
-            // ÊÍ·ÅËùÓĞ Process ¶ÔÏó
+            // é‡Šæ”¾æ‰€æœ‰ Process å¯¹è±¡
             foreach (var p in _spawnedProcesses)
             {
                 try { if (p.HasExited) p.Dispose(); } catch { }
             }
             _spawnedProcesses.Clear();
 
-            // ÇåÀí±àÂë»º´æÄ¿Â¼
+            // æ¸…ç†ç¼–ç ç¼“å­˜ç›®å½•
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
 
-            // ÇåÀíËõ·ÅºóµÄÁÙÊ±Í¼Æ¬Ä¿Â¼
+            // æ¸…ç†ç¼©æ”¾åçš„ä¸´æ—¶å›¾ç‰‡ç›®å½•
             string scaledDir = Path.Combine(_outputDir, "_scaled");
             if (_fs.DirectoryExists(scaledDir))
             {
                 try { _fs.DeleteDirectory(scaledDir, true); } catch { }
             }
 
-            // ÇåÀí´ø _p_ Ç°×ºµÄÁÙÊ± AVIF ÎÄ¼ş
+            // æ¸…ç†å¸¦ _p_ å‰ç¼€çš„ä¸´æ—¶ AVIF æ–‡ä»¶
             foreach (var f in _fs.GetFiles(_outputDir, "_p_*.avif"))
                 try { _fs.DeleteFile(f); } catch { }
             foreach (var f in _fs.GetFiles(_outputDir, "_tmp_*.avif"))
                 try { _fs.DeleteFile(f); } catch { }
 
-            // ¡ï ÇåÀí²ĞÁôµÄÖ¸±êÁÙÊ±Ä¿Â¼
+            // â˜… æ¸…ç†æ®‹ç•™çš„æŒ‡æ ‡ä¸´æ—¶ç›®å½•
             try
             {
                 foreach (var dir in Directory.GetDirectories(_outputDir, "_search_advanced_*"))
@@ -2044,14 +2044,14 @@ namespace AvifEncoder
             }
             catch { }
 
-            // ÇåÀí±¾ÊµÀıÉú³ÉµÄ ComputeAllMetrics ÁÙÊ± JSON Ä¿Â¼
+            // æ¸…ç†æœ¬å®ä¾‹ç”Ÿæˆçš„ ComputeAllMetrics ä¸´æ—¶ JSON ç›®å½•
             string metricsDir = Path.Combine(Environment.CurrentDirectory, $"avif_metrics_tmp_{_instanceId}");
             if (Directory.Exists(metricsDir))
             {
                 try { Directory.Delete(metricsDir, true); } catch { }
             }
 
-            // ¼æÈİ¾É°æ£ºÇåÀíÎŞÊµÀıºó×ºµÄÒÅÁôÄ¿Â¼£¨¹ı¶ÉÆÚºóÒÆ³ı£©
+            // å…¼å®¹æ—§ç‰ˆï¼šæ¸…ç†æ— å®ä¾‹åç¼€çš„é—ç•™ç›®å½•ï¼ˆè¿‡æ¸¡æœŸåç§»é™¤ï¼‰
             string legacyMetricsDir = Path.Combine(Environment.CurrentDirectory, "avif_metrics_tmp");
             if (Directory.Exists(legacyMetricsDir))
             {
@@ -2066,13 +2066,13 @@ namespace AvifEncoder
                 try
                 {
                     _fs.DeleteDirectory(dir, true);
-                    _logger.LogInfo($"»º´æÒÑÇåÀí: {dir}");
+                    _logger.LogInfo($"ç¼“å­˜å·²æ¸…ç†: {dir}");
                 }
-                catch (Exception ex) { _logger.LogInfo($"ÇåÀíÊ§°Ü: {dir} - {ex.Message}"); }
+                catch (Exception ex) { _logger.LogInfo($"æ¸…ç†å¤±è´¥: {dir} - {ex.Message}"); }
             }
         }
 
-        // ========== ĞŞ¸´ºóµÄ PrintProgress£¨Çø·ÖÌø¹ı£© ==========
+        // ========== ä¿®å¤åçš„ PrintProgressï¼ˆåŒºåˆ†è·³è¿‡ï¼‰ ==========
         private void PrintProgress(EncodeResult? r)
         {
             SafeWriteLine(_progress.GetProgressLine(r));
@@ -2081,51 +2081,51 @@ namespace AvifEncoder
 
 
         /// <summary>
-        /// È·±£Â·¾¶ÔÚ Windows ÉÏÊ¹ÓÃ³¤Â·¾¶¸ñÊ½£¨Ìí¼Ó \\?\ Ç°×º£©£¬
-        /// ´Ó¶øÍ»ÆÆ 260 ×Ö·ûµÄ MAX_PATH ÏŞÖÆ¡£
+        /// ç¡®ä¿è·¯å¾„åœ¨ Windows ä¸Šä½¿ç”¨é•¿è·¯å¾„æ ¼å¼ï¼ˆæ·»åŠ  \\?\ å‰ç¼€ï¼‰ï¼Œ
+        /// ä»è€Œçªç ´ 260 å­—ç¬¦çš„ MAX_PATH é™åˆ¶ã€‚
         /// </summary>
         private static string EnsureLongPath(string path)
         {
             if (OperatingSystem.IsWindows())
             {
-                // ÒÑÌí¼Ó¹ı³¤Â·¾¶Ç°×º£¬Ö±½Ó·µ»Ø
+                // å·²æ·»åŠ è¿‡é•¿è·¯å¾„å‰ç¼€ï¼Œç›´æ¥è¿”å›
                 if (path.StartsWith(@"\\?\"))
                     return path;
 
                 string full = Path.GetFullPath(path);
 
-                // ´¦Àí UNC Â·¾¶£º\\server\share\... ¡ú \\?\UNC\server\share\...
+                // å¤„ç† UNC è·¯å¾„ï¼š\\server\share\... â†’ \\?\UNC\server\share\...
                 if (full.StartsWith(@"\\") && !full.StartsWith(@"\\?\"))
                 {
-                    // UNC Â·¾¶ÓĞÁ½¸ö¿ªÍ·µÄ·´Ğ±¸Ü£¬½«µÚÒ»¸ö·´Ğ±¸ÜÌæ»»Îª \\?\UNC
+                    // UNC è·¯å¾„æœ‰ä¸¤ä¸ªå¼€å¤´çš„åæ–œæ ï¼Œå°†ç¬¬ä¸€ä¸ªåæ–œæ æ›¿æ¢ä¸º \\?\UNC
                     return @"\\?\UNC" + full.Substring(1);
                 }
                 else
                 {
-                    // ÆÕÍ¨ÅÌ·ûÂ·¾¶£¨Èç C:\...£©
+                    // æ™®é€šç›˜ç¬¦è·¯å¾„ï¼ˆå¦‚ C:\...ï¼‰
                     return @"\\?\" + full;
                 }
             }
-            // ·Ç Windows ÏµÍ³Ô­Ñù·µ»Ø£¨Linux/macOS ÎŞĞè´¦Àí£©
+            // é Windows ç³»ç»ŸåŸæ ·è¿”å›ï¼ˆLinux/macOS æ— éœ€å¤„ç†ï¼‰
             return path;
         }
 
         /// <summary>
-        /// ¼ì²éÔ´ÎÄ¼şÊÇ·ñ°üº¬ Alpha Í¨µÀ£¬ÓÅÏÈ´ÓÍ³Ò» Probe »º´æ»ñÈ¡¡£
+        /// æ£€æŸ¥æºæ–‡ä»¶æ˜¯å¦åŒ…å« Alpha é€šé“ï¼Œä¼˜å…ˆä»ç»Ÿä¸€ Probe ç¼“å­˜è·å–ã€‚
         /// </summary>
         private async Task<bool> SourceHasAlpha(string filePath)
         {
-            // ¡ï ÓÅÏÈ´ÓÍ³Ò» Probe »º´æ»ñÈ¡
+            // â˜… ä¼˜å…ˆä»ç»Ÿä¸€ Probe ç¼“å­˜è·å–
             var info = await GetProbeInfoAsync(filePath);
             if (info != null)
             {
-                // Í¬²½¸üĞÂ¾É»º´æ
+                // åŒæ­¥æ›´æ–°æ—§ç¼“å­˜
                 string normalizedPath = GetNormalizedPathForCache(filePath);
                 _srcAlphaCache[normalizedPath] = info.HasAlpha;
                 return info.HasAlpha;
             }
 
-            // ¶µµ×£ºµ¥¶ÀÌ½²â
+            // å…œåº•ï¼šå•ç‹¬æ¢æµ‹
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"";
             string raw = await RunProbeAsync(_ffprobePath, args);
             string fmt = raw.Trim().ToLower();
@@ -2144,39 +2144,39 @@ namespace AvifEncoder
         private readonly ConcurrentDictionary<string, string> _srcPixFmtCache = new();
 
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¨ÀıÈç yuv420p¡¢yuv444p10le£©
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼ˆä¾‹å¦‚ yuv420pã€yuv444p10leï¼‰
         /// </summary>
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¨ÀıÈç yuv420p¡¢yuv444p10le£©
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼ˆä¾‹å¦‚ yuv420pã€yuv444p10leï¼‰
         /// </summary>
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¬¸ßÎ»Éî RGB »á±£Áô¶ÔÓ¦Î»Éî£¨10?bit£©£¬»Ò¶ÈÓ³ÉäÎª yuv420p
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼Œé«˜ä½æ·± RGB ä¼šä¿ç•™å¯¹åº”ä½æ·±ï¼ˆ10?bitï¼‰ï¼Œç°åº¦æ˜ å°„ä¸º yuv420p
         /// </summary>
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¬¸ßÎ»Éî RGB »á±£Áô¶ÔÓ¦Î»Éî£¨10?bit£©£¬»Ò¶ÈÓ³ÉäÎª yuv420p
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼Œé«˜ä½æ·± RGB ä¼šä¿ç•™å¯¹åº”ä½æ·±ï¼ˆ10?bitï¼‰ï¼Œç°åº¦æ˜ å°„ä¸º yuv420p
         /// </summary>
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¬ÓÅÏÈÊ¹ÓÃÍ³Ò» Probe »º´æ£¬Ïû³ıÖØ¸´ ffprobe¡£
-        /// ¸ßÎ»Éî RGB »á±£Áô¶ÔÓ¦Î»Éî£¨10?bit£©£¬»Ò¶ÈÓ³ÉäÎª yuv420p¡£
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼Œä¼˜å…ˆä½¿ç”¨ç»Ÿä¸€ Probe ç¼“å­˜ï¼Œæ¶ˆé™¤é‡å¤ ffprobeã€‚
+        /// é«˜ä½æ·± RGB ä¼šä¿ç•™å¯¹åº”ä½æ·±ï¼ˆ10?bitï¼‰ï¼Œç°åº¦æ˜ å°„ä¸º yuv420pã€‚
         /// </summary>
         /// <summary>
-        /// »ñÈ¡Ô´ÎÄ¼şµÄ±ê×¼»¯ÏñËØ¸ñÊ½£¬ÓÅÏÈÊ¹ÓÃÍ³Ò» Probe »º´æ£¬Ïû³ıÖØ¸´ ffprobe¡£
-        /// ¸ßÎ»Éî RGB »á±£Áô¶ÔÓ¦Î»Éî£¨10?bit£©£¬»Ò¶ÈÓ³ÉäÎª yuv420p¡£
+        /// è·å–æºæ–‡ä»¶çš„æ ‡å‡†åŒ–åƒç´ æ ¼å¼ï¼Œä¼˜å…ˆä½¿ç”¨ç»Ÿä¸€ Probe ç¼“å­˜ï¼Œæ¶ˆé™¤é‡å¤ ffprobeã€‚
+        /// é«˜ä½æ·± RGB ä¼šä¿ç•™å¯¹åº”ä½æ·±ï¼ˆ10?bitï¼‰ï¼Œç°åº¦æ˜ å°„ä¸º yuv420pã€‚
         /// </summary>
         private async Task<string> GetSourcePixelFormat(string filePath)
         {
-            // ¡ï ÓÅÏÈ´ÓÍ³Ò» Probe »º´æ»ñÈ¡
+            // â˜… ä¼˜å…ˆä»ç»Ÿä¸€ Probe ç¼“å­˜è·å–
             var info = await GetProbeInfoAsync(filePath);
             if (info != null)
             {
-                string fmt = info.PixFmt; // ÒÑ¾­ÊÇĞ¡Ğ´£¬Èç rgba¡¢gray16le µÈ
+                string fmt = info.PixFmt; // å·²ç»æ˜¯å°å†™ï¼Œå¦‚ rgbaã€gray16le ç­‰
 
-                // Ìî³ä¾ÉµÄ Alpha »º´æ£¨Èç¹ûÎ´Ìî³ä£©
+                // å¡«å……æ—§çš„ Alpha ç¼“å­˜ï¼ˆå¦‚æœæœªå¡«å……ï¼‰
                 string normalizedPath = GetNormalizedPathForCache(filePath);
                 if (!_srcAlphaCache.ContainsKey(normalizedPath))
                     _srcAlphaCache[normalizedPath] = info.HasAlpha;
 
-                // ÏñËØ¸ñÊ½±ê×¼»¯£¨¸´ÓÃÔ­ÓĞÂß¼­£©
+                // åƒç´ æ ¼å¼æ ‡å‡†åŒ–ï¼ˆå¤ç”¨åŸæœ‰é€»è¾‘ï¼‰
                 if (fmt == "gray" || fmt.StartsWith("gray"))
                 {
                     bool is10bit = fmt.Contains("16") || fmt.Contains("10");
@@ -2186,7 +2186,7 @@ namespace AvifEncoder
                 {
                     fmt = fmt.Replace("yuvj", "yuv");
                 }
-                // ¡ï ĞŞ¸Ä´¦£ºÀ©Õ¹ RGB ¸ñÊ½Ç°×ºÅĞ¶Ï£¬º­¸Ç argb¡¢abgr¡¢rgba¡¢bgra µÈ
+                // â˜… ä¿®æ”¹å¤„ï¼šæ‰©å±• RGB æ ¼å¼å‰ç¼€åˆ¤æ–­ï¼Œæ¶µç›– argbã€abgrã€rgbaã€bgra ç­‰
                 else if (fmt.StartsWith("rgb") || fmt.StartsWith("bgr") || fmt.StartsWith("gbr") ||
                          fmt.StartsWith("argb") || fmt.StartsWith("abgr") || fmt.StartsWith("rgba") || fmt.StartsWith("bgra"))
                 {
@@ -2212,23 +2212,23 @@ namespace AvifEncoder
 
                 if (string.IsNullOrEmpty(fmt)) fmt = "yuv420p";
 
-                // ¸üĞÂ¾ÉµÄÏñËØ¸ñÊ½»º´æ
+                // æ›´æ–°æ—§çš„åƒç´ æ ¼å¼ç¼“å­˜
                 _srcPixFmtCache[normalizedPath] = fmt;
                 return fmt;
             }
 
-            // ---- »ØÍËµ½Ô­ÓĞµ¥¶ÀÌ½²â£¨ÀíÂÛÉÏ²»Ó¦µ½´ï£¬µ«×÷Îª¶µµ×£© ----
+            // ---- å›é€€åˆ°åŸæœ‰å•ç‹¬æ¢æµ‹ï¼ˆç†è®ºä¸Šä¸åº”åˆ°è¾¾ï¼Œä½†ä½œä¸ºå…œåº•ï¼‰ ----
             string raw = await RunProbeAsync(_ffprobePath,
                 $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
             string fmtFallback = raw.Trim().ToLower();
 
-            // ¼òµ¥±ê×¼»¯£¨ÂÔÈ¥¸´ÔÓ²¿·ÖÒÔ±£Ö¤³ÌĞò²»±ÀÀ££¬µ«½¨Òé probe Õı³£Ìá¹©£©
+            // ç®€å•æ ‡å‡†åŒ–ï¼ˆç•¥å»å¤æ‚éƒ¨åˆ†ä»¥ä¿è¯ç¨‹åºä¸å´©æºƒï¼Œä½†å»ºè®® probe æ­£å¸¸æä¾›ï¼‰
             if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
                 fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
             else if (fmtFallback.Contains("yuvj"))
                 fmtFallback = fmtFallback.Replace("yuvj", "yuv");
             else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))
-                fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // ±£ÊØ¼ÙÉèÓĞ alpha
+                fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // ä¿å®ˆå‡è®¾æœ‰ alpha
 
             if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
             _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
@@ -2240,7 +2240,7 @@ namespace AvifEncoder
         {
             if (isLosslessMode)
             {
-                // ÎŞËğÄ£Ê½Ê¹ÓÃ YUV444£¨ÊıÑ§ÎŞËğ£©£¬ÈôÔ´ÎÄ¼şÓĞ Alpha Í¨µÀÔòĞ¯´ø Alpha
+                // æ— æŸæ¨¡å¼ä½¿ç”¨ YUV444ï¼ˆæ•°å­¦æ— æŸï¼‰ï¼Œè‹¥æºæ–‡ä»¶æœ‰ Alpha é€šé“åˆ™æºå¸¦ Alpha
                 string baseFmt = hasAlpha ? "yuva444p" : "yuv444p";
                 return _config.BitDepth >= 10 ? baseFmt + "10le" : baseFmt;
             }
@@ -2251,20 +2251,20 @@ namespace AvifEncoder
                 bool srcIs10bit = srcFmt.EndsWith("10le");
                 string baseFmt = srcIs10bit ? srcFmt.Substring(0, srcFmt.Length - 4) : srcFmt;
 
-                // ÌáÈ¡É«¶È²ÉÑù (444/422/420)
+                // æå–è‰²åº¦é‡‡æ · (444/422/420)
                 string chroma = "420";
                 if (baseFmt.Contains("444")) chroma = "444";
                 else if (baseFmt.Contains("422")) chroma = "422";
 
                 int targetBitDepth = _config.UserSetBitDepth ? _config.BitDepth : (srcIs10bit ? 10 : 8);
 
-                // ÕıÈ·Éú³É yuva / yuv ¸ñÊ½
+                // æ­£ç¡®ç”Ÿæˆ yuva / yuv æ ¼å¼
                 string depthSuffix = targetBitDepth >= 10 ? "10le" : "";
                 return hasAlpha ? $"yuva{chroma}p{depthSuffix}" : $"yuv{chroma}p{depthSuffix}";
             }
             else
             {
-                // ·Ç×ÔÊÊÓ¦Ä£Ê½£¬ÊÖ¶¯¹¹Ôì
+                // éè‡ªé€‚åº”æ¨¡å¼ï¼Œæ‰‹åŠ¨æ„é€ 
                 string baseFmt = _config.PixelFormat ?? "yuv444p10le";
                 string depthSuffix = "";
                 if (baseFmt.EndsWith("10le"))
@@ -2283,14 +2283,14 @@ namespace AvifEncoder
                     depthSuffix = _config.BitDepth >= 10 ? "10le" : "";
                 }
 
-                // ÕıÈ·Éú³É yuva / yuv ¸ñÊ½
+                // æ­£ç¡®ç”Ÿæˆ yuva / yuv æ ¼å¼
                 return hasAlpha ? $"yuva{chroma}p{depthSuffix}" : $"yuv{chroma}p{depthSuffix}";
             }
         }
 
-        // ========== ÎŞËğÑéÖ¤±¨¸æ ==========
+        // ========== æ— æŸéªŒè¯æŠ¥å‘Š ==========
 
-        /// <summary> ×·¼ÓÒ»ÌõÊ§°Ü¼ÇÂ¼µ½ _failed_verification/failed_verification.csv£¨Ïß³Ì°²È«£© </summary>
+        /// <summary> è¿½åŠ ä¸€æ¡å¤±è´¥è®°å½•åˆ° _failed_verification/failed_verification.csvï¼ˆçº¿ç¨‹å®‰å…¨ï¼‰ </summary>
         private void AppendFailedVerificationCsv(FailedVerificationInfo info)
         {
             lock (_failedCsvLock)
@@ -2340,7 +2340,7 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary> Ğ´Èëµ¥ÎÄ¼ş JSON ÑéÖ¤±¨¸æ </summary>
+        /// <summary> å†™å…¥å•æ–‡ä»¶ JSON éªŒè¯æŠ¥å‘Š </summary>
         private async Task WriteVerificationReportJsonAsync(FailedVerificationInfo info)
         {
             string jsonPath = Path.Combine(
@@ -2356,8 +2356,8 @@ namespace AvifEncoder
         }
 
         /// <summary>
-        /// ¼ì²â ffmpeg ¼°±àÂëÆ÷¿â°æ±¾¡£
-        /// ·µ»Ø (ffmpegVersion, encoderVersions) ÆäÖĞ encoderVersions µÄ key Îª±àÂëÆ÷Ãû¡£
+        /// æ£€æµ‹ ffmpeg åŠç¼–ç å™¨åº“ç‰ˆæœ¬ã€‚
+        /// è¿”å› (ffmpegVersion, encoderVersions) å…¶ä¸­ encoderVersions çš„ key ä¸ºç¼–ç å™¨åã€‚
         /// </summary>
         private static async Task<(string ffmpegVersion, Dictionary<string, string> encoderVersions)>
     GetEncoderVersionsAsync(string ffmpegPath)
@@ -2384,7 +2384,7 @@ namespace AvifEncoder
 
                 string output = stdout + stderr;
 
-                // ÌáÈ¡ ffmpeg °æ±¾£¨µÚÒ»ĞĞ£©
+                // æå– ffmpeg ç‰ˆæœ¬ï¼ˆç¬¬ä¸€è¡Œï¼‰
                 var ffmpegMatch = System.Text.RegularExpressions.Regex.Match(
                     output, @"^ffmpeg\s+version\s+([^\s]+)");
                 if (ffmpegMatch.Success)
@@ -2392,7 +2392,7 @@ namespace AvifEncoder
                     ffmpegVersion = ffmpegMatch.Groups[1].Value;
                 }
 
-                // ÌáÈ¡¸÷±àÂëÆ÷¿â°æ±¾
+                // æå–å„ç¼–ç å™¨åº“ç‰ˆæœ¬
                 var libPatterns = new (string key, string pattern)[]
                 {
                     ("libaom-av1", @"libaom-av1\s+([^\s]+)"),
@@ -2412,7 +2412,7 @@ namespace AvifEncoder
             }
             catch
             {
-                // ¾²Ä¬Ê§°Ü£¬°æ±¾ĞÅÏ¢·Ç¹Ø¼üÂ·¾¶
+                // é™é»˜å¤±è´¥ï¼Œç‰ˆæœ¬ä¿¡æ¯éå…³é”®è·¯å¾„
             }
 
             return (ffmpegVersion, encoderVersions);

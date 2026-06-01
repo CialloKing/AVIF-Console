@@ -1,4 +1,4 @@
-namespace AvifEncoder
+﻿namespace AvifEncoder
 {
     internal class EncodingInfo
     {
