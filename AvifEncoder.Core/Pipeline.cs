@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -1655,7 +1655,7 @@ namespace AvifEncoder
                                     // 用实际 index 反向映射（而非 -1，避免索引模板错位）
                                     foreach (var (path, idx) in files)
                                     {
-                                        string outPath = GetOutputPath(path, idx);
+                                        string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
                                         if (Path.GetFileName(outPath) == csvFileName)
                                         {
                                             csvDone.Add(path);
@@ -1681,7 +1681,7 @@ namespace AvifEncoder
                     foreach (var (path, idx) in files)
                     {
                         if (completed.Contains(path)) continue;
-                        string outPath = GetOutputPath(path, idx);
+                        string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
                         if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
                             _logger.LogInfo(
                                 $"[RESUME] 输出文件存在但日志无记录: {Path.GetFileName(outPath)}，将重新编码");

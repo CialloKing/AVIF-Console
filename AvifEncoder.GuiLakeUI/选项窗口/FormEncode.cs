@@ -58,7 +58,20 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             SetupDragDrop();   // ← 新增此行
             this.FormClosing += FormEncode_FormClosing;
+
+            _resumePollTimer = new System.Windows.Forms.Timer { Interval = 500 };
+            _resumePollTimer.Tick += (s, e) =>
+            {
+                if (!_isEncoding && !string.IsNullOrEmpty(txtOutput.Text))
+                {
+                    string dir = txtOutput.Text.Trim('"').Trim();
+                    if (Directory.Exists(dir)) CheckResumeStatus(dir);
+                }
+            };
+            _resumePollTimer.Start();
         }
+
+        private System.Windows.Forms.Timer? _resumePollTimer;
 
         private void SetupDragDrop()
         {
@@ -762,7 +775,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     SysTaskBarProgress.Clear(_topLevelHandle);
 
                 // 正常完成时清除续传状态 + 删除快照
-                if (!_stopping) ExitResumeMode();
                 // 用户主动停止时才检测中断续传状态
                 if (_stopping && !string.IsNullOrEmpty(txtOutput.Text))
                     CheckResumeStatus(txtOutput.Text.Trim('"').Trim());
@@ -1285,20 +1297,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void ExitResumeMode()
         {
-            if (!_isResumeDetected) return;
-
             SetEncodingControlsEnabled(true);
             btnStart.Enabled = true;
             btnResume.Enabled = false;
             btnAbandon.Enabled = false;
+            _isResumeDetected = false;
 
-            // 删除中断快照（任务已完成，不需要续传）
-            if (!string.IsNullOrEmpty(txtOutput.Text))
-            {
-                string sessionDir = Path.Combine(txtOutput.Text.Trim('"').Trim(), ".session");
-                try { if (Directory.Exists(sessionDir)) Directory.Delete(sessionDir, true); } catch { }
-            }
-
+            // 正常完成时保留 .session（供后续使用），不再自动删除
             _isResumeDetected = false;
         }
 

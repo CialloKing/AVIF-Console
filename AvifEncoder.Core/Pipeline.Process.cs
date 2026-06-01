@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -313,7 +313,8 @@ namespace AvifEncoder
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
-            string outputPath = GetOutputPath(inputPath, index);
+            string fileName = GetOutputFileName(inputPath, index);
+            string outputPath = Path.Combine(_outputDir, fileName);
             var fileStartTime = DateTime.Now;
 
             // ---- 无损模式强约束：禁止缩放、固定 tile=0 ----
@@ -1089,7 +1090,8 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
         {
             if (isRetry) return null;
 
-            string outputPath = GetOutputPath(inputPath, index);
+            string fileName = GetOutputFileName(inputPath, index);
+            string outputPath = Path.Combine(_outputDir, fileName);
             if (_fs.FileExists(outputPath))
             {
                 // 覆盖模式：不跳过，继续编码（覆盖旧文件）
