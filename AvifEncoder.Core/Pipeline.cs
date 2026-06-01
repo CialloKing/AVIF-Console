@@ -334,10 +334,10 @@ namespace AvifEncoder
             {
                 _advancedMetricSemaphore.Release();
             }
+            // ★ 先更新CSV行(原子操作), 再写journal(防止journal有记录但CSV为空)
+            if (outputFileName != null) TryFlushCsvRow(outputFileName, cacheKey);
             if (inputPath != null)
                 AppendJournal(inputPath, "success");
-            // ★ 立即更新CSV行(防止×关闭丢失)
-            if (outputFileName != null) TryFlushCsvRow(outputFileName, cacheKey);
             _progress.MarkFileProcessed();
             _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
         }
