@@ -746,9 +746,14 @@ namespace AvifEncoder
                     if (existingRows.TryGetValue(key, out var oldRow))
                     {
                         var oldCols = oldRow.Split(',');
-                        bool newHasMetrics = cols.Length >= 19 && !string.IsNullOrEmpty(cols[11]);
-                        bool oldHasMetrics = oldCols.Length >= 19 && !string.IsNullOrEmpty(oldCols[11]);
-                        if (oldHasMetrics && !newHasMetrics) continue; // 保留旧行
+                        // 按列数统计非空指标列(从索引11开始: XPSNR-Y,U,V,W,SSIM2,ButterRaw,Butter3,GMSD)
+                        int newMetricCols = 0, oldMetricCols = 0;
+                        for (int c = 11; c <= 18 && c < cols.Length && c < oldCols.Length; c++)
+                        {
+                            if (!string.IsNullOrEmpty(cols[c])) newMetricCols++;
+                            if (!string.IsNullOrEmpty(oldCols[c])) oldMetricCols++;
+                        }
+                        if (oldMetricCols > newMetricCols) continue; // 保留指标更多的旧行
                     }
                     existingRows[key] = row;
                 }
