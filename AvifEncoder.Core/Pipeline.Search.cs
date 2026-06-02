@@ -735,25 +735,43 @@ namespace AvifEncoder
 
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
-            // ★ 方案二：从内存 EncodeResult 完整生成 CSV，覆盖 AppendCsvRow 写入的初版
-            // 高级指标已由 PrintSummaryAndExport 从缓存回填到 allResults
+            // ★ 合并导出：读取已有 CSV（含之前 Resume 跳过的文件），
+            // 用当前 results 更新/追加行，保留旧行不丢失
             try
             {
-                var list = results.ToList();
-                if (list.Count == 0) return;
+                var newList = results.ToList();
+                var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-                // 写表头
-                var sb = new StringBuilder();
-                sb.AppendLine(string.Join(",", CsvColumnNames));
-
-                // 写数据行
-                foreach (var r in list)
+                // 1. 读取已有 CSV 行（保留前次运行的数据）
+                if (_fs.FileExists(_csvPath))
                 {
-                    sb.AppendLine(GetCsvRow(r));
+                    try
+                    {
+                        var oldLines = File.ReadAllLines(_csvPath);
+                        for (int i = 1; i < oldLines.Length; i++)
+                        {
+                            var cols = SplitCsvLine(oldLines[i]);
+                            if (cols.Length > 0 && !string.IsNullOrEmpty(cols[0]))
+                                merged[cols[0]] = oldLines[i];
+                        }
+                    }
+                    catch { }
                 }
 
+                // 2. 用当前 results 覆盖/追加
+                foreach (var r in newList)
+                {
+                    merged[r.FileName] = GetCsvRow(r);
+                }
+
+                // 3. 写回
+                var sb = new StringBuilder();
+                sb.AppendLine(string.Join(",", CsvColumnNames));
+                foreach (var row in merged.Values)
+                    sb.AppendLine(row);
+
                 _fs.WriteAllText(_csvPath, sb.ToString(), new UTF8Encoding(true));
-                _logger.LogInfo($"[CSV-EXPORT] 已导出 {list.Count} 行到 {_csvPath}");
+                _logger.LogInfo($"[CSV-EXPORT] 合并导出: 旧行={merged.Count - newList.Count} + 新行={newList.Count} = 总计 {merged.Count}");
             }
             catch (Exception ex)
             {
