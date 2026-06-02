@@ -1253,6 +1253,29 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     else { rbCrfFix.Checked = true; }
                 }
                 if (cfg.TryGetProperty("MetricMode", out var mm)) SetComboBoxItem(cmbMetric, mm.GetString()!);
+                // 恢复质量目标
+                double? nativeTarget = null;
+                if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != JsonValueKind.Null)
+                    nativeTarget = ntv.GetDouble();
+                if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != JsonValueKind.Null)
+                { SetComboBoxItem(cmbQualityMode, "XPSNR"); if (xptv.ValueKind != JsonValueKind.Null) txtQualityValue.Text = xptv.GetDouble().ToString("F2"); }
+                else if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != JsonValueKind.Null)
+                { SetComboBoxItem(cmbQualityMode, "SSIMU2"); txtQualityValue.Text = s2tv.GetDouble().ToString("F2"); }
+                else if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != JsonValueKind.Null)
+                { SetComboBoxItem(cmbQualityMode, "Butter3"); txtQualityValue.Text = b3tv.GetDouble().ToString("F4"); }
+                else if (cfg.TryGetProperty("GmsdTargetValue", out var gtv) && gtv.ValueKind != JsonValueKind.Null)
+                { SetComboBoxItem(cmbQualityMode, "GMSD"); txtQualityValue.Text = gtv.GetDouble().ToString("F4"); }
+                else if (nativeTarget.HasValue)
+                {
+                    string mmStr = cfg.TryGetProperty("MetricMode", out var mm2) ? (mm2.GetString() ?? "vmaf") : "vmaf";
+                    string modeName = mmStr.ToUpper() switch
+                    {
+                        "VMAF" => "VMAF", "PSNR" => "PSNR-Y", "SSIM" => "SSIM",
+                        "MSSSIM" => "MS-SSIM", "MIX" => "Mix", _ => "VMAF"
+                    };
+                    SetComboBoxItem(cmbQualityMode, modeName);
+                    txtQualityValue.Text = nativeTarget.Value.ToString(mmStr == "vmaf" ? "F2" : "F4");
+                }
                 // 恢复 AutoSource 状态：auto 模式下 chroma/bitDepth 显示 "auto"
                 bool autoSource = true;
                 if (cfg.TryGetProperty("AutoSource", out var asrc)) autoSource = asrc.GetBoolean();

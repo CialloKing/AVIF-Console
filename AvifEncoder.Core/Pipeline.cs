@@ -1149,6 +1149,12 @@ namespace AvifEncoder
                         _config.MinCRF,
                         _config.MaxCRF,
                         _config.MetricMode,
+                        _config.NativeTargetValue,
+                        _config.TargetSSIM,
+                        _config.XpsnrTargetValue,
+                        _config.Ssimu2TargetValue,
+                        _config.Butteraugli3TargetValue,
+                        _config.GmsdTargetValue,
                         _config.PixelFormat,
                         _config.BitDepth,
                         _config.AutoSource,
@@ -1811,6 +1817,17 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("MinCRF", out var mn)) _config.MinCRF = mn.GetInt32();
                             if (cfg.TryGetProperty("MaxCRF", out var mx)) _config.MaxCRF = mx.GetInt32();
                             if (cfg.TryGetProperty("MetricMode", out var mm)) _config.MetricMode = mm.GetString()!;
+                            if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != JsonValueKind.Null)
+                                _config.NativeTargetValue = ntv.GetDouble();
+                            if (cfg.TryGetProperty("TargetSSIM", out var tssim)) _config.TargetSSIM = tssim.GetDouble();
+                            if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != JsonValueKind.Null)
+                                _config.XpsnrTargetValue = xptv.GetDouble();
+                            if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != JsonValueKind.Null)
+                                _config.Ssimu2TargetValue = s2tv.GetDouble();
+                            if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != JsonValueKind.Null)
+                                _config.Butteraugli3TargetValue = b3tv.GetDouble();
+                            if (cfg.TryGetProperty("GmsdTargetValue", out var gtv) && gtv.ValueKind != JsonValueKind.Null)
+                                _config.GmsdTargetValue = gtv.GetDouble();
                             if (cfg.TryGetProperty("PixelFormat", out var pf)) _config.PixelFormat = pf.GetString();
                             if (cfg.TryGetProperty("BitDepth", out var bd)) _config.BitDepth = bd.GetInt32();
                             if (cfg.TryGetProperty("AutoSource", out var asrc)) _config.AutoSource = asrc.GetBoolean();
