@@ -627,6 +627,8 @@ namespace AvifEncoder
             string relPath = Path.GetRelativePath(safeInputDir, safeInputPath);
             string? relDir = Path.GetDirectoryName(relPath);
             string fileName = GetOutputFileName(inputFilePath, index);
+            if (!string.IsNullOrEmpty(relDir))
+                _logger.LogInfo($"[OUTPUT] 子目录: {relDir} ← {Path.GetFileName(inputFilePath)}");
             string targetDir = string.IsNullOrEmpty(relDir)
                 ? _outputDir
                 : Path.Combine(_outputDir, relDir);
@@ -2173,6 +2175,7 @@ namespace AvifEncoder
             var searchOption = _config.RecurseSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             // ★ 修复：去除可能的 \\?\ 长路径前缀，否则 Directory.EnumerateFiles 无法递归子目录
             string scanDir = NormalizePathForExternalTool(_inputDir);
+            _logger.LogInfo($"[SCAN] 扫描目录: {scanDir}, 递归={_config.RecurseSubdirectories}, 扩展名={string.Join(",", extensions)}");
             var sortedFiles = _fs.EnumerateFiles(scanDir, "*.*", searchOption)
                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                 .OrderBy(f => f, new NaturalComparer())
@@ -2182,11 +2185,13 @@ namespace AvifEncoder
             if (sortedFiles.Count == 0)
             {
                 SafeWriteLine("未找到图片。");
+                _logger.LogInfo("[SCAN] 未找到匹配文件");
                 return null;
             }
 
             _progress.SetTotalFiles(sortedFiles.Count);
             SafeWriteLine($"待处理: {_progress.TotalFiles} 张\n");
+            _logger.LogInfo($"[SCAN] 找到 {sortedFiles.Count} 个文件: {string.Join(", ", sortedFiles.Take(5).Select(f => Path.GetFileName(f.path)))}");
 
             // 防呆：检测超大分辨率图片
             try
