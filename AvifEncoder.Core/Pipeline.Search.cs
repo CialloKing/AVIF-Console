@@ -733,10 +733,10 @@ namespace AvifEncoder
             }
         }
 
-        private void ExportCsv(IEnumerable<EncodeResult> results)
+        private void ExportCsv(IEnumerable<EncodeResult> results,
+            Dictionary<string, QualityMetrics>? resumeMetrics = null)
         {
-            // ★ 合并导出：读取已有 CSV（含之前 Resume 跳过的文件），
-            // 用当前 results 更新/追加行，保留旧行不丢失
+            // ★ 合并导出：读取已有 CSV + 用当前 results 更新/追加 + 用 resumeMetrics 修补旧行指标
             try
             {
                 var newList = results.ToList();
@@ -764,7 +764,41 @@ namespace AvifEncoder
                     merged[r.FileName] = GetCsvRow(r);
                 }
 
-                // 3. 写回
+                // 3. 用 resume 恢复的指标修补旧行（那些前次运行已完成但指标未写入 CSV 的文件）
+                if (resumeMetrics != null && resumeMetrics.Count > 0)
+                {
+                    int patched = 0;
+                    foreach (var kv in resumeMetrics)
+                    {
+                        string fileName = Path.GetFileName(kv.Key);
+                        // 在 merged 中查找匹配的旧行
+                        foreach (var mk in merged.Keys.ToList())
+                        {
+                            if (mk == fileName || merged[mk].Contains(fileName))
+                            {
+                                var cols = SplitCsvLine(merged[mk]);
+                                if (cols.Length >= 19)
+                                {
+                                    var m = kv.Value;
+                                    if (m.XPSNR_Y.HasValue) cols[11] = FormatDbValue(m.XPSNR_Y.Value);
+                                    if (m.XPSNR_U.HasValue) cols[12] = FormatDbValue(m.XPSNR_U.Value);
+                                    if (m.XPSNR_V.HasValue) cols[13] = FormatDbValue(m.XPSNR_V.Value);
+                                    if (m.W_XPSNR.HasValue) cols[14] = FormatDbValue(m.W_XPSNR.Value);
+                                    if (m.SSIMULACRA2.HasValue) cols[15] = FormatMetric(m.SSIMULACRA2.Value);
+                                    if (m.Butteraugli_Raw.HasValue) cols[16] = FormatMetric(m.Butteraugli_Raw.Value);
+                                    if (m.Butteraugli_3norm.HasValue) cols[17] = FormatMetric(m.Butteraugli_3norm.Value);
+                                    if (m.GMSD.HasValue) cols[18] = FormatMetric(m.GMSD.Value);
+                                    merged[mk] = string.Join(",", cols.Select(f => CsvEscape(f)));
+                                    patched++;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    _logger.LogInfo($"[CSV-PATCH] resume 指标修补 {patched} 行");
+                }
+
+                // 4. 写回
                 var sb = new StringBuilder();
                 sb.AppendLine(string.Join(",", CsvColumnNames));
                 foreach (var row in merged.Values)

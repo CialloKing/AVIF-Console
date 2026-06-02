@@ -188,6 +188,7 @@ namespace AvifEncoder
         private int _journalCountSinceSnapshot;
         private DateTime _lastSnapshotTime;
         private long _journalEventCount;   // 累计事件数，用于增量回放定位
+        private Dictionary<string, QualityMetrics>? _resumeMetricsForExport;  // Resume 恢复的指标，供 ExportCsv 修补旧行
 
 
 
@@ -1889,7 +1890,8 @@ namespace AvifEncoder
                     // 3. 合并：Snapshot 指标 + 增量指标
                     foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
 
-                    // 4. 写入内存缓存供 ExportCsv
+                    // 4. 写入内存缓存 + 保存引用供 ExportCsv 修补旧行
+                    _resumeMetricsForExport = resumeMetrics;
                     _logger.LogInfo($"[RESUME] metrics restored: {resumeMetrics.Count} files");
                     foreach (var kv in resumeMetrics)
                     {
@@ -2341,7 +2343,7 @@ namespace AvifEncoder
                 _logger.LogInfo($"[EXPORT] {r.FileName} XPSNR={xpsnr} SSIMU2={ssimu2} Butter3={butter3} GMSD={gmsd}");
             }
 
-            ExportCsv(allResults);
+            ExportCsv(allResults, _resumeMetricsForExport);
         }
 
         /// <summary> 清理编码缓存及临时文件 </summary>
