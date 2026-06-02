@@ -986,7 +986,7 @@ namespace AvifEncoder
                 if (_journalCountSinceSnapshot >= 500)
                 {
                     var (oldDone, oldMetrics, _, _) = LoadSnapshot();
-                    var (newDone, newMetrics, _) = ReplayJournalWithMetrics(0);
+                    var (newDone, newMetrics, _, _) = ReplayJournalWithMetrics(0);
                     SaveSnapshot(oldDone.Union(newDone),
                         MergeMetrics(oldMetrics, newMetrics));
                 }
@@ -998,14 +998,15 @@ namespace AvifEncoder
         /// skipLines 用于增量回放：跳过前 N 行（已通过 snapshot 恢复的事件）。
         /// </summary>
         private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics,
-            Dictionary<string, string> fileIdToPath)
+            Dictionary<string, string> fileIdToPath, HashSet<string> encodedOnly)
             ReplayJournalWithMetrics(int skipLines)
         {
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var metrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
             var fileIdToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            ReplayJournalCore(skipLines, null, completed, metrics, fileIdToPath);
-            return (completed, metrics, fileIdToPath);
+            var encodedOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ReplayJournalCore(skipLines, null, completed, metrics, fileIdToPath, encodedOnly);
+            return (completed, metrics, fileIdToPath, encodedOnly);
         }
 
         private HashSet<string> ReplayJournal(DateTime? since, Dictionary<string, QualityMetrics>? metricsOut = null)
@@ -1019,7 +1020,8 @@ namespace AvifEncoder
         private void ReplayJournalCore(
             int skipLines, DateTime? since,
             HashSet<string> completed, Dictionary<string, QualityMetrics>? metricsOut,
-            Dictionary<string, string>? fileIdToPath = null)
+            Dictionary<string, string>? fileIdToPath = null,
+            HashSet<string>? encodedOnly = null)
         {
             if (!_fs.FileExists(_journalPath)) return;
 
@@ -1055,8 +1057,12 @@ namespace AvifEncoder
                                     fileIdToPath[fid] = file;
                             }
 
-                            if (evt == "success" || evt == "encoded")
+                            // ★ "encoded" 仅表示编码完成（可跳过重编），不等于完全完成
+                            // 只有 "success" 才表示文件完整（编码+指标），Resume 时跳过
+                            if (evt == "success")
                                 completed.Add(file);
+                            if (evt == "encoded")
+                                encodedOnly!.Add(file);
 
                             if (metricsOut != null && evt == "metrics")
                             {
@@ -1851,7 +1857,8 @@ namespace AvifEncoder
                                 {
                                     string evt = evtEl.GetString() ?? "";
                                     string file = fileEl.GetString() ?? "";
-                                    if (evt == "success" || evt == "encoded") deltaDone.Add(file);
+                                    // ★ 只有 "success" 才算完整完成
+                                    if (evt == "success") deltaDone.Add(file);
                                     if (evt == "metrics")
                                     {
                                         var m = new QualityMetrics();
@@ -1910,11 +1917,14 @@ namespace AvifEncoder
                     }
                     catch { }
 
+                    // 收集仅 encoded 的文件（编码完成但指标未完成），保护其 AVIF 不被删除
+                    var resumeEncodedOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                     // 6. 合并完成列表 + FileId 匹配
                     var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
                     foreach (var f in deltaDone) completed.Add(f);
                     _logger.LogInfo(
-                        $"[RESUME] snapshot={snapshotDone.Count} + delta={deltaDone.Count} = completed={completed.Count}, metrics={resumeMetrics.Count}");
+                        $"[RESUME] snapshot={snapshotDone.Count} + delta={deltaDone.Count} = completed={completed.Count}, metrics={resumeMetrics.Count}, encodedOnly={resumeEncodedOnly.Count}");
 
                     // 7. FileId 辅助匹配：当前文件如果能通过 FileId 匹配到已完成文件，也视为完成
                     var completedById = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1931,10 +1941,31 @@ namespace AvifEncoder
                     }
                     foreach (var f in completedById) completed.Add(f);
 
-                    // 文件系统检查：Journal 标记完成但文件被用户误删 → 重新编码
+                    // 从增量 journal 中提取 encoded 事件
+                    try
+                    {
+                        var lines2 = File.ReadAllLines(_journalPath);
+                        for (int i = (int)Math.Min(snapshotEventCount, lines2.Length); i < lines2.Length; i++)
+                        {
+                            string line = lines2[i];
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(line);
+                                var root = doc.RootElement;
+                                if (root.TryGetProperty("evt", out var evtEl) && evtEl.GetString() == "encoded"
+                                    && root.TryGetProperty("file", out var fEl))
+                                    resumeEncodedOnly.Add(fEl.GetString() ?? "");
+                            }
+                            catch (JsonException) { break; }
+                        }
+                    }
+                    catch { }
+
+                    // 文件系统检查：Journal 标记完成或已编码，但文件被用户误删 → 重新编码
                     foreach (var (path, idx) in files)
                     {
-                        if (completed.Contains(path)) continue;
+                        if (completed.Contains(path) || resumeEncodedOnly.Contains(path)) continue;
                         string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
                         if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
                             _logger.LogInfo(
