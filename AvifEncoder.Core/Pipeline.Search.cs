@@ -798,11 +798,11 @@ namespace AvifEncoder
                     _logger.LogInfo($"[CSV-PATCH] resume 指标修补 {patched} 行");
                 }
 
-                // 4. 写回
+                // 4. 按文件名自然排序后写回
                 var sb = new StringBuilder();
                 sb.AppendLine(string.Join(",", CsvColumnNames));
-                foreach (var row in merged.Values)
-                    sb.AppendLine(row);
+                foreach (var key in merged.Keys.OrderBy(k => k, new NaturalComparer()))
+                    sb.AppendLine(merged[key]);
 
                 _fs.WriteAllText(_csvPath, sb.ToString(), new UTF8Encoding(true));
                 _logger.LogInfo($"[CSV-EXPORT] 合并导出: 旧行={merged.Count - newList.Count} + 新行={newList.Count} = 总计 {merged.Count}");
