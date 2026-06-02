@@ -138,6 +138,9 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, bool> _srcAlphaCache = new();
 
+        /// <summary>路径 → 内容指纹映射，用于跨会话稳定标识文件（目录重命名/移动后仍可匹配）</summary>
+        private readonly ConcurrentDictionary<string, string> _fileIdCache = new(StringComparer.OrdinalIgnoreCase);
+
         private readonly int _maxFfmpegConcurrency;
 
         private int _disposed;
@@ -954,6 +957,9 @@ namespace AvifEncoder
                     ["file"] = file,
                     ["evt"] = evt
                 };
+                // 附加 FileId：跨会话稳定标识，目录重命名/移动后仍可匹配
+                if (_fileIdCache.TryGetValue(file, out var fid))
+                    obj["fileId"] = fid;
                 if (extra != null)
                 {
                     foreach (var prop in extra.GetType().GetProperties())
@@ -969,7 +975,7 @@ namespace AvifEncoder
                 if (_journalCountSinceSnapshot >= 500)
                 {
                     var (oldDone, oldMetrics, _, _) = LoadSnapshot();
-                    var (newDone, newMetrics) = ReplayJournalWithMetrics(0);
+                    var (newDone, newMetrics, _) = ReplayJournalWithMetrics(0);
                     SaveSnapshot(oldDone.Union(newDone),
                         MergeMetrics(oldMetrics, newMetrics));
                 }
@@ -980,13 +986,15 @@ namespace AvifEncoder
         /// 回放 journal，返回完成文件列表 + 指标状态。
         /// skipLines 用于增量回放：跳过前 N 行（已通过 snapshot 恢复的事件）。
         /// </summary>
-        private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics)
+        private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics,
+            Dictionary<string, string> fileIdToPath)
             ReplayJournalWithMetrics(int skipLines)
         {
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var metrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-            ReplayJournalCore(skipLines, null, completed, metrics);
-            return (completed, metrics);
+            var fileIdToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            ReplayJournalCore(skipLines, null, completed, metrics, fileIdToPath);
+            return (completed, metrics, fileIdToPath);
         }
 
         private HashSet<string> ReplayJournal(DateTime? since, Dictionary<string, QualityMetrics>? metricsOut = null)
@@ -996,10 +1004,11 @@ namespace AvifEncoder
             return completed;
         }
 
-        /// <summary>共享的 journal 回放核心：解析 NDJSON 行，填充 completed + metrics。</summary>
+        /// <summary>共享的 journal 回放核心：解析 NDJSON 行，填充 completed + metrics + fileIdMap。</summary>
         private void ReplayJournalCore(
             int skipLines, DateTime? since,
-            HashSet<string> completed, Dictionary<string, QualityMetrics>? metricsOut)
+            HashSet<string> completed, Dictionary<string, QualityMetrics>? metricsOut,
+            Dictionary<string, string>? fileIdToPath = null)
         {
             if (!_fs.FileExists(_journalPath)) return;
 
@@ -1025,6 +1034,15 @@ namespace AvifEncoder
 
                             string evt = evtEl.GetString() ?? "";
                             string file = fileEl.GetString() ?? "";
+
+                            // 提取 FileId（v2+ 事件），建立 FileId → path 映射用于 Resume 匹配
+                            if (fileIdToPath != null &&
+                                root.TryGetProperty("fileId", out var fidEl))
+                            {
+                                string fid = fidEl.GetString() ?? "";
+                                if (fid.Length > 0 && !fileIdToPath.ContainsKey(fid))
+                                    fileIdToPath[fid] = file;
+                            }
 
                             if (evt == "success")
                                 completed.Add(file);
@@ -1853,10 +1871,54 @@ namespace AvifEncoder
                         _cache.SetMetrics(metricsKey, kv.Value);
                     }
 
+                    // 5. 构建 FileId → path 映射（用于跨会话匹配）
+                    var fileIdToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    // 从增量回放中提取 FileId 映射
+                    try
+                    {
+                        var lines = File.ReadAllLines(_journalPath);
+                        for (int i = (int)Math.Min(snapshotEventCount, lines.Length); i < lines.Length; i++)
+                        {
+                            string line = lines[i];
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(line);
+                                var root = doc.RootElement;
+                                if (root.TryGetProperty("fileId", out var fidEl) &&
+                                    root.TryGetProperty("file", out var fEl))
+                                {
+                                    string fid = fidEl.GetString() ?? "";
+                                    string fp = fEl.GetString() ?? "";
+                                    if (fid.Length > 0 && !fileIdToPath.ContainsKey(fid))
+                                        fileIdToPath[fid] = fp;
+                                }
+                            }
+                            catch (JsonException) { break; }
+                        }
+                    }
+                    catch { }
+
+                    // 6. 合并完成列表 + FileId 匹配
                     var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
                     foreach (var f in deltaDone) completed.Add(f);
                     _logger.LogInfo(
                         $"[RESUME] snapshot={snapshotDone.Count} + delta={deltaDone.Count} = completed={completed.Count}, metrics={resumeMetrics.Count}");
+
+                    // 7. FileId 辅助匹配：当前文件如果能通过 FileId 匹配到已完成文件，也视为完成
+                    var completedById = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var (path, _) in files)
+                    {
+                        if (completed.Contains(path)) continue;
+                        if (_fileIdCache.TryGetValue(path, out var fid) &&
+                            fileIdToPath.TryGetValue(fid, out var matchedPath) &&
+                            completed.Contains(matchedPath))
+                        {
+                            completedById.Add(path);
+                            _logger.LogInfo($"[RESUME] FileId 匹配: {Path.GetFileName(path)} ↔ {Path.GetFileName(matchedPath)}");
+                        }
+                    }
+                    foreach (var f in completedById) completed.Add(f);
 
                     // 文件系统检查：Journal 标记完成但文件被用户误删 → 重新编码
                     foreach (var (path, idx) in files)
@@ -1977,6 +2039,16 @@ namespace AvifEncoder
             };
         }
 
+        /// <summary>计算文件稳定标识符（相对路径 + 大小 + 修改时间 → SHA256 前 16 位）。</summary>
+        private string ComputeFileId(string filePath)
+        {
+            string relPath = Path.GetRelativePath(NormalizePathForExternalTool(_inputDir),
+                NormalizePathForExternalTool(filePath));
+            var fi = new FileInfo(filePath);
+            return EncodeHelpers.Sha256(
+                $"{relPath.ToLowerInvariant()}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}");
+        }
+
         /// <summary> 扫描输入目录，返回按文件大小降序排列的文件列表 </summary>
         private async Task<List<(string path, int index)>?> ScanAndPrepareFilesAsync()
         {
@@ -2036,6 +2108,11 @@ namespace AvifEncoder
             var processingOrder = sortedFiles
                 .OrderByDescending(t => _fs.GetFileLength(t.path))
                 .ToList();
+
+            // ★ 预计算所有文件的 FileId，填充缓存供 journal/snapshot 使用
+            foreach (var (path, _) in processingOrder)
+                _fileIdCache[path] = ComputeFileId(path);
+
             return processingOrder;
         }
 
