@@ -298,12 +298,22 @@ namespace AvifEncoder
             {
                 if (cfg.PixelFormat.EndsWith("10le"))
                     cfg.PixelFormat = cfg.PixelFormat.Substring(0, cfg.PixelFormat.Length - 4);
+                else if (cfg.PixelFormat.EndsWith("12le"))
+                    cfg.PixelFormat = cfg.PixelFormat.Substring(0, cfg.PixelFormat.Length - 4);
             }
-            else // 10
+            else if (cfg.BitDepth == 10)
             {
-                // ★ 移除无意义的 rgb24 判断，仅根据后缀决定是否添加 10le
+                if (cfg.PixelFormat.EndsWith("12le"))
+                    cfg.PixelFormat = cfg.PixelFormat.Substring(0, cfg.PixelFormat.Length - 4);
                 if (!cfg.PixelFormat.EndsWith("10le"))
                     cfg.PixelFormat += "10le";
+            }
+            else if (cfg.BitDepth == 12)
+            {
+                if (cfg.PixelFormat.EndsWith("10le"))
+                    cfg.PixelFormat = cfg.PixelFormat.Substring(0, cfg.PixelFormat.Length - 4);
+                if (!cfg.PixelFormat.EndsWith("12le"))
+                    cfg.PixelFormat += "12le";
             }
         }
 
@@ -520,7 +530,8 @@ namespace AvifEncoder
 
             string normalizedInput = GetNormalizedPathForCache(workingInputPath);
             string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
-            int actualDepth = encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
+            int actualDepth = encodeResult.ActualPixFmt?.Contains("12le") == true ? 12
+                : encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
             string aomParams = config.GetEffectiveAomParams();
             bool jpeg = IsJpeg(workingInputPath);
             int tileCols = encInfo.TileCols;

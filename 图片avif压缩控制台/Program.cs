@@ -176,7 +176,7 @@ namespace AvifEncoder
                                 {
                                     opts.BitDepth = null; // 使用自动检测
                                 }
-                                else if (int.TryParse(bdStr, out int bd) && (bd == 8 || bd == 10))
+                                else if (int.TryParse(bdStr, out int bd) && (bd == 8 || bd == 10 || bd == 12))
                                 {
                                     opts.BitDepth = bd;
                                 }
@@ -285,7 +285,7 @@ namespace AvifEncoder
                                 {
                                     opts.BitDepth = null; // 使用自动检测
                                 }
-                                else if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10))
+                                else if (int.TryParse(val, out int bd2) && (bd2 == 8 || bd2 == 10 || bd2 == 12))
                                 {
                                     opts.BitDepth = bd2;
                                 }

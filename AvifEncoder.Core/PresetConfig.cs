@@ -274,8 +274,8 @@ namespace AvifEncoder
                 errors.Add($"MaxCRF ({MaxCRF}) 超出有效范围 0-63");
             if (!UseCRFSearch && (BaseCRF < 0 || BaseCRF > 63))
                 errors.Add($"BaseCRF ({BaseCRF}) 超出有效范围 0-63");
-            if (BitDepth != 8 && BitDepth != 10)
-                errors.Add($"BitDepth ({BitDepth}) 仅支持 8 或 10");
+            if (BitDepth != 8 && BitDepth != 10 && BitDepth != 12)
+                errors.Add($"BitDepth ({BitDepth}) 仅支持 8、10 或 12");
             if (string.IsNullOrWhiteSpace(Encoder))
                 errors.Add("编码器名称不能为空");
             if (MaxJobs < 0)

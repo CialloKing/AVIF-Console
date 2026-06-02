@@ -41,7 +41,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
         private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
         private static readonly string[] _chromaNames = ["auto", "420", "422", "444"];
-        private static readonly string[] _bitDepthNames = ["auto", "8", "10"];
+        private static readonly string[] _bitDepthNames = ["auto", "8", "10", "12"];
         private static readonly string[] _conflictNames = ["自动重命名", "覆盖已存在文件", "跳过已存在文件"];
 
         public FormEncode()

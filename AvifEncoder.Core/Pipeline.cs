@@ -496,6 +496,7 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
                 // ★ 加入进程追踪列表，确保 FinalCleanup 可终止
                 _spawnedProcesses.Add(process);
                 if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
@@ -1462,6 +1463,7 @@ namespace AvifEncoder
                 };
 
                 process.Start();
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
 
                 // ★ 内存兜底追踪（Job Object 失败时备用）
                 _spawnedProcesses.Add(process);
@@ -2595,7 +2597,7 @@ namespace AvifEncoder
                     }
                     if (totalBits == 0) totalBits = components * 8;
                     int perCompBits = totalBits / components;
-                    int targetBitDepth = Math.Clamp(perCompBits, 8, 10);
+                    int targetBitDepth = Math.Clamp(perCompBits, 8, 12);
 
                     string chromaFmt = targetBitDepth >= 10 ? "yuv444p10le" : "yuv444p";
                     if (info.HasAlpha)
@@ -2771,6 +2773,7 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
                 string stdout = await process.StandardOutput.ReadToEndAsync();
                 string stderr = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();

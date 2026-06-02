@@ -76,7 +76,7 @@ namespace AvifEncoder.Gui
             cmbChroma.SelectedIndex = 0;
 
             cmbBitDepth.Items.Clear();
-            cmbBitDepth.Items.AddRange(new[] { "auto", "8", "10" });
+            cmbBitDepth.Items.AddRange(new[] { "auto", "8", "10", "12" });
             cmbBitDepth.SelectedIndex = 0;
 
             numCrfFix.Minimum = 0; numCrfFix.Maximum = 63;

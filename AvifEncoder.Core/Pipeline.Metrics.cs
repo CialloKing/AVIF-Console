@@ -202,7 +202,7 @@ namespace AvifEncoder
             if (cfg.Lossless)
                 return new QualityMetrics { SSIM = 1.0, PSNR_Y = 100.0, MS_SSIM = 1.0, VMAF = 100.0 };
 
-            int actualDepth = pixFmt.Contains("10le") ? 10 : 8;
+            int actualDepth = pixFmt.Contains("12le") ? 12 : pixFmt.Contains("10le") ? 10 : 8;
             string normalizedInput = GetNormalizedPathForCache(input);
             string effectiveAom = cfg.GetEffectiveAomParams();
 
@@ -454,14 +454,18 @@ namespace AvifEncoder
             try
             {
                 var infoRef = await GetProbeInfoAsync(refPath);
-                if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
-                    bitDepth = 10;
+                if (infoRef != null && infoRef.PixFmt?.Contains("12le") == true)
+                    bitDepth = 12;
+                else if (infoRef != null && infoRef.PixFmt?.Contains("10le") == true)
+                    bitDepth = Math.Max(bitDepth, 10);
                 var infoDist = await GetProbeInfoAsync(distPath);
-                if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
+                if (infoDist != null && infoDist.PixFmt?.Contains("12le") == true)
+                    bitDepth = Math.Max(bitDepth, 12);
+                else if (infoDist != null && infoDist.PixFmt?.Contains("10le") == true)
                     bitDepth = Math.Max(bitDepth, 10);
             }
             catch { }
-            double maxVal = bitDepth == 10 ? 1023.0 : 255.0;
+            double maxVal = bitDepth == 12 ? 4095.0 : bitDepth == 10 ? 1023.0 : 255.0;
 
 
             // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）

@@ -63,7 +63,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
                                  {speed}     → 4
                                  {pixfmt}    → yuv444p
                                  {lossless}  → lossless 或 lossy
-                                 {bitdepth}  → 8 或 10
+                                 {bitdepth}  → 8 / 10 / 12
                                  {date}      → 2022-02-22
                                  {time}      → 22-22-22
                                推荐模板及输出示例:
@@ -145,7 +145,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 并行任务数       -> 数字框 numJobs（0=自动） 
 搜索开关         -> 复选框 chkSearch；CRF 范围/固定值 -> 单选按钮 + numCrfFix / numCrfMin / numCrfMax 
 色度采样         -> 下拉框 cmbChroma (auto/420/422/444) 
-输出位深         -> 下拉框 cmbBitDepth (auto/8/10) 
+输出位深         -> 下拉框 cmbBitDepth (auto/8/10/12) 
 质量目标/度量    -> 下拉框 cmbQualityMode + 数字框 numQualityValue 
 搜索度量模式     -> 下拉框 cmbMetric 
 输出模板         -> 文本框 txtTemplate 

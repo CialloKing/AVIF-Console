@@ -71,7 +71,7 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public void Validate_InvalidBitDepth_ReturnsError()
         {
-            var cfg = new PresetConfig { BitDepth = 12 };
+            var cfg = new PresetConfig { BitDepth = 6 };
             var errors = cfg.Validate();
             Assert.IsNotEmpty(errors);
             Assert.Contains("BitDepth", errors[0]);

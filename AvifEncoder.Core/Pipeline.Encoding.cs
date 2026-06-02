@@ -141,7 +141,7 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         {
             // 提取 Alpha 标记和位深后缀
             bool hasAlpha = pixFmt.Contains('a');
-            string depthSuffix = pixFmt.EndsWith("10le") ? "10le" : "";
+            string depthSuffix = pixFmt.EndsWith("12le") ? "12le" : pixFmt.EndsWith("10le") ? "10le" : "";
 
             // 去掉后缀，得到纯净的基础格式（如 yuv444p 或 yuva444p）
             string baseFmt = (depthSuffix.Length > 0 && pixFmt.Length > 4)
@@ -239,7 +239,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             string cacheKey = GetEncodeCacheKey(normalizedInput, crf, currentPixFmt, param.tilePart,
                                                 param.actualCpu, isTrueLossless, param.aomParams,
-                                                IsJpeg(input), currentPixFmt.Contains("10le") ? 10 : 8,
+                                                IsJpeg(input), currentPixFmt.Contains("12le") ? 12 : currentPixFmt.Contains("10le") ? 10 : 8,
                                                 encW, encH, param.rowMt);   // ★ 新增 param.rowMt
 
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{EncodeHelpers.Sha256(cacheKey)}.avif");
@@ -389,7 +389,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string actualPixFmt = pixFmt;
             if (cfg.Encoder.Contains("nvenc", StringComparison.OrdinalIgnoreCase))
             {
-                if (actualPixFmt.Contains("10le") || actualPixFmt.Contains("p010"))
+                if (actualPixFmt.Contains("12le") || actualPixFmt.Contains("10le") || actualPixFmt.Contains("p010"))
                     actualPixFmt = "p010le";
                 else if (actualPixFmt.Contains("444"))
                     actualPixFmt = "yuv420p";  // NVENC 不支持 4:4:4，降为 4:2:0

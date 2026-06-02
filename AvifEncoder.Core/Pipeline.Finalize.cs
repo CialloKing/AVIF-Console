@@ -301,7 +301,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         internal static List<string> BuildPixFmtAttempts(PresetConfig config, string actualPixFmt, bool hasAlpha)
         {
             // 提取位深后缀和基础格式
-            string depthSuffix = actualPixFmt.EndsWith("10le") ? "10le" : "";
+            string depthSuffix = actualPixFmt.EndsWith("12le") ? "12le"
+                : actualPixFmt.EndsWith("10le") ? "10le" : "";
             string baseFmt = depthSuffix.Length > 0 ? actualPixFmt[..^4] : actualPixFmt;
 
             bool effectiveAlpha = hasAlpha;
@@ -318,14 +319,22 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             {
                 string chroma = level switch { 0 => "444", 1 => "422", _ => "420" };
 
-                // ★ 修复：正确生成 yuva / yuv 格式
                 string fmt8 = effectiveAlpha ? $"yuva{chroma}p" : $"yuv{chroma}p";
                 string fmt10 = $"{fmt8}10le";
+                string fmt12 = $"{fmt8}12le";
 
-                if (level == startChroma)
+                void AddByDepth()
                 {
-                    if (depthSuffix == "10le")
+                    // 按用户设定位深优先级添加：当前 depthSuffix 优先，然后向目标位深靠拢
+                    if (depthSuffix == "12le")
                     {
+                        if (config.BitDepth >= 12) attempts.Add(fmt12);
+                        if (config.BitDepth >= 10) attempts.Add(fmt10);
+                        if (config.BitDepth <= 10) attempts.Add(fmt8);
+                    }
+                    else if (depthSuffix == "10le")
+                    {
+                        if (config.BitDepth >= 12) attempts.Add(fmt12);
                         if (config.BitDepth >= 10) attempts.Add(fmt10);
                         if (config.BitDepth <= 10) attempts.Add(fmt8);
                     }
@@ -333,13 +342,14 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     {
                         if (config.BitDepth <= 10) attempts.Add(fmt8);
                         if (config.BitDepth >= 10) attempts.Add(fmt10);
+                        if (config.BitDepth >= 12) attempts.Add(fmt12);
                     }
                 }
+
+                if (level == startChroma)
+                    AddByDepth();
                 else
-                {
-                    if (config.BitDepth >= 10) attempts.Add(fmt10);
-                    if (config.BitDepth <= 10) attempts.Add(fmt8);
-                }
+                    AddByDepth();
             }
 
             return [.. attempts.Distinct()];
