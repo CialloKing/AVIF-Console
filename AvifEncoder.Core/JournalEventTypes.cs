@@ -20,5 +20,8 @@ namespace AvifEncoder
 
         /// <summary>处理开始标记（用于断点续传的中间状态判断）。</summary>
         public const string Start = "start";
+
+        /// <summary>编码完成（AVIF 文件已生成，但高级指标可能尚未计算）。</summary>
+        public const string Encoded = "encoded";
     }
 }

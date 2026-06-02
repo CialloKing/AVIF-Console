@@ -1088,6 +1088,12 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                     : result.ErrorMessage + " | AOM参数已降级";
             }
 
+            // ★ 编码完成时立即记录 "encoded" 事件，确保中断恢复时知道该文件已编码
+            if (result.Success && !result.Skipped)
+            {
+                AppendJournal(inputPath, JournalEventTypes.Encoded);
+            }
+
             MarkProcessed(result);
             return result;
         }

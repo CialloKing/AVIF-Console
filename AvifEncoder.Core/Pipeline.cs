@@ -1051,7 +1051,7 @@ namespace AvifEncoder
                                     fileIdToPath[fid] = file;
                             }
 
-                            if (evt == "success")
+                            if (evt == "success" || evt == "encoded")
                                 completed.Add(file);
 
                             if (metricsOut != null && evt == "metrics")
@@ -1847,7 +1847,7 @@ namespace AvifEncoder
                                 {
                                     string evt = evtEl.GetString() ?? "";
                                     string file = fileEl.GetString() ?? "";
-                                    if (evt == "success") deltaDone.Add(file);
+                                    if (evt == "success" || evt == "encoded") deltaDone.Add(file);
                                     if (evt == "metrics")
                                     {
                                         var m = new QualityMetrics();
@@ -1965,10 +1965,8 @@ namespace AvifEncoder
                 var results = await ProcessInitialBatchAsync(files);
                 results = await RetryFailuresAsync(results);
 
-                // 退出前合并旧已完成 + 新完成 → 保存最终快照
-                if (_config.Resume)
+                // ★ 每次运行结束都保存快照（不仅 Resume），确保下次可恢复
                 {
-                    // 合并快照中已有的完成列表 + 指标
                     var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
                     var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
                         .Select(r => r!.InputPath);
@@ -1982,8 +1980,6 @@ namespace AvifEncoder
                     }
                     SaveSnapshot(oldCompleted.Union(newCompleted),
                         MergeMetrics(oldMetrics, newMetrics));
-                    int totalNonSkipped = results.Count(r => r != null && !r.Skipped);
-                    /* Journal 保留不删——Resume 依赖它 */
                 }
 
                 await PrintSummaryAndExport(results);
