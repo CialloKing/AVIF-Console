@@ -1151,6 +1151,9 @@ namespace AvifEncoder
                         _config.MetricMode,
                         _config.PixelFormat,
                         _config.BitDepth,
+                        _config.AutoSource,
+                        _config.UserSetChroma,
+                        _config.UserSetBitDepth,
                         _config.OutputNameFormat,
                         _config.RecurseSubdirectories,
                         _config.SerialEncode,
@@ -1810,6 +1813,9 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("MetricMode", out var mm)) _config.MetricMode = mm.GetString()!;
                             if (cfg.TryGetProperty("PixelFormat", out var pf)) _config.PixelFormat = pf.GetString();
                             if (cfg.TryGetProperty("BitDepth", out var bd)) _config.BitDepth = bd.GetInt32();
+                            if (cfg.TryGetProperty("AutoSource", out var asrc)) _config.AutoSource = asrc.GetBoolean();
+                            if (cfg.TryGetProperty("UserSetChroma", out var usc)) _config.UserSetChroma = usc.GetBoolean();
+                            if (cfg.TryGetProperty("UserSetBitDepth", out var usb)) _config.UserSetBitDepth = usb.GetBoolean();
                             if (cfg.TryGetProperty("OutputNameFormat", out var ot)) _config.OutputNameFormat = ot.GetString()!;
                             if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) _config.RecurseSubdirectories = rc.GetBoolean();
                             if (cfg.TryGetProperty("SerialEncode", out var se)) _config.SerialEncode = se.GetBoolean();

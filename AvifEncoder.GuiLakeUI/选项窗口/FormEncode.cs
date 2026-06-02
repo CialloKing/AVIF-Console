@@ -1253,16 +1253,25 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     else { rbCrfFix.Checked = true; }
                 }
                 if (cfg.TryGetProperty("MetricMode", out var mm)) SetComboBoxItem(cmbMetric, mm.GetString()!);
+                // 恢复 AutoSource 状态：auto 模式下 chroma/bitDepth 显示 "auto"
+                bool autoSource = true;
+                if (cfg.TryGetProperty("AutoSource", out var asrc)) autoSource = asrc.GetBoolean();
                 if (cfg.TryGetProperty("PixelFormat", out var pf))
                 {
                     string pfStr = pf.GetString() ?? "";
-                    if (pfStr.Contains("444")) SetComboBoxItem(cmbChroma, "444");
+                    if (autoSource && string.IsNullOrEmpty(pfStr))
+                        SetComboBoxItem(cmbChroma, "auto");
+                    else if (pfStr.Contains("444")) SetComboBoxItem(cmbChroma, "444");
                     else if (pfStr.Contains("422")) SetComboBoxItem(cmbChroma, "422");
-                    else if (pfStr == "") SetComboBoxItem(cmbChroma, "auto");
                     else SetComboBoxItem(cmbChroma, "420");
                 }
                 if (cfg.TryGetProperty("BitDepth", out var bd))
-                    SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 10 ? "10" : "8");
+                {
+                    if (autoSource && !(cfg.TryGetProperty("UserSetBitDepth", out var usb) && usb.GetBoolean()))
+                        SetComboBoxItem(cmbBitDepth, "auto");
+                    else
+                        SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 10 ? "10" : "8");
+                }
                 if (cfg.TryGetProperty("OutputNameFormat", out var ot)) txtTemplate.Text = ot.GetString()!;
                 if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) chkRecursive.Checked = rc.GetBoolean();
                 if (cfg.TryGetProperty("SerialEncode", out var se)) chkSerialEncode.Checked = se.GetBoolean();
