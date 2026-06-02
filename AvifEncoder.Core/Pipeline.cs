@@ -627,8 +627,7 @@ namespace AvifEncoder
             string relPath = Path.GetRelativePath(safeInputDir, safeInputPath);
             string? relDir = Path.GetDirectoryName(relPath);
             string fileName = GetOutputFileName(inputFilePath, index);
-            if (!string.IsNullOrEmpty(relDir))
-                _logger.LogInfo($"[OUTPUT] 子目录: {relDir} ← {Path.GetFileName(inputFilePath)}");
+            _logger.LogInfo($"[OUTPUT] inputDir={safeInputDir} file={safeInputPath} rel={relPath} dir={relDir ?? "(root)"}");
             string targetDir = string.IsNullOrEmpty(relDir)
                 ? _outputDir
                 : Path.Combine(_outputDir, relDir);
