@@ -371,7 +371,7 @@ namespace AvifEncoder
                     bool found = false;
                     for (int i = 1; i < lines.Length; i++)
                     {
-                        var cols = lines[i].Split(',');
+                        var cols = SplitCsvLine(lines[i]);
                         if (cols.Length > 0 && cols[0] == outputFileName && cols.Length >= 19)
                         {
                             if (m.XPSNR_Y.HasValue) cols[11] = FormatDbValue(m.XPSNR_Y.Value);
@@ -382,7 +382,7 @@ namespace AvifEncoder
                             if (m.Butteraugli_Raw.HasValue) cols[16] = FormatMetric(m.Butteraugli_Raw.Value);
                             if (m.Butteraugli_3norm.HasValue) cols[17] = FormatMetric(m.Butteraugli_3norm.Value);
                             if (m.GMSD.HasValue) cols[18] = FormatMetric(m.GMSD.Value);
-                            lines[i] = string.Join(",", cols);
+                            lines[i] = string.Join(",", cols.Select(f => CsvEscape(f)));
                             found = true;
                             break;
                         }
@@ -1729,7 +1729,9 @@ namespace AvifEncoder
                         catch { }
                     }
 
-                    // 交集：三源全部确认 → 才视为完成
+                    // Journal 是唯一的完成判定源：
+                    // "success" 事件仅在编码成功 + CSV 完整写入 + 所有指标就绪后才写入 journal，
+                    // 因此 journal 中标记为 success 的文件即为完整完成，无需额外交叉验证。
                     var completed = new HashSet<string>(journalDone, StringComparer.OrdinalIgnoreCase);
 
                     _logger.LogInfo(

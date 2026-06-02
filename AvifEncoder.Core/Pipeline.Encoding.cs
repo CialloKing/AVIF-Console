@@ -413,21 +413,19 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string rangeVal = "pc";
 
             // ---------- 探测源文件色彩元数据 ----------
+            // 源文件有完整色彩元数据时，全部忠实继承；
+            // 仅 bt2020 primaries 时强制使用 bt2020nc 矩阵（HDR10 标准）。
             var srcColor = await GetSourceColorInfoAsync(input);
             if (srcColor != null)
             {
                 var p = srcColor.Value.primaries;
                 var t = srcColor.Value.trc;
+                var s = srcColor.Value.space;
 
-                bool isHdrPq = p == "bt2020" && t == "smpte2084";   // 仅允许 PQ HDR
-
-                if (isHdrPq)
-                {
-                    primaries = "bt2020";
-                    trc = "smpte2084";
-                    space = "bt2020nc";          // HDR10 标准矩阵
-                }
-                // 其他组合保留默认 space（已按像素格式选择 bt709 或 gbr）
+                primaries = p;
+                trc = t;
+                // bt2020 色域统一使用 bt2020nc 矩阵；其他色域直接继承源值
+                space = (p == "bt2020") ? "bt2020nc" : s;
 
                 // range 始终允许继承
                 if (!string.IsNullOrWhiteSpace(srcColor.Value.range))

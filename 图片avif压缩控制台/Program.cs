@@ -353,6 +353,12 @@ namespace AvifEncoder
             config.Encoder = opts.Encoder;
             if (opts.ForceNoSearch) config.UseCRFSearch = false;
             else if (opts.EnableSearch) config.UseCRFSearch = true;
+            if (opts.BitDepth.HasValue)
+            {
+                config.BitDepth = opts.BitDepth.Value;
+                config.UserSetBitDepth = true;
+                config.AutoSource = false;
+            }
             if (opts.Chroma != "auto")
             {
                 config.AutoSource = false;
@@ -364,12 +370,6 @@ namespace AvifEncoder
                     "444" => "yuv444p",
                     _ => "yuv420p"
                 };
-            }
-            if (opts.BitDepth.HasValue)
-            {
-                config.BitDepth = opts.BitDepth.Value;
-                config.UserSetBitDepth = true;
-                config.AutoSource = false;
             }
             AvifPipeline.ApplyBitDepth(config);
             if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))

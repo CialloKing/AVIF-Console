@@ -149,6 +149,39 @@ namespace AvifEncoder
             return (false, config.BaseCRF, actualPixFmt, totalEvalCount);
         }
 
+        /// <summary>
+        /// 根据当前配置的度量模式，返回指标原生尺度下的搜索容差 margin。
+        /// 与 HybridSearchCRFAsync 中的 margin 逻辑保持一致。
+        /// </summary>
+        private static double GetMetricMargin(PresetConfig config)
+        {
+            string metricMode = config.MetricMode ?? "vmaf";
+
+            if (config.XpsnrTargetValue.HasValue)
+            {
+                return 0.01;
+            }
+            if (config.Ssimu2TargetValue.HasValue)
+            {
+                return 0.2;
+            }
+            if (config.Butteraugli3TargetValue.HasValue)
+            {
+                return 0.01;
+            }
+            if (config.GmsdTargetValue.HasValue)
+            {
+                return 0.001;
+            }
+
+            return metricMode switch
+            {
+                "vmaf" => 0.05,
+                "psnr" => 0.01,
+                _ => SSIMMargin   // 0.0002 for SSIM/MS-SSIM/mix native (0-1) scale
+            };
+        }
+
         // ---------- 安全模式全扫描 ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
 RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow, int scanHigh)
@@ -158,7 +191,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 safeCts.Token, _globalCts?.Token ?? default);
             var safeToken = linkedCts.Token;
 
-            double target = config.GetEffectiveTarget() + SSIMMargin;
+            // 使用与主搜索一致的指标原生尺度 margin，而非固定的 SSIMMargin
+            double target = config.GetEffectiveTarget() + GetMetricMargin(config);
             int bestSafeCRF = -1;
             // ★ 使用传入的区间，而非全局 MinCRF/MaxCRF
             int start = scanHigh;
