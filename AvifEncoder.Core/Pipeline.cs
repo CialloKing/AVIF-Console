@@ -184,6 +184,7 @@ namespace AvifEncoder
         private readonly object _journalLock = new();
         private int _journalCountSinceSnapshot;
         private DateTime _lastSnapshotTime;
+        private long _journalEventCount;   // 累计事件数，用于增量回放定位
 
 
 
@@ -961,28 +962,53 @@ namespace AvifEncoder
                 string line = System.Text.Json.JsonSerializer.Serialize(obj);
                 _journalWriter.WriteLine(line);
                 _journalWriter.Flush();  // 逐行刷盘
+                _journalEventCount++;
                 _journalCountSinceSnapshot++;
 
-                // ★ 周期性快照：合并旧快照完成列表 + 本次新增
+                // ★ 周期性快照：全量回放 journal 收集完成列表+指标，写入快照
                 if (_journalCountSinceSnapshot >= 500)
                 {
-                    var (oldDone, _, _) = LoadSnapshot();
-                    var newDone = ReplayJournal(null);
-                    SaveSnapshot(oldDone.Union(newDone));
+                    var (oldDone, oldMetrics, _, _) = LoadSnapshot();
+                    var (newDone, newMetrics) = ReplayJournalWithMetrics(0);
+                    SaveSnapshot(oldDone.Union(newDone),
+                        MergeMetrics(oldMetrics, newMetrics));
                 }
             }
+        }
+
+        /// <summary>
+        /// 回放 journal，返回完成文件列表 + 指标状态。
+        /// skipLines 用于增量回放：跳过前 N 行（已通过 snapshot 恢复的事件）。
+        /// </summary>
+        private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics)
+            ReplayJournalWithMetrics(int skipLines)
+        {
+            var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var metrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+            ReplayJournalCore(skipLines, null, completed, metrics);
+            return (completed, metrics);
         }
 
         private HashSet<string> ReplayJournal(DateTime? since, Dictionary<string, QualityMetrics>? metricsOut = null)
         {
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!_fs.FileExists(_journalPath)) return completed;
+            ReplayJournalCore(0, since, completed, metricsOut);
+            return completed;
+        }
+
+        /// <summary>共享的 journal 回放核心：解析 NDJSON 行，填充 completed + metrics。</summary>
+        private void ReplayJournalCore(
+            int skipLines, DateTime? since,
+            HashSet<string> completed, Dictionary<string, QualityMetrics>? metricsOut)
+        {
+            if (!_fs.FileExists(_journalPath)) return;
 
             try
             {
                 var lines = File.ReadAllLines(_journalPath);
-                foreach (var line in lines)
+                for (int i = skipLines; i < lines.Length; i++)
                 {
+                    string line = lines[i];
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     try
                     {
@@ -1003,7 +1029,6 @@ namespace AvifEncoder
                             if (evt == "success")
                                 completed.Add(file);
 
-                            // 回放 metrics 事件，重建高级指标状态
                             if (metricsOut != null && evt == "metrics")
                             {
                                 var m = new QualityMetrics();
@@ -1021,25 +1046,55 @@ namespace AvifEncoder
                     }
                     catch (JsonException)
                     {
-                        // 损坏行：截断并退出
                         break;
                     }
                 }
             }
             catch { }
-            return completed;
         }
 
-        private void SaveSnapshot(IEnumerable<string> completed)
+        private static Dictionary<string, QualityMetrics> MergeMetrics(
+            Dictionary<string, QualityMetrics>? a, Dictionary<string, QualityMetrics>? b)
+        {
+            var result = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+            if (a != null) { foreach (var kv in a) result[kv.Key] = kv.Value; }
+            if (b != null) { foreach (var kv in b) result[kv.Key] = kv.Value; }
+            return result;
+        }
+
+        private void SaveSnapshot(IEnumerable<string> completed,
+            Dictionary<string, QualityMetrics>? completedMetrics = null)
         {
             if (string.IsNullOrEmpty(_snapshotPath)) return;
             try
             {
+                // 构建指标快照：路径 → { 指标名: 值 }
+                var metricsSnapshot = new Dictionary<string, Dictionary<string, double?>>(
+                    StringComparer.OrdinalIgnoreCase);
+                if (completedMetrics != null)
+                {
+                    foreach (var kv in completedMetrics)
+                    {
+                        var vals = new Dictionary<string, double?>();
+                        if (kv.Value.SSIMULACRA2.HasValue) vals["ssimu2"] = kv.Value.SSIMULACRA2;
+                        if (kv.Value.Butteraugli_Raw.HasValue) vals["butterRaw"] = kv.Value.Butteraugli_Raw;
+                        if (kv.Value.Butteraugli_3norm.HasValue) vals["butter3"] = kv.Value.Butteraugli_3norm;
+                        if (kv.Value.GMSD.HasValue) vals["gmsd"] = kv.Value.GMSD;
+                        if (kv.Value.XPSNR_Y.HasValue) vals["xpsnrY"] = kv.Value.XPSNR_Y;
+                        if (kv.Value.XPSNR_U.HasValue) vals["xpsnrU"] = kv.Value.XPSNR_U;
+                        if (kv.Value.XPSNR_V.HasValue) vals["xpsnrV"] = kv.Value.XPSNR_V;
+                        if (kv.Value.W_XPSNR.HasValue) vals["wxpsnr"] = kv.Value.W_XPSNR;
+                        if (vals.Count > 0) metricsSnapshot[kv.Key] = vals;
+                    }
+                }
+
                 var snapshot = new
                 {
-                    v = 3,
+                    v = 4,
                     ts = DateTime.UtcNow.ToString("o"),
+                    journalEventCount = _journalEventCount,
                     completed = completed.ToArray(),
+                    metrics = metricsSnapshot,
                     inputDir = _inputDir,
                     config = new
                     {
@@ -1085,9 +1140,11 @@ namespace AvifEncoder
             catch { }
         }
 
-        private (HashSet<string> completed, string? configJson, string? inputDir) LoadSnapshot()
+        private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics,
+            string? configJson, string? inputDir) LoadSnapshot()
         {
-            if (!_fs.FileExists(_snapshotPath)) return (new HashSet<string>(), null, null);
+            var emptyMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+            if (!_fs.FileExists(_snapshotPath)) return (new HashSet<string>(), emptyMetrics, null, null);
             try
             {
                 string json = File.ReadAllText(_snapshotPath, Encoding.UTF8);
@@ -1098,16 +1155,38 @@ namespace AvifEncoder
                     cfgJson = cfgEl.GetRawText();
                 if (root.TryGetProperty("inputDir", out var idEl))
                     inputDir = idEl.GetString();
+
+                // 提取完成文件列表
+                var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (root.TryGetProperty("completed", out var arr))
                 {
-                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var el in arr.EnumerateArray())
-                        set.Add(el.GetString() ?? "");
-                    return (set, cfgJson, inputDir);
+                        completed.Add(el.GetString() ?? "");
                 }
+
+                // 提取指标状态（v4+ 格式）
+                var metrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                if (root.TryGetProperty("metrics", out var metricsEl))
+                {
+                    foreach (var kv in metricsEl.EnumerateObject())
+                    {
+                        var m = new QualityMetrics();
+                        if (kv.Value.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
+                        if (kv.Value.TryGetProperty("butterRaw", out var br)) m.Butteraugli_Raw = br.GetDouble();
+                        if (kv.Value.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
+                        if (kv.Value.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrY", out var xy)) m.XPSNR_Y = xy.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrU", out var xu)) m.XPSNR_U = xu.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrV", out var xv)) m.XPSNR_V = xv.GetDouble();
+                        if (kv.Value.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                        metrics[kv.Name] = m;
+                    }
+                }
+
+                return (completed, metrics, cfgJson, inputDir);
             }
             catch { }
-            return (new HashSet<string>(), null, null);
+            return (new HashSet<string>(), emptyMetrics, null, null);
         }
 
         private void CloseJournal()
@@ -1668,9 +1747,8 @@ namespace AvifEncoder
                     }
                     catch { }
 
-                    // 加载快照并回放日志
-                    // ★ 保守策略：三个数据源取交集（全部确认完成才算完成）
-                    var (snapshotDone, savedConfigJson, savedInputDir) = LoadSnapshot();
+                    // 加载快照（v4：含完成列表 + 指标 + 事件计数）
+                    var (snapshotDone, snapshotMetrics, savedConfigJson, savedInputDir) = LoadSnapshot();
 
                     // 从快照恢复编码配置（--resume 时无需重新指定参数）
                     if (savedConfigJson != null)
@@ -1712,21 +1790,73 @@ namespace AvifEncoder
                             _logger.LogInfo($"[RESUME] 配置恢复失败: {ex.Message}，使用当前参数");
                         }
                     }
-                    // ★ 方案二：Journal 是唯一权威状态源，CSV 不参与恢复判定
-                    // 回放 journal 获取已完成文件列表 + 高级指标状态
-                    var resumeMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-                    var journalDone = ReplayJournal(null, resumeMetrics);
+                    // ★ 方案二 + Snapshot v4：Snapshot 指标 + 增量 journal 回放
+                    // 1. 从 Snapshot 恢复已有指标
+                    long snapshotEventCount = 0;
+                    try
+                    {
+                        string snapJson = File.ReadAllText(_snapshotPath, Encoding.UTF8);
+                        using var snapDoc = JsonDocument.Parse(snapJson);
+                        if (snapDoc.RootElement.TryGetProperty("journalEventCount", out var jec))
+                            snapshotEventCount = jec.GetInt64();
+                    }
+                    catch { }
 
-                    // 将回放的指标写入内存缓存，供最终 ExportCsv 使用
+                    // 2. 增量回放 snapshot 之后的 journal 事件
+                    var resumeMetrics = new Dictionary<string, QualityMetrics>(snapshotMetrics, StringComparer.OrdinalIgnoreCase);
+                    var deltaDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var deltaMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                    try
+                    {
+                        var lines = File.ReadAllLines(_journalPath);
+                        for (int i = (int)Math.Min(snapshotEventCount, lines.Length); i < lines.Length; i++)
+                        {
+                            string line = lines[i];
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(line);
+                                var root = doc.RootElement;
+                                if (root.TryGetProperty("evt", out var evtEl) &&
+                                    root.TryGetProperty("file", out var fileEl))
+                                {
+                                    string evt = evtEl.GetString() ?? "";
+                                    string file = fileEl.GetString() ?? "";
+                                    if (evt == "success") deltaDone.Add(file);
+                                    if (evt == "metrics")
+                                    {
+                                        var m = new QualityMetrics();
+                                        if (root.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
+                                        if (root.TryGetProperty("butterRaw", out var br)) m.Butteraugli_Raw = br.GetDouble();
+                                        if (root.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
+                                        if (root.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
+                                        if (root.TryGetProperty("xpsnrY", out var xy)) m.XPSNR_Y = xy.GetDouble();
+                                        if (root.TryGetProperty("xpsnrU", out var xu)) m.XPSNR_U = xu.GetDouble();
+                                        if (root.TryGetProperty("xpsnrV", out var xv)) m.XPSNR_V = xv.GetDouble();
+                                        if (root.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                                        deltaMetrics[file] = m;
+                                    }
+                                }
+                            }
+                            catch (JsonException) { break; }
+                        }
+                    }
+                    catch { }
+
+                    // 3. 合并：Snapshot 指标 + 增量指标
+                    foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
+
+                    // 4. 写入内存缓存供 ExportCsv
                     foreach (var kv in resumeMetrics)
                     {
                         string metricsKey = GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
                         _cache.SetMetrics(metricsKey, kv.Value);
                     }
 
-                    var completed = new HashSet<string>(journalDone, StringComparer.OrdinalIgnoreCase);
+                    var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
+                    foreach (var f in deltaDone) completed.Add(f);
                     _logger.LogInfo(
-                        $"[RESUME] journalDone={journalDone.Count} metricsRestored={resumeMetrics.Count} → completed={completed.Count}");
+                        $"[RESUME] snapshot={snapshotDone.Count} + delta={deltaDone.Count} = completed={completed.Count}, metrics={resumeMetrics.Count}");
 
                     // 文件系统检查：Journal 标记完成但文件被用户误删 → 重新编码
                     foreach (var (path, idx) in files)
@@ -1769,11 +1899,20 @@ namespace AvifEncoder
                 // 退出前合并旧已完成 + 新完成 → 保存最终快照
                 if (_config.Resume)
                 {
-                    // 合并快照中已有的完成列表
-                    var (oldCompleted, _, _) = LoadSnapshot();
+                    // 合并快照中已有的完成列表 + 指标
+                    var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
                     var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
                         .Select(r => r!.InputPath);
-                    SaveSnapshot(oldCompleted.Union(newCompleted));
+                    // 收集本次运行的指标（从缓存）
+                    var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var r in results)
+                    {
+                        if (r != null && r.Success && !string.IsNullOrEmpty(r.AdvancedMetricsCacheKey)
+                            && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
+                            newMetrics[r.InputPath] = rm!;
+                    }
+                    SaveSnapshot(oldCompleted.Union(newCompleted),
+                        MergeMetrics(oldMetrics, newMetrics));
                     int totalNonSkipped = results.Count(r => r != null && !r.Skipped);
                     /* Journal 保留不删——Resume 依赖它 */
                 }
