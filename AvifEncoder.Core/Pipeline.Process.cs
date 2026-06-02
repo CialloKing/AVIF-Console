@@ -111,6 +111,7 @@ namespace AvifEncoder
             // 文件级串行：依次处理每个文件
             foreach (var file in files)
             {
+                _globalCts?.Token.ThrowIfCancellationRequested();
                 string inputPath = file.filePath;
                 string name = Path.GetFileName(inputPath);
 
@@ -133,6 +134,7 @@ namespace AvifEncoder
 
                 for (int crf = config.MinCRF; crf <= config.MaxCRF; crf++)
                 {
+                    _globalCts?.Token.ThrowIfCancellationRequested();
                     int capturedCrf = crf;
                     var task = Task.Run(async () =>
                     {

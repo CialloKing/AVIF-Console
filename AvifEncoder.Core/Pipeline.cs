@@ -1201,9 +1201,8 @@ namespace AvifEncoder
                 };
                 string tmp = _snapshotPath + ".tmp";
                 File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(snapshot), Encoding.UTF8);
-                if (_fs.FileExists(_snapshotPath))
-                    _fs.DeleteFile(_snapshotPath);
-                File.Move(tmp, _snapshotPath);
+                // ★ 原子替换：Delete+Move有崩溃窗口，File.Move(overwrite:true)是原子操作
+                File.Move(tmp, _snapshotPath, true);
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
 

@@ -427,8 +427,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string encArgs = EncodeHelpers.BuildEncoderSpecificArgs(config, 0, safeTile, safeRowMt);
             string threadsArg = config.SerialEncode ? "-threads 1" : "";  // 新属性名
 
+            string safePixFmt = config.BitDepth >= 12 ? "yuv420p12le"
+                : config.BitDepth >= 10 ? "yuv420p10le" : "yuv420p";
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
-                   $"-c:v {config.Encoder} -pix_fmt yuv420p " +
+                   $"-c:v {config.Encoder} -pix_fmt {safePixFmt} " +
                    $"-crf {crf} -b:v 0 {encArgs} " +
                    $"-color_range pc {stillPic} -frames:v 1 {aomPart} {threadsArg} -y \"{outputPath}\"";
         }
