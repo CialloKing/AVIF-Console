@@ -360,9 +360,23 @@ namespace AvifEncoder
 
             if (allMetricsReady)
             {
-                if (outputFileName != null) { _logger.LogInfo($"[CSV-FLUSH] START {outputFileName}"); TryFlushCsvRow(outputFileName, cacheKey); }
+                // ★ 方案二：高级指标写入 Journal（唯一权威状态源），不再回填 CSV
+                if (inputPath != null && _cache.TryGetMetrics(cacheKey, out var m))
+                {
+                    AppendJournal(inputPath, JournalEventTypes.Metrics, new
+                    {
+                        ssimu2 = m.SSIMULACRA2,
+                        butterRaw = m.Butteraugli_Raw,
+                        butter3 = m.Butteraugli_3norm,
+                        gmsd = m.GMSD,
+                        xpsnrY = m.XPSNR_Y,
+                        xpsnrU = m.XPSNR_U,
+                        xpsnrV = m.XPSNR_V,
+                        wxpsnr = m.W_XPSNR
+                    });
+                }
                 if (inputPath != null)
-                    AppendJournal(inputPath, "success");
+                    AppendJournal(inputPath, JournalEventTypes.Success);
                 _progress.MarkFileProcessed();
             }
             else
@@ -372,47 +386,7 @@ namespace AvifEncoder
             _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
         }
 
-        private void TryFlushCsvRow(string outputFileName, string cacheKey)
-        {
-            try
-            {
-                if (!_cache.TryGetMetrics(cacheKey, out var m)) { _logger.LogInfo($"[CSV-FLUSH] FAIL cache miss: {outputFileName} key={cacheKey[..Math.Min(30,cacheKey.Length)]}..."); return; }
-                string p = Path.Combine(_outputDir, "avif_stats.csv");
-                lock (_csvLock)
-                {
-                    if (!_fs.FileExists(p)) { _logger.LogInfo($"[CSV-FLUSH] FAIL no file: {p}"); return; }
-                    var lines = File.ReadAllLines(p);
-                    bool found = false;
-                    for (int i = 1; i < lines.Length; i++)
-                    {
-                        var cols = SplitCsvLine(lines[i]);
-                        if (cols.Length > 0 && cols[0] == outputFileName && cols.Length >= 19)
-                        {
-                            if (m.XPSNR_Y.HasValue) cols[11] = FormatDbValue(m.XPSNR_Y.Value);
-                            if (m.XPSNR_U.HasValue) cols[12] = FormatDbValue(m.XPSNR_U.Value);
-                            if (m.XPSNR_V.HasValue) cols[13] = FormatDbValue(m.XPSNR_V.Value);
-                            if (m.W_XPSNR.HasValue) cols[14] = FormatDbValue(m.W_XPSNR.Value);
-                            if (m.SSIMULACRA2.HasValue) cols[15] = FormatMetric(m.SSIMULACRA2.Value);
-                            if (m.Butteraugli_Raw.HasValue) cols[16] = FormatMetric(m.Butteraugli_Raw.Value);
-                            if (m.Butteraugli_3norm.HasValue) cols[17] = FormatMetric(m.Butteraugli_3norm.Value);
-                            if (m.GMSD.HasValue) cols[18] = FormatMetric(m.GMSD.Value);
-                            lines[i] = string.Join(",", cols.Select(f => CsvEscape(f)));
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (found)
-                    {
-                        _fs.WriteAllText(p, string.Join("\n", lines) + "\n", new UTF8Encoding(true));
-                        _logger.LogInfo($"[CSV-FLUSH] {outputFileName} XPSNR={m.XPSNR_Y:F2} SSIM2={m.SSIMULACRA2:F2}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"[CSV-FLUSH] 写入异常: {outputFileName} - {ex.Message}");
-            }
-        }
+        // ── TryFlushCsvRow 已删除（方案二：Journal 是唯一权威源，CSV 仅最终导出） ──
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象（使用原子 AddOrUpdate） </summary>
@@ -974,7 +948,7 @@ namespace AvifEncoder
                 if (_journalWriter == null) return;
                 var obj = new Dictionary<string, object>
                 {
-                    ["v"] = 1,
+                    ["schema"] = JournalEventTypes.CurrentSchemaVersion,
                     ["ts"] = DateTime.UtcNow.ToString("o"),
                     ["file"] = file,
                     ["evt"] = evt
@@ -999,7 +973,7 @@ namespace AvifEncoder
             }
         }
 
-        private HashSet<string> ReplayJournal(DateTime? since)
+        private HashSet<string> ReplayJournal(DateTime? since, Dictionary<string, QualityMetrics>? metricsOut = null)
         {
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!_fs.FileExists(_journalPath)) return completed;
@@ -1022,8 +996,27 @@ namespace AvifEncoder
                                 DateTime.TryParse(tsEl.GetString(), out var ts) &&
                                 ts < since.Value)
                                 continue;
-                            if (evtEl.GetString() == "success")
-                                completed.Add(fileEl.GetString() ?? "");
+
+                            string evt = evtEl.GetString() ?? "";
+                            string file = fileEl.GetString() ?? "";
+
+                            if (evt == "success")
+                                completed.Add(file);
+
+                            // 回放 metrics 事件，重建高级指标状态
+                            if (metricsOut != null && evt == "metrics")
+                            {
+                                var m = new QualityMetrics();
+                                if (root.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
+                                if (root.TryGetProperty("butterRaw", out var br)) m.Butteraugli_Raw = br.GetDouble();
+                                if (root.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
+                                if (root.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
+                                if (root.TryGetProperty("xpsnrY", out var xy)) m.XPSNR_Y = xy.GetDouble();
+                                if (root.TryGetProperty("xpsnrU", out var xu)) m.XPSNR_U = xu.GetDouble();
+                                if (root.TryGetProperty("xpsnrV", out var xv)) m.XPSNR_V = xv.GetDouble();
+                                if (root.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                                metricsOut[file] = m;
+                            }
                         }
                     }
                     catch (JsonException)
@@ -1719,58 +1712,23 @@ namespace AvifEncoder
                             _logger.LogInfo($"[RESUME] 配置恢复失败: {ex.Message}，使用当前参数");
                         }
                     }
-                    var journalDone = ReplayJournal(null);  // 回放全部日志（不限时间戳）
-                    var csvDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    // ★ 方案二：Journal 是唯一权威状态源，CSV 不参与恢复判定
+                    // 回放 journal 获取已完成文件列表 + 高级指标状态
+                    var resumeMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                    var journalDone = ReplayJournal(null, resumeMetrics);
 
-                    // CSV：提取 "成功" 行对应的输入文件（正确处理引号内逗号）
-                    if (_fs.FileExists(_csvPath))
+                    // 将回放的指标写入内存缓存，供最终 ExportCsv 使用
+                    foreach (var kv in resumeMetrics)
                     {
-                        try
-                        {
-                            var csvLines = File.ReadAllLines(_csvPath);
-                            int statusIdx = -1, fileIdx = -1;
-                            for (int i = 0; i < csvLines.Length; i++)
-                            {
-                                var cols = SplitCsvLine(csvLines[i]);
-                                if (i == 0)
-                                {
-                                    for (int c = 0; c < cols.Length; c++)
-                                    {
-                                        if (cols[c] == "状态") statusIdx = c;
-                                        if (cols[c] == "文件名") fileIdx = c;
-                                    }
-                                    continue;
-                                }
-                                if (statusIdx >= 0 && fileIdx >= 0 &&
-                                    statusIdx < cols.Length && fileIdx < cols.Length &&
-                                    cols[statusIdx] == "成功")
-                                {
-                                    string csvFileName = cols[fileIdx];
-                                    // 用实际 index 反向映射（而非 -1，避免索引模板错位）
-                                    foreach (var (path, idx) in files)
-                                    {
-                                        string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
-                                        if (Path.GetFileName(outPath) == csvFileName)
-                                        {
-                                            csvDone.Add(path);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch { }
+                        string metricsKey = GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
+                        _cache.SetMetrics(metricsKey, kv.Value);
                     }
 
-                    // Journal 是唯一的完成判定源：
-                    // "success" 事件仅在编码成功 + CSV 完整写入 + 所有指标就绪后才写入 journal，
-                    // 因此 journal 中标记为 success 的文件即为完整完成，无需额外交叉验证。
                     var completed = new HashSet<string>(journalDone, StringComparer.OrdinalIgnoreCase);
-
                     _logger.LogInfo(
-                        $"[RESUME] journalDone={journalDone.Count} → completed={completed.Count}");
+                        $"[RESUME] journalDone={journalDone.Count} metricsRestored={resumeMetrics.Count} → completed={completed.Count}");
 
-                    // 文件系统交叉验证：仅日志缺失时记录，不自动标记完成（避免参数变更误判）
+                    // 文件系统检查：Journal 标记完成但文件被用户误删 → 重新编码
                     foreach (var (path, idx) in files)
                     {
                         if (completed.Contains(path)) continue;
@@ -2040,8 +1998,7 @@ namespace AvifEncoder
             }
 
 
-            // 从缓存回填高级指标
-            foreach (var r in allResults) { _logger.LogInfo("[CSV-DIAG] " + r.FileName + " cacheKey=" + (r.AdvancedMetricsCacheKey ?? "null")); }
+            // 从缓存回填高级指标（方案二：缓存由 journal replay + 本次运行填充）
             foreach (var r in allResults)
             {
                 if (!string.IsNullOrEmpty(r.AdvancedMetricsCacheKey) && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var updated))

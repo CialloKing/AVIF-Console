@@ -589,7 +589,7 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        AppendJournal(workingInputPath, "success");
+                        AppendJournal(workingInputPath, JournalEventTypes.Success);
                         _progress.MarkFileProcessed();
                     }
                 }
@@ -661,7 +661,7 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        AppendJournal(workingInputPath, "success");
+                        AppendJournal(workingInputPath, JournalEventTypes.Success);
                         _progress.MarkFileProcessed();
                     }
                 }
