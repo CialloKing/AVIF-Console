@@ -1017,10 +1017,13 @@ namespace AvifEncoder
             return (completed, metrics, fileIdToPath, encodedOnly);
         }
 
+        // ReplayJournal(DateTime?, Dictionary?) 已废弃——所有调用者应使用 ReplayJournalWithMetrics
+        // 保留此方法仅为向后兼容，但不支持 encoded 事件（传入空 encodedOnly 防止 NRE）
         private HashSet<string> ReplayJournal(DateTime? since, Dictionary<string, QualityMetrics>? metricsOut = null)
         {
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            ReplayJournalCore(0, since, completed, metricsOut);
+            var encodedOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ReplayJournalCore(0, since, completed, metricsOut, encodedOnly: encodedOnly);
             return completed;
         }
 
@@ -1090,11 +1093,15 @@ namespace AvifEncoder
                     }
                     catch (JsonException)
                     {
+                        _logger?.LogInfo($"[JOURNAL] 行 {i + 1} JSON 损坏，跳过后续事件");
                         break;
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogInfo($"[JOURNAL] 回放异常: {ex.Message}");
+            }
         }
 
         private static Dictionary<string, QualityMetrics> MergeMetrics(
