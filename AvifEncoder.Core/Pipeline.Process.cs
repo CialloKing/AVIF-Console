@@ -313,8 +313,8 @@ namespace AvifEncoder
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
-            string fileName = GetOutputFileName(inputPath, index);
-            string outputPath = Path.Combine(_outputDir, fileName);
+            string outputPath = GetOutputPath(inputPath, index);
+            string fileName = Path.GetFileName(outputPath);
             var fileStartTime = DateTime.Now;
 
             // ---- 无损模式强约束：禁止缩放、固定 tile=0 ----
