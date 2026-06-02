@@ -124,8 +124,8 @@ namespace AvifEncoder
         private readonly ICacheManager _cache;
 
 
-        private readonly SemaphoreSlim _ssimConcurrency;
-        private readonly SemaphoreSlim _ffmpegSlots;
+        private readonly DynamicConcurrencyLimiter _ssimConcurrency;
+        private readonly DynamicConcurrencyLimiter _ffmpegSlots;
         private readonly string _instanceId = Guid.NewGuid().ToString("N");
         private ConsoleCancelEventHandler? _cancelKeyHandler;
 
@@ -141,7 +141,7 @@ namespace AvifEncoder
         /// <summary>路径 → 内容指纹映射，用于跨会话稳定标识文件（目录重命名/移动后仍可匹配）</summary>
         private readonly ConcurrentDictionary<string, string> _fileIdCache = new(StringComparer.OrdinalIgnoreCase);
 
-        private readonly int _maxFfmpegConcurrency;
+        private int _maxFfmpegConcurrency;
 
         private int _disposed;
 
@@ -844,8 +844,8 @@ namespace AvifEncoder
             int ssimSlots = Math.Max(2, cpuCount);   // 质量评估仍可使用全部核心
 
             _maxFfmpegConcurrency = config.MaxJobs;
-            _ssimConcurrency = new SemaphoreSlim(ssimSlots);
-            _ffmpegSlots = new SemaphoreSlim(config.MaxJobs);   // 核心修复：直接使用 config.MaxJobs
+            _ssimConcurrency = new DynamicConcurrencyLimiter(ssimSlots);
+            _ffmpegSlots = new DynamicConcurrencyLimiter(config.MaxJobs);
 
             _guiProgress = progress;       // ★ 改为 _guiProgress
 
@@ -883,6 +883,16 @@ namespace AvifEncoder
                 }
             };
 
+        }
+
+        /// <summary>运行时动态调整最大并行编码数（不中断正在执行的任务）。</summary>
+        public int SetMaxJobs(int maxJobs)
+        {
+            int result = _ffmpegSlots.SetMax(Math.Max(1, maxJobs));
+            _config.MaxJobs = result;
+            _maxFfmpegConcurrency = result;
+            _logger.LogInfo($"[CONCURRENCY] 并行数更新: {result}");
+            return result;
         }
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>

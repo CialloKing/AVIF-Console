@@ -29,6 +29,7 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            btnUpdateJobs = new LakeUI.ModernButton();
             btnAbandon = new LakeUI.ModernButton();
             btnResume = new LakeUI.ModernButton();
             cmbTemplate = new LakeUI.ModernComboBox();
@@ -90,6 +91,7 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(btnUpdateJobs);
             modernPanel1.Controls.Add(btnAbandon);
             modernPanel1.Controls.Add(btnResume);
             modernPanel1.Controls.Add(cmbTemplate);
@@ -140,6 +142,21 @@
             modernPanel1.ScrollBarMode = LakeUI.ModernPanel.ScrollMode.None;
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
+            // 
+            // btnUpdateJobs
+            // 
+            btnUpdateJobs.AnimationFPS = 0;
+            btnUpdateJobs.BackColor1 = Color.Transparent;
+            btnUpdateJobs.BorderColor = Color.White;
+            btnUpdateJobs.ForeColor = Color.WhiteSmoke;
+            btnUpdateJobs.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            btnUpdateJobs.Location = new Point(523, 377);
+            btnUpdateJobs.Margin = new Padding(2);
+            btnUpdateJobs.Name = "btnUpdateJobs";
+            btnUpdateJobs.PressedBackColor1 = Color.White;
+            btnUpdateJobs.Size = new Size(69, 35);
+            btnUpdateJobs.TabIndex = 68;
+            btnUpdateJobs.Text = "更新并发";
             // 
             // btnAbandon
             // 
@@ -408,7 +425,7 @@
             numJobs.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numJobs.Location = new Point(432, 380);
             numJobs.Name = "numJobs";
-            numJobs.Size = new Size(160, 32);
+            numJobs.Size = new Size(86, 32);
             numJobs.TabIndex = 55;
             // 
             // numQualityValue
@@ -736,7 +753,7 @@
             // 
             label1.AutoSize = true;
             label1.ForeColor = Color.WhiteSmoke;
-            label1.Location = new Point(432, 363);
+            label1.Location = new Point(432, 358);
             label1.Name = "label1";
             label1.Size = new Size(110, 17);
             label1.TabIndex = 17;
@@ -968,5 +985,6 @@
         private LakeUI.ModernComboBox cmbTemplate;
         private LakeUI.ModernButton btnResume;
         private LakeUI.ModernButton btnAbandon;
+        private LakeUI.ModernButton btnUpdateJobs;
     }
 }

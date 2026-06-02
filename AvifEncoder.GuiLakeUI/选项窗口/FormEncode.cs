@@ -37,6 +37,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private bool _sweepPreviousCrfRangeMode;
         private bool _isResumeDetected;
         private bool _stopping;  // 停止中，冻结进度
+        private AvifPipeline? _pipeline;  // 运行时动态调整并发的引用
 
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
         private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
@@ -237,6 +238,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkSweep.CheckedChanged += ChkSweep_CheckedChanged;
             btnResume.Click += BtnResume_Click;
             btnAbandon.Click += BtnAbandon_Click;
+            btnUpdateJobs.Click += BtnUpdateJobs_Click;
             txtOutput.TextChanged += TxtOutput_TextChanged;
         }
 
@@ -700,6 +702,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             _isEncoding = true;
             btnStart.Enabled = false;
             btnStop.Enabled = true;
+            btnUpdateJobs.Enabled = true;
             progressBar1.Value = 0;
             // 任务栏进度：初始 Normal 状态，进度 0/100
             if (_topLevelHandle != IntPtr.Zero)
@@ -744,6 +747,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             inputDir, outputDir, config,
                             logger: logger,
                             progress: progress);
+                        _pipeline = pipeline;
                         await pipeline.RunAsync(_cts.Token);
                     }
                     catch (OperationCanceledException)
@@ -768,6 +772,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 _isResumeDetected = false;
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
+                btnUpdateJobs.Enabled = false;
+                _pipeline = null;
                 _cts?.Dispose(); _cts = null;
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.Clear(_topLevelHandle);
@@ -830,6 +836,15 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 timer.Start();
             }
         }
+        private void BtnUpdateJobs_Click(object? sender, EventArgs e)
+        {
+            int newJobs = (int)numJobs.Value;
+            if (newJobs < 1) newJobs = 1;
+            int result = _pipeline?.SetMaxJobs(newJobs) ?? newJobs;
+            if (numJobs.Value != result) numJobs.Value = result;
+            LogPage?.AppendLog($"[并发] 已更新为 {result}");
+        }
+
         private void btnStop_Click(object? sender, EventArgs e)
         {
             if (_cts != null && !_cts.IsCancellationRequested)
@@ -839,6 +854,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 // 强制杀掉本机所有 ffmpeg/ffprobe 子进程
                 KillAllFfmpegProcesses();
                 btnStop.Enabled = false;
+                btnUpdateJobs.Enabled = false;
                 _stopping = true;  // 冻结进度条
                 // 任务栏进度设为暂停状态（可选）
                 if (_topLevelHandle != IntPtr.Zero)
