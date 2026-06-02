@@ -355,6 +355,7 @@ namespace AvifEncoder
                 // ★ 编码完成即记录 "encoded" 事件，确保中断时快照可恢复该文件
                 if (encodeResult.Success)
                 {
+                    _logger.LogInfo($"[JOURNAL] encoded: {name}");
                     AppendJournal(inputPath, JournalEventTypes.Encoded);
                 }
 

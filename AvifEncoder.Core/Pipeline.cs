@@ -270,6 +270,8 @@ namespace AvifEncoder
             bool needSsimu2, bool needButter, bool needGmsd,
             CancellationToken cancellationToken, string? inputPath = null, string? outputFileName = null)
         {
+            string advName = inputPath != null ? Path.GetFileName(inputPath) : (outputFileName ?? "?");
+            _logger.LogInfo($"[ADV] START {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd}");
             await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
             {
@@ -299,9 +301,9 @@ namespace AvifEncoder
                         try
                         {
                             var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                            if (s.HasValue) UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s);
+                            if (s.HasValue) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={s.Value:F2}"); }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"SSIMULACRA2 后台异常: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"[ADV] SSIMU2 FAIL {advName}: {ex.Message}"); }
                     }
 
                     if (needButter && refPng != null && distPng != null)
@@ -310,9 +312,9 @@ namespace AvifEncoder
                         {
                             var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
                             if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
-                            if (p3.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3);
+                            if (p3.HasValue) { UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3); _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={p3.Value:F4}"); }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"Butteraugli 后台异常: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"[ADV] BUTTER FAIL {advName}: {ex.Message}"); }
                     }
 
                     if (needGmsd)
@@ -320,9 +322,9 @@ namespace AvifEncoder
                         try
                         {
                             var g = await ComputeGMSDAsync(cleanRef, distPath);
-                            if (g.HasValue) UpdateCachedMetrics(cacheKey, m => m.GMSD = g);
+                            if (g.HasValue) { UpdateCachedMetrics(cacheKey, m => m.GMSD = g); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={g.Value:F4}"); }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"GMSD 后台异常: {ex.Message}"); }
+                        catch (Exception ex) { _logger.LogInfo($"[ADV] GMSD FAIL {advName}: {ex.Message}"); }
                     }
 
                     if (ownClean && _fs.FileExists(cleanRef))
@@ -364,9 +366,11 @@ namespace AvifEncoder
 
             if (allMetricsReady)
             {
+                _logger.LogInfo($"[ADV] COMPLETE {advName}");
                 // ★ 方案二：高级指标写入 Journal（唯一权威状态源），不再回填 CSV
                 if (inputPath != null && _cache.TryGetMetrics(cacheKey, out var m))
                 {
+                    _logger.LogInfo($"[JOURNAL] metrics: {advName} SSIMU2={m!.SSIMULACRA2?.ToString("F2")} Butter3={m.Butteraugli_3norm?.ToString("F4")} GMSD={m.GMSD?.ToString("F4")} XPSNR={m.W_XPSNR?.ToString("F2")}");
                     AppendJournal(inputPath, JournalEventTypes.Metrics, new
                     {
                         ssimu2 = m!.SSIMULACRA2,
@@ -380,12 +384,15 @@ namespace AvifEncoder
                     });
                 }
                 if (inputPath != null)
+                {
+                    _logger.LogInfo($"[JOURNAL] success: {advName}");
                     AppendJournal(inputPath, JournalEventTypes.Success);
+                }
                 _progress.MarkFileProcessed();
             }
             else
             {
-                _logger.LogInfo($"[METRICS-SKIP] 指标不完整,cacheKey={cacheKey[..Math.Min(20,cacheKey.Length)]}... ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd}");
+                _logger.LogInfo($"[ADV] INCOMPLETE {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd}");
             }
             _guiProgress?.Report(Math.Min(100, _progress.ProcessedCount * 100 / Math.Max(1, _progress.TotalFiles)));
         }
@@ -1883,10 +1890,12 @@ namespace AvifEncoder
                     foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
 
                     // 4. 写入内存缓存供 ExportCsv
+                    _logger.LogInfo($"[RESUME] metrics restored: {resumeMetrics.Count} files");
                     foreach (var kv in resumeMetrics)
                     {
                         string metricsKey = GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
                         _cache.SetMetrics(metricsKey, kv.Value);
+                        _logger.LogInfo($"[RESUME] metric: {Path.GetFileName(kv.Key)}");
                     }
 
                     // 5. 构建 FileId → path 映射（用于跨会话匹配）
@@ -2319,6 +2328,17 @@ namespace AvifEncoder
                 }
                 SafeWriteLine(
                     $"[INFO] 外部工具缺失，高级指标单元格留空: {string.Join(", ", missingTools)}");
+            }
+
+            // ★ 导出前诊断：打印每行的指标状态
+            _logger.LogInfo($"[EXPORT] EncodeResults={allResults.Count}");
+            foreach (var r in allResults)
+            {
+                string xpsnr = r.FinalWXPSNR.HasValue ? r.FinalWXPSNR.Value.ToString("F2") : "-";
+                string ssimu2 = r.FinalSSIMULACRA2.HasValue ? r.FinalSSIMULACRA2.Value.ToString("F2") : "-";
+                string butter3 = r.FinalButteraugli_3norm.HasValue ? r.FinalButteraugli_3norm.Value.ToString("F4") : "-";
+                string gmsd = r.FinalGMSD.HasValue ? r.FinalGMSD.Value.ToString("F4") : "-";
+                _logger.LogInfo($"[EXPORT] {r.FileName} XPSNR={xpsnr} SSIMU2={ssimu2} Butter3={butter3} GMSD={gmsd}");
             }
 
             ExportCsv(allResults);
