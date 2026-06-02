@@ -840,9 +840,16 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         {
             int newJobs = (int)numJobs.Value;
             if (newJobs < 1) newJobs = 1;
-            int result = _pipeline?.SetMaxJobs(newJobs) ?? newJobs;
-            if (numJobs.Value != result) numJobs.Value = result;
-            LogPage?.AppendLog($"[并发] 已更新为 {result}");
+            if (_pipeline != null)
+            {
+                int result = _pipeline.SetMaxJobs(newJobs);
+                if (numJobs.Value != result) numJobs.Value = result;
+                LogPage?.AppendLog($"[并发] 已更新为 {result}");
+            }
+            else
+            {
+                LogPage?.AppendLog($"[并发] 已设为 {newJobs}（将在启动编码时生效）");
+            }
         }
 
         private void btnStop_Click(object? sender, EventArgs e)
@@ -1355,6 +1362,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             // ★ Resume 模式下允许修改并行数（恢复任务前可调整）
             numJobs.Enabled = true;
+            btnUpdateJobs.Enabled = true;
 
             // 按钮切换
             btnStart.Enabled = false;
