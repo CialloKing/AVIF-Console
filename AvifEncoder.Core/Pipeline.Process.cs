@@ -352,6 +352,12 @@ namespace AvifEncoder
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
 
+                // ★ 编码完成即记录 "encoded" 事件，确保中断时快照可恢复该文件
+                if (encodeResult.Success)
+                {
+                    AppendJournal(inputPath, JournalEventTypes.Encoded);
+                }
+
                 // 无损验证：全量逐像素比对，失败即视为编码失败并生成诊断报告
                 if (config.Lossless && encodeResult.Success)
                 {
@@ -441,11 +447,25 @@ namespace AvifEncoder
                     }
                 }
 
-                // 计算最终质量
-                (double ssim, QualityMetrics? metrics, string advancedCacheKey) = await EvaluateFinalQualityAsync(
-                 workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
+                // 计算最终质量 —— 指标中断不影响编码已完成的判定
+                double ssim = 0;
+                QualityMetrics? metrics = null;
+                string advancedCacheKey = "";
+                try
+                {
+                    (ssim, metrics, advancedCacheKey) = await EvaluateFinalQualityAsync(
+                        workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogInfo($"质量评估被中断: {name}，编码已完成，指标将在恢复后补充");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"质量评估异常: {name} - {ex.Message}");
+                }
 
-                // 组装结果（传递 cacheKey 以便最终回填高级指标）
+                // 组装结果（即使指标被中断，result.Success 仍由 encodeResult.Success 决定）
                 var finalResult = BuildResult(index, Path.GetFileName(outputPath), name,
                                        inputPath, outputPath,
                                        encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey);
@@ -1088,12 +1108,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                     : result.ErrorMessage + " | AOM参数已降级";
             }
 
-            // ★ 编码完成时立即记录 "encoded" 事件，确保中断恢复时知道该文件已编码
-            if (result.Success && !result.Skipped)
-            {
-                AppendJournal(inputPath, JournalEventTypes.Encoded);
-            }
-
+            // ★ "encoded" 事件已在 ProcessSingleFileAsync 编码完成后立即记录
             MarkProcessed(result);
             return result;
         }
