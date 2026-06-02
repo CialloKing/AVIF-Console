@@ -1962,27 +1962,38 @@ namespace AvifEncoder
                 }
                 InitJournal();
 
-                var results = await ProcessInitialBatchAsync(files);
-                results = await RetryFailuresAsync(results);
-
-                // ★ 每次运行结束都保存快照（不仅 Resume），确保下次可恢复
+                List<EncodeResult?>? results = null;
+                try
                 {
-                    var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
-                    var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
-                        .Select(r => r!.InputPath);
-                    // 收集本次运行的指标（从缓存）
-                    var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var r in results)
+                    results = await ProcessInitialBatchAsync(files);
+                    results = await RetryFailuresAsync(results);
+                }
+                finally
+                {
+                    // ★ 无论成功、失败、用户中断，都保存快照确保下次可恢复
+                    if (results != null)
                     {
-                        if (r != null && r.Success && !string.IsNullOrEmpty(r.AdvancedMetricsCacheKey)
-                            && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
-                            newMetrics[r.InputPath] = rm!;
+                        try
+                        {
+                            var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
+                            var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
+                                .Select(r => r!.InputPath);
+                            var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var r in results)
+                            {
+                                if (r != null && r.Success && !string.IsNullOrEmpty(r.AdvancedMetricsCacheKey)
+                                    && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
+                                    newMetrics[r.InputPath] = rm!;
+                            }
+                            SaveSnapshot(oldCompleted.Union(newCompleted),
+                                MergeMetrics(oldMetrics, newMetrics));
+                        }
+                        catch { /* 快照保存失败不影响主流程 */ }
                     }
-                    SaveSnapshot(oldCompleted.Union(newCompleted),
-                        MergeMetrics(oldMetrics, newMetrics));
                 }
 
-                await PrintSummaryAndExport(results);
+                if (results != null)
+                    await PrintSummaryAndExport(results);
             }
             finally
             {
