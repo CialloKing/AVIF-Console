@@ -946,7 +946,11 @@ namespace AvifEncoder
                 // ★ Resume 时从已有 journal 恢复事件计数，确保增量回放偏移量正确
                 if (_config.Resume && _fs.FileExists(_journalPath))
                 {
-                    try { _journalEventCount = File.ReadLines(_journalPath).Count(); }
+                    try
+                    {
+                        _journalEventCount = File.ReadLines(_journalPath).Count();
+                        _logger?.LogInfo($"[JOURNAL] Resume 模式：已恢复 {_journalEventCount} 条历史事件");
+                    }
                     catch { _journalEventCount = 0; }
                 }
             }
@@ -1977,7 +1981,7 @@ namespace AvifEncoder
                         {
                             var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
                             var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
-                                .Select(r => r!.InputPath);
+                                .Select(r => r!.InputPath).ToList();
                             var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
                             foreach (var r in results)
                             {
@@ -1985,10 +1989,15 @@ namespace AvifEncoder
                                     && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
                                     newMetrics[r.InputPath] = rm!;
                             }
-                            SaveSnapshot(oldCompleted.Union(newCompleted),
-                                MergeMetrics(oldMetrics, newMetrics));
+                            var merged = oldCompleted.Union(newCompleted).ToList();
+                            _logger.LogInfo($"[SNAPSHOT] 保存快照: old={oldCompleted.Count} new={newCompleted.Count} merged={merged.Count} metrics={oldMetrics.Count}+{newMetrics.Count}");
+                            SaveSnapshot(merged, MergeMetrics(oldMetrics, newMetrics));
                         }
-                        catch { /* 快照保存失败不影响主流程 */ }
+                        catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 保存失败: {ex.Message}"); }
+                    }
+                    else
+                    {
+                        _logger.LogInfo("[SNAPSHOT] results=null，跳过快照保存");
                     }
                 }
 

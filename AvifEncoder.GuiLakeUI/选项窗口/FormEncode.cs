@@ -816,6 +816,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             if (_isEncoding && _cts != null && !_cts.IsCancellationRequested)
             {
                 e.Cancel = true;  // 阻止关闭
+                _stopping = true;  // ★ 标记为中断，防止完成后删除 .session
                 LogPage?.AppendLog("正在安全停止所有 ffmpeg 进程...");
                 _cts.Cancel();
                 // 启动定时器，等待 Pipeline 清理后自动关闭
