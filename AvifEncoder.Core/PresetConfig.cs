@@ -253,7 +253,11 @@ namespace AvifEncoder
             {
                 "vmaf" => targetSSIM * 100.0,
                 "psnr" => targetSSIM * 20.0 + 30,
-                _ => targetSSIM   // SSIM/MS-SSIM/mix 本身 0-1，无需转换
+                "ssim" or "msssim" or "mix" => targetSSIM,
+                // 高级指标范围与 SSIM 0-1 尺度不兼容，必须通过 --target-{metric} 显式指定
+                _ => throw new InvalidOperationException(
+                    $"指标模式 '{metricMode}' 不支持从预设 TargetSSIM 自动换算。" +
+                    $"请使用 --target-{metricMode?.ToLower()} <原生值> 显式指定目标。")
             };
         }
 

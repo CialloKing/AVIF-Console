@@ -191,8 +191,11 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 safeCts.Token, _globalCts?.Token ?? default);
             var safeToken = linkedCts.Token;
 
-            // 使用与主搜索一致的指标原生尺度 margin，而非固定的 SSIMMargin
-            double target = config.GetEffectiveTarget() + GetMetricMargin(config);
+            // 使用与主搜索一致的指标原生尺度 margin，并正确处理越小越好指标的方向
+            double rawTarget = config.GetEffectiveTarget();
+            double margin = GetMetricMargin(config);
+            bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(config.MetricMode);
+            double target = lowerIsBetter ? rawTarget - margin : rawTarget + margin;
             int bestSafeCRF = -1;
             // ★ 使用传入的区间，而非全局 MinCRF/MaxCRF
             int start = scanHigh;
@@ -209,14 +212,16 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 if (step == 1 || step == totalSteps || step % 5 == 0)
                     SafeWriteLine($"  [{name}] 安全扫描 {step}/{totalSteps} (CRF={testCrf})...");
 
-                double curSSIM = await SafeModeSSIM(inputPath, config, testCrf, safeToken);
-                if (curSSIM >= target)
+                double curScore = await SafeModeSSIM(inputPath, config, testCrf, safeToken);
+                bool meetsTarget = lowerIsBetter ? (curScore >= 0 && curScore <= target)
+                                                  : (curScore >= target);
+                if (meetsTarget)
                 {
                     bestSafeCRF = testCrf;
                     break;
                 }
 
-                if (curSSIM < 0)
+                if (curScore < 0)
                 {
                     consecutiveFailures++;
                     if (consecutiveFailures >= 5)

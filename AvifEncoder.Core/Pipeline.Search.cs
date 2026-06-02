@@ -141,10 +141,13 @@ namespace AvifEncoder
             };
 
             // 计算搜索用的判定阈值（原生值）
+            // 保守策略：搜索条件比用户目标更严格，确保最终编码达标
+            // - 越大越好（VMAF/SSIM/PSNR/XPSNR/SSIMU2）：target = effectiveTarget + margin → 要求更高分数
+            // - 越小越好（Butteraugli/GMSD）：target = effectiveTarget - margin → 要求更低分数
             if (cfg.XpsnrTargetValue.HasValue)
-                target = effectiveTarget - margin;
-            else if (cfg.Butteraugli3TargetValue.HasValue || cfg.GmsdTargetValue.HasValue)
                 target = effectiveTarget + margin;
+            else if (cfg.Butteraugli3TargetValue.HasValue || cfg.GmsdTargetValue.HasValue)
+                target = effectiveTarget - margin;
             else
                 target = effectiveTarget + margin;
 

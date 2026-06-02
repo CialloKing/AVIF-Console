@@ -426,6 +426,15 @@ namespace AvifEncoder
                 config.Resume = true;
             config.DryRun = opts.DryRun;
             config.Verbose = opts.Verbose;
+
+            // ★ 运行时校验配置，提前发现参数组合错误
+            var validationErrors = config.Validate();
+            if (validationErrors.Count > 0)
+            {
+                throw new Exception(
+                    $"配置校验失败:\n{string.Join("\n", validationErrors.Select(e => $"  - {e}"))}");
+            }
+
             return config;
         }
 

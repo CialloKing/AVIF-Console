@@ -334,13 +334,27 @@ namespace AvifEncoder
             {
                 _advancedMetricSemaphore.Release();
             }
-            // ★ 仅在所有需要的指标都已缓存时才写 journal + CSV
+            // ★ 检查所需指标是否就绪；若外部工具缺失导致指标无法计算，则视为"不适用"并放行
             bool allMetricsReady = true;
             if (_cache.TryGetMetrics(cacheKey, out var finalMetrics))
             {
-                if (needSsimu2 && !finalMetrics.SSIMULACRA2.HasValue) allMetricsReady = false;
-                if (needButter && (!finalMetrics.Butteraugli_Raw.HasValue || !finalMetrics.Butteraugli_3norm.HasValue)) allMetricsReady = false;
-                if (needGmsd && !finalMetrics.GMSD.HasValue) allMetricsReady = false;
+                if (needSsimu2 && !finalMetrics.SSIMULACRA2.HasValue)
+                {
+                    if (EncoderUtils.FindExecutable("ssimulacra2") == null)
+                        _logger.LogInfo($"[METRICS] SSIMULACRA2 工具未安装，跳过");
+                    else
+                        allMetricsReady = false;
+                }
+                if (needButter && (!finalMetrics.Butteraugli_Raw.HasValue || !finalMetrics.Butteraugli_3norm.HasValue))
+                {
+                    if (EncoderUtils.FindExecutable("butteraugli_main") == null)
+                        _logger.LogInfo($"[METRICS] Butteraugli 工具未安装，跳过");
+                    else
+                        allMetricsReady = false;
+                }
+                // GMSD 是内部实现，失败时记录日志并放行，避免单次异常阻塞整个流水线
+                if (needGmsd && !finalMetrics.GMSD.HasValue)
+                    _logger.LogInfo($"[METRICS] GMSD 计算失败，跳过");
             }
             else { allMetricsReady = false; }
 
@@ -394,7 +408,10 @@ namespace AvifEncoder
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[CSV-FLUSH] 写入异常: {outputFileName} - {ex.Message}");
+            }
         }
 
         /// <summary> 线程安全地更新缓存中的 QualityMetrics 对象 </summary>
@@ -493,6 +510,9 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
+                // ★ 加入进程追踪列表，确保 FinalCleanup 可终止
+                _spawnedProcesses.Add(process);
+                if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
                 using var ms = new MemoryStream();
                 var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
@@ -501,7 +521,18 @@ namespace AvifEncoder
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                     _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
-                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                try
+                {
+                    await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited)
+                    {
+                        try { process.Kill(entireProcessTree: true); } catch { }
+                    }
+                    return null;
+                }
 
                 if (process.ExitCode != 0) return null;
 
@@ -619,8 +650,10 @@ namespace AvifEncoder
             {
                 case PresetConfig.ConflictStrategy.Overwrite:
                 case PresetConfig.ConflictStrategy.Skip:
-                    _allocatedOutputs.TryAdd(
-                        NormalizePathForExternalTool(candidate).ToLowerInvariant(), 0);
+                    string conflictKey = NormalizePathForExternalTool(candidate).ToLowerInvariant();
+                    if (_allocatedOutputs.ContainsKey(conflictKey))
+                        _logger.LogInfo($"[NAME-CONFLICT] 输出重名 (策略={_config.FileConflictStrategy}): {candidate}");
+                    _allocatedOutputs.TryAdd(conflictKey, 0);
                     return candidate;
                 default: // Rename
                     // 自动追加序号以避免同名冲突（内存+磁盘双重检测）
@@ -1955,18 +1988,24 @@ namespace AvifEncoder
         /// <summary> 统计并打印最终总结，导出 CSV </summary>
         private async Task PrintSummaryAndExport(List<EncodeResult?> results)
         {
-            // ★ 等待所有后台高级指标计算完成
-            if (!_advancedMetricTasks.IsEmpty)
+            // ★ 原子排空后台任务队列，避免 IsEmpty+ToArray 之间的竞态漏掉任务
+            var pendingAdvanced = new List<Task>();
+            while (_advancedMetricTasks.TryDequeue(out var t))
+                pendingAdvanced.Add(t);
+            if (pendingAdvanced.Count > 0)
             {
                 SafeWriteLine("?? 等待后台高级指标计算完成...");
-                try { await Task.WhenAll([.. _advancedMetricTasks]); }
+                try { await Task.WhenAll(pendingAdvanced); }
                 catch (Exception ex) { _logger.LogError($"后台高级任务异常: {ex.Message}"); }
             }
 
-            // ★ 等待所有后台 XPSNR 计算完成并回填
-            if (!_xpsnrTasks.IsEmpty)
+            // ★ 原子排空 XPSNR 后台队列
+            var pendingXpsnr = new List<Task>();
+            while (_xpsnrTasks.TryDequeue(out var t))
+                pendingXpsnr.Add(t);
+            if (pendingXpsnr.Count > 0)
             {
-                try { await Task.WhenAll([.. _xpsnrTasks]); }
+                try { await Task.WhenAll(pendingXpsnr); }
                 catch (Exception ex) { _logger.LogInfo($"XPSNR 后台异常: {ex.Message}"); }
             }
 
@@ -2174,12 +2213,15 @@ namespace AvifEncoder
         /// </summary>
         private async Task<bool> SourceHasAlpha(string filePath)
         {
+            // ★ 先查轻量 Alpha 缓存，避免重复 ffprobe
+            string normalizedPath = GetNormalizedPathForCache(filePath);
+            if (_srcAlphaCache.TryGetValue(normalizedPath, out bool cachedAlpha))
+                return cachedAlpha;
+
             // ★ 优先从统一 Probe 缓存获取
             var info = await GetProbeInfoAsync(filePath);
             if (info != null)
             {
-                // 同步更新旧缓存
-                string normalizedPath = GetNormalizedPathForCache(filePath);
                 _srcAlphaCache[normalizedPath] = info.HasAlpha;
                 return info.HasAlpha;
             }
@@ -2194,7 +2236,7 @@ namespace AvifEncoder
                 "rgba64le" or "bgra64le" => true,
                 _ => false
             };
-            _srcAlphaCache[GetNormalizedPathForCache(filePath)] = hasAlpha;
+            _srcAlphaCache[normalizedPath] = hasAlpha;
             return hasAlpha;
         }
 
