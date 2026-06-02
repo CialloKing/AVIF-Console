@@ -942,6 +942,13 @@ namespace AvifEncoder
                 }
                 _lastSnapshotTime = DateTime.UtcNow;
                 _journalCountSinceSnapshot = 0;
+
+                // ★ Resume 时从已有 journal 恢复事件计数，确保增量回放偏移量正确
+                if (_config.Resume && _fs.FileExists(_journalPath))
+                {
+                    try { _journalEventCount = File.ReadLines(_journalPath).Count(); }
+                    catch { _journalEventCount = 0; }
+                }
             }
         }
 
