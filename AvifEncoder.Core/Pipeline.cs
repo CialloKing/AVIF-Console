@@ -1783,7 +1783,11 @@ namespace AvifEncoder
                     $"PixelFmt={_config.PixelFormat ?? "auto"} " +
                     $"BitDepth={_config.BitDepth} " +
                     $"CRFSearch={_config.UseCRFSearch} " +
-                    $"MaxJobs={_config.MaxJobs}");
+                    $"MaxJobs={_config.MaxJobs} " +
+                    $"Metric={_config.MetricMode ?? "vmaf"} " +
+                    $"Target={_config.GetEffectiveTarget()} " +
+                    $"Recursive={_config.RecurseSubdirectories} " +
+                    $"AutoSource={_config.AutoSource}");
                 if (_config.Lossless)
                 {
                     _logger.LogInfo("无损模式：编码后逐像素验证，失败文件隔离到 _failed_verification/");
@@ -2313,7 +2317,8 @@ namespace AvifEncoder
             // 移除旧的缓存计数输出，因为 ICacheManager 未暴露计数属性
             _logger.LogInfo(
                 $"Finished. 成功: {successCount}, 失败: {failCount}, " +
-                $"跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}");
+                $"跳过: {skipCount}, 耗时: {FormatTimeSpan(totalTime)}, " +
+                $"压缩率: {overallRatio:P1}");
             if (successCount > 0)
             {
                 double avgEncode = allResults
@@ -2324,6 +2329,11 @@ namespace AvifEncoder
                     $"平均编码耗时: {avgEncode:F1}s, " +
                     $"整体压缩率: {overallRatio:P1}, " +
                     $"总输出: {FormatSize(totalOutput)}");
+            }
+            if (failCount > 0)
+            {
+                foreach (var r in allResults.Where(r => !r.Skipped && !r.Success))
+                    _logger.LogError($"[FAIL] {r.FileName}: {r.ErrorMessage}");
             }
 
 

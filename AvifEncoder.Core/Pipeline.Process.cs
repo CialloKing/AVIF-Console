@@ -358,9 +358,12 @@ namespace AvifEncoder
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
 
                 // 搜索 + 最终编码
+                var swTotal = System.Diagnostics.Stopwatch.StartNew();
                 var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo, name);
                 string finalEncodeInput = (scaling.WasScaled && !config.ApplyScalingToOutput) ? inputPath : workingInputPath;
                 var encodeResult = await PerformFinalEncodeAsync(finalEncodeInput, outputPath, config, encInfo, searchResult);
+                swTotal.Stop();
+                _logger.LogInfo($"[ENCODE] {name} CRF={encodeResult.Crf} search={searchResult.SearchEvalCount}eval/{searchResult.SearchTime.TotalSeconds:F1}s encode={encodeResult.EncodeTime.TotalSeconds:F1}s total={swTotal.Elapsed.TotalSeconds:F1}s");
 
                 // ★ 编码完成即记录 "encoded" 事件，确保中断时快照可恢复该文件
                 if (encodeResult.Success)
