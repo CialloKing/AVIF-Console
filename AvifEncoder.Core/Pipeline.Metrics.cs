@@ -163,11 +163,12 @@ namespace AvifEncoder
     int tileCols, int cpuUsed, bool isJpeg,
     string effectiveAomParams, int bitDepth,
     int width = 0, int height = 0,
-    string rowMt = "")                         // ← 新增
+    string rowMt = "")
         {
-            string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
-            return $"{normalizedPath}|crf={crf}|pix={pixFmt}|tile={tileCols}|cpu={cpuUsed}" +
-                   $"|jpeg={isJpeg}|aom={effectiveAomParams}|depth={bitDepth}{res}|rowmt={rowMt}";
+            return EncodingFingerprint.ForEncode(
+                normalizedPath, crf, pixFmt, tileCols,
+                cpuUsed, isTrueLossless: false, effectiveAomParams, isJpeg, bitDepth,
+                width, height, rowMt).ToCacheKey();
         }
 
 
@@ -209,9 +210,10 @@ namespace AvifEncoder
 
             var (metricsW, metricsH) = await GetResolutionAsync(input);
             string rowMtArg = EncodeHelpers.GetRowMtArg(cfg);
-            string key = GetSsimCacheKey(normalizedInput, crf, pixFmt, tileCols, cpuUsed, jpeg,
-                                         effectiveAom, actualDepth, metricsW, metricsH, rowMtArg)
-                         + $"|metric={metricMode}";
+            string key = EncodingFingerprint.ForMetrics(
+                normalizedInput, crf, pixFmt, tileCols, cpuUsed,
+                isTrueLossless: false, effectiveAom, jpeg, actualDepth,
+                metricsW, metricsH, rowMtArg, metricMode).ToCacheKey();
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {

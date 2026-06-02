@@ -129,4 +129,32 @@
                    $"Breakdown=[{channelBreakdown}]";
         }
     }
+
+    /// <summary>
+    /// 单次 CRF 评估的返回结果。
+    /// 与 Func&lt;int, Task&lt;double&gt;&gt; 相比：用 Success 替代 -1 哨兵，
+    /// 用 PixFmtUsed/CpuUsed 传递降级信息，搜索层可据此记录精确日志。
+    /// </summary>
+    public readonly record struct CrfEvaluationResult
+    {
+        public bool Success { get; init; }
+        public double Score { get; init; }
+        public string PixFmtUsed { get; init; }
+        public int CpuUsed { get; init; }
+        public bool FromCache { get; init; }
+
+        public static CrfEvaluationResult Failed => new() { Success = false, Score = -1 };
+
+        public static CrfEvaluationResult Ok(double score, string pixFmt, int cpuUsed, bool fromCache)
+        {
+            return new CrfEvaluationResult
+            {
+                Success = true,
+                Score = score,
+                PixFmtUsed = pixFmt,
+                CpuUsed = cpuUsed,
+                FromCache = fromCache
+            };
+        }
+    }
 }

@@ -17,16 +17,27 @@ namespace AvifEncoder
         /// <summary>
         /// 生成用于编码缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
+        /// <summary>
+        /// 从 tilePart 字符串（如 "-tile-columns 3 -tile-rows 0"）中提取 tileCols 数值。
+        /// 解析失败返回 0。
+        /// </summary>
+        private static int ParseTileCols(string tilePart)
+        {
+            if (string.IsNullOrEmpty(tilePart)) return 0;
+            var m = System.Text.RegularExpressions.Regex.Match(tilePart, @"tile-columns\s+(\d+)");
+            return m.Success && int.TryParse(m.Groups[1].Value, out int v) ? v : 0;
+        }
+
         private static string GetEncodeCacheKey(
             string normalizedPath, int crf, string pixFmt,
             string tilePart, int actualCpu, bool isTrueLossless,
             string aomParams, bool jpeg, int bitDepth,
-            int width = 0, int height = 0, string rowMt = "")   // ★ 新增 rowMt 参数
+            int width = 0, int height = 0, string rowMt = "")
         {
-            string res = (width > 0 && height > 0) ? $"|res={width}x{height}" : "";
-            return $"{normalizedPath}|crf={crf}|pix={pixFmt}" +
-                   $"|tile={tilePart}|cpu={actualCpu}|lossless={isTrueLossless}" +
-                   $"|aom={aomParams}|jpeg={jpeg}|depth={bitDepth}{res}|rowmt={rowMt}";
+            return EncodingFingerprint.ForEncode(
+                normalizedPath, crf, pixFmt, ParseTileCols(tilePart),
+                actualCpu, isTrueLossless, aomParams, jpeg, bitDepth,
+                width, height, rowMt).ToCacheKey();
         }
 
 

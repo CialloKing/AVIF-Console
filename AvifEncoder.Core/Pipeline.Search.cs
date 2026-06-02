@@ -543,6 +543,24 @@ namespace AvifEncoder
                 return (safeLo, safeHi);
             }
         }
+        /// <summary>
+        /// 单次 CRF 评估：给定参数，编码并计算质量分数。负责一次原子尝试，不包含降级/重试。
+        /// 降级策略（重试、格式降级、cpu-used 降速）由调用方 BuildGetScoreFunc 控制。
+        /// </summary>
+        private async Task<CrfEvaluationResult> EvaluateSingleCrfAsync(
+            string input, int crf, int tileCols, int cpuUsed, PresetConfig cfg,
+            bool jpeg, string pixFmt)
+        {
+            QualityMetrics? m = await GetOrComputeMetrics(input, crf, tileCols, cpuUsed, cfg, jpeg, pixFmt);
+            if (m != null)
+            {
+                return CrfEvaluationResult.Ok(
+                    GetSearchScore(m, cfg.MetricMode ?? "ssim"),
+                    pixFmt, cpuUsed, fromCache: false);
+            }
+            return CrfEvaluationResult.Failed;
+        }
+
         private Func<int, Task<double>> BuildGetScoreFunc(string input, int tileCols, PresetConfig cfg, string pixFmt, bool jpeg, string name, CancellationToken token)
         {
             int consecutiveFailures = 0;
@@ -552,10 +570,9 @@ namespace AvifEncoder
             return async crf =>
             {
                 // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
-                // 提前致命短路：若该文件的当前 pixFmt 已被标记为致命，直接失败
                 if (_fatalFmts.TryGetValue(normalizedKey, out var fatalSet) && fatalSet.ContainsKey(pixFmt))
                 {
-                    _logger.LogInfo($"?? 致命格式 {pixFmt} 已禁用，跳过 CRF={crf} [{name}]");
+                    _logger.LogInfo($"致命格式 {pixFmt} 已禁用，跳过 CRF={crf} [{name}]");
                     return -1;
                 }
 
@@ -563,28 +580,28 @@ namespace AvifEncoder
                 {
                     token.ThrowIfCancellationRequested();
 
-                    QualityMetrics? m = null;
+                    CrfEvaluationResult eval;
 
                     if (consecutiveFailures < failThreshold)
                     {
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
+                        eval = await EvaluateSingleCrfAsync(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, pixFmt);
+                        if (eval.Success) { consecutiveFailures = 0; return eval.Score; }
 
-                        m = await GetOrComputeMetrics(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
+                        eval = await EvaluateSingleCrfAsync(input, crf, tileCols, Math.Max(0, cfg.SearchCpuUsed - 1), cfg, jpeg, pixFmt);
+                        if (eval.Success) { consecutiveFailures = 0; return eval.Score; }
                     }
 
                     // 仅在 yuv420p 未被标记致命时才降级尝试
                     if (!pixFmt.StartsWith("yuv420p") && (!_fatalFmts.TryGetValue(normalizedKey, out var fs) || !fs.ContainsKey("yuv420p")))
                     {
-                        m = await GetOrComputeMetrics(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
+                        eval = await EvaluateSingleCrfAsync(input, crf, tileCols, cfg.SearchCpuUsed, cfg, jpeg, "yuv420p");
+                        if (eval.Success) { consecutiveFailures = 0; return eval.Score; }
                     }
                     else
                     {
                         // 当前格式就是 yuv420p 或已被致命标记，尝试降速
-                        m = await GetOrComputeMetrics(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
-                        if (m != null) { consecutiveFailures = 0; return GetSearchScore(m, cfg.MetricMode ?? "ssim"); }
+                        eval = await EvaluateSingleCrfAsync(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
+                        if (eval.Success) { consecutiveFailures = 0; return eval.Score; }
                     }
 
                     if (i < 2)
