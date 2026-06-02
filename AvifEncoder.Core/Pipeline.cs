@@ -2222,6 +2222,8 @@ namespace AvifEncoder
 
 
             // 从缓存回填高级指标（方案二：缓存由 journal replay + 本次运行填充）
+            int backfillCount = 0;
+            int backfillMiss = 0;
             foreach (var r in allResults)
             {
                 if (!string.IsNullOrEmpty(r.AdvancedMetricsCacheKey) && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var updated))
@@ -2234,10 +2236,15 @@ namespace AvifEncoder
                     r.FinalXPSNR_U = updated?.XPSNR_U;
                     r.FinalXPSNR_V = updated?.XPSNR_V;
                     r.FinalWXPSNR = updated?.W_XPSNR;
-                    // r.FinalCAMBI = updated?.CAMBI;   // 暂不可用
-                    // r.FinalADM = updated?.ADM;       // 暂不可用
+                    backfillCount++;
+                }
+                else if (r.Success && !r.Skipped)
+                {
+                    backfillMiss++;
+                    _logger.LogInfo($"[CSV-DIAG] 回填未命中: {r.FileName} cacheKey={r.AdvancedMetricsCacheKey?[..Math.Min(16, r.AdvancedMetricsCacheKey?.Length ?? 0)]}...");
                 }
             }
+            _logger.LogInfo($"[CSV-DIAG] 高级指标回填: {backfillCount} 成功, {backfillMiss} 未命中");
 
             // ★ 进度由指标回调推进，此处不再强制 100%
 

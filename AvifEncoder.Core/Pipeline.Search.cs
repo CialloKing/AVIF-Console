@@ -735,8 +735,30 @@ namespace AvifEncoder
 
         private void ExportCsv(IEnumerable<EncodeResult> results)
         {
-            // ★ CSV 由 AppendCsvRow(编码后) + TryFlushCsvRow(指标后) 写入
-            // ExportCsv 仅在此验证 CSV 存在，不覆盖任何数据
+            // ★ 方案二：从内存 EncodeResult 完整生成 CSV，覆盖 AppendCsvRow 写入的初版
+            // 高级指标已由 PrintSummaryAndExport 从缓存回填到 allResults
+            try
+            {
+                var list = results.ToList();
+                if (list.Count == 0) return;
+
+                // 写表头
+                var sb = new StringBuilder();
+                sb.AppendLine(string.Join(",", CsvColumnNames));
+
+                // 写数据行
+                foreach (var r in list)
+                {
+                    sb.AppendLine(GetCsvRow(r));
+                }
+
+                _fs.WriteAllText(_csvPath, sb.ToString(), new UTF8Encoding(true));
+                _logger.LogInfo($"[CSV-EXPORT] 已导出 {list.Count} 行到 {_csvPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[CSV-EXPORT] 导出失败: {ex.Message}");
+            }
         }
 
         private static string FormatSize(long b) => b switch
