@@ -342,14 +342,14 @@ namespace AvifEncoder
             bool allMetricsReady = true;
             if (_cache.TryGetMetrics(cacheKey, out var finalMetrics))
             {
-                if (needSsimu2 && !finalMetrics.SSIMULACRA2.HasValue)
+                if (needSsimu2 && !finalMetrics!.SSIMULACRA2.HasValue)
                 {
                     if (EncoderUtils.FindExecutable("ssimulacra2") == null)
                         _logger.LogInfo($"[METRICS] SSIMULACRA2 工具未安装，跳过");
                     else
                         allMetricsReady = false;
                 }
-                if (needButter && (!finalMetrics.Butteraugli_Raw.HasValue || !finalMetrics.Butteraugli_3norm.HasValue))
+                if (needButter && (!finalMetrics!.Butteraugli_Raw.HasValue || !finalMetrics.Butteraugli_3norm.HasValue))
                 {
                     if (EncoderUtils.FindExecutable("butteraugli_main") == null)
                         _logger.LogInfo($"[METRICS] Butteraugli 工具未安装，跳过");
@@ -357,7 +357,7 @@ namespace AvifEncoder
                         allMetricsReady = false;
                 }
                 // GMSD 是内部实现，失败时记录日志并放行，避免单次异常阻塞整个流水线
-                if (needGmsd && !finalMetrics.GMSD.HasValue)
+                if (needGmsd && !finalMetrics!.GMSD.HasValue)
                     _logger.LogInfo($"[METRICS] GMSD 计算失败，跳过");
             }
             else { allMetricsReady = false; }
@@ -369,7 +369,7 @@ namespace AvifEncoder
                 {
                     AppendJournal(inputPath, JournalEventTypes.Metrics, new
                     {
-                        ssimu2 = m.SSIMULACRA2,
+                        ssimu2 = m!.SSIMULACRA2,
                         butterRaw = m.Butteraugli_Raw,
                         butter3 = m.Butteraugli_3norm,
                         gmsd = m.GMSD,
