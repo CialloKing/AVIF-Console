@@ -1353,6 +1353,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             // 锁定所有控件
             SetEncodingControlsEnabled(false);
 
+            // ★ Resume 模式下允许修改并行数（恢复任务前可调整）
+            numJobs.Enabled = true;
+
             // 按钮切换
             btnStart.Enabled = false;
             btnResume.Enabled = true;
