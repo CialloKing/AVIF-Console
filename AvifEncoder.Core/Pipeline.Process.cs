@@ -171,7 +171,7 @@ namespace AvifEncoder
                                 FinalVMAF = metrics?.VMAF,
                                 FinalPSNR_Y = metrics?.PSNR_Y,
                                 FinalMSSSIM = metrics?.MS_SSIM,
-                                FinalMixScore = metrics != null ? ComputeMixScore(metrics) : null,
+                                FinalMixScore = metrics != null ? MetricRegistry.ComputeMixScore(metrics) : null,
                                 FinalXPSNR_Y = metrics?.XPSNR_Y,
                                 FinalXPSNR_U = metrics?.XPSNR_U,
                                 FinalXPSNR_V = metrics?.XPSNR_V,
@@ -193,9 +193,6 @@ namespace AvifEncoder
                             {
                                 result.ErrorMessage = "AOM参数已降级（编码器未使用完整参数）";
                             }
-
-                            if (_config.Resume && result.Success)
-                            { /* journal 改由指标完成后写入 */ }
 
                             MarkProcessed(result);
                             results.Add(result);
@@ -487,7 +484,9 @@ namespace AvifEncoder
             var (keyW, keyH) = await GetResolutionAsync(workingInputPath);
             string rowMtArg = EncodeHelpers.GetRowMtArg(config);
             string cacheKey = GetSsimCacheKey(normalizedInput, encodeResult.Crf, cleanPixFmt, tileCols,
-                                              cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg);
+                                              cpuUsed, jpeg, aomParams, actualDepth, keyW, keyH, rowMtArg,
+                                              config.Encoder, config.EncoderCustomParams,
+                                              config.Denoise, config.ArNrUseMaxFrames, config.RgbMode);
 
             // ---------- 缓存命中 ----------
             // ---------- 缓存命中 ----------
@@ -1041,7 +1040,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 FinalVMAF = metrics?.VMAF,
                 FinalPSNR_Y = metrics?.PSNR_Y,
                 FinalMSSSIM = metrics?.MS_SSIM,
-                FinalMixScore = metrics == null ? null : ComputeMixScore(metrics),
+                FinalMixScore = metrics == null ? null : MetricRegistry.ComputeMixScore(metrics),
 
                 // ---- 新增：XPSNR 分数 ----
                 FinalXPSNR_Y = metrics?.XPSNR_Y,

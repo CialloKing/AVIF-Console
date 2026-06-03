@@ -276,7 +276,9 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                         string rowMtSafe = EncodeHelpers.GetRowMtArg(config);
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput, testCrf, "yuv420p", 0, 0,
-                            IsJpeg(inputPath), effectiveAom, 8, w, h, rowMtSafe);
+                            IsJpeg(inputPath), effectiveAom, 8, w, h, rowMtSafe,
+                            config.Encoder, config.EncoderCustomParams,
+                            config.Denoise, config.ArNrUseMaxFrames, config.RgbMode);
                         _cache.SetMetrics(cacheKey, metrics);
 
                         return GetSearchScore(metrics, config.MetricMode ?? "ssim");

@@ -5,7 +5,7 @@ namespace AvifEncoder
 {
     public static class Logger
     {
-        private static ILogger? _instance;
+        private static volatile ILogger? _instance;
 
         /// <summary>初始化默认文件日志器（控制台/批处理场景）</summary>
         public static void Init(string outputDir)

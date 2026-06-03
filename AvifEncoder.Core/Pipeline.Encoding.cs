@@ -32,12 +32,15 @@ namespace AvifEncoder
             string normalizedPath, int crf, string pixFmt,
             string tilePart, int actualCpu, bool isTrueLossless,
             string aomParams, bool jpeg, int bitDepth,
-            int width = 0, int height = 0, string rowMt = "")
+            int width, int height, string rowMt,
+            string encoder, string? encoderCustomParams,
+            int denoise, bool arnrUseMaxFrames, string? rgbMode)
         {
             return EncodingFingerprint.ForEncode(
                 normalizedPath, crf, pixFmt, ParseTileCols(tilePart),
                 actualCpu, isTrueLossless, aomParams, jpeg, bitDepth,
-                width, height, rowMt).ToCacheKey();
+                width, height, rowMt,
+                encoder, encoderCustomParams, denoise, arnrUseMaxFrames, rgbMode).ToCacheKey();
         }
 
 
@@ -205,14 +208,12 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
                     string tilePart = enc.SupportsTiles ? $"-tile-columns {legalTileCols} -tile-rows 0" : "";
                     sets.Add(("", tilePart, 0, rowMt));
 
-                    // 安全 tile（强制单线程时同样归零）
-                    // 安全 tile（强制单线程时同样归零）
+                    // 安全 tile
                     int safeTileCols;
                     if (imageWidth > 0 && imageWidth >= 256 && minLegal <= maxLegal)
-                        safeTileCols = minLegal;   // minLegal 已确保 tile 宽度 ≤ 4096，无需额外强制 ≥2
+                        safeTileCols = minLegal;
                     else
                         safeTileCols = 0;
-                    if (cfg.SerialEncode) safeTileCols = 0;   // ← 新属性名
 
                     string safeTilePart = safeTileCols > 0
                             ? $"-tile-columns {safeTileCols} -tile-rows 0"
@@ -240,7 +241,9 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             string cacheKey = GetEncodeCacheKey(normalizedInput, crf, currentPixFmt, param.tilePart,
                                                 param.actualCpu, isTrueLossless, param.aomParams,
                                                 IsJpeg(input), currentPixFmt.Contains("12le") ? 12 : currentPixFmt.Contains("10le") ? 10 : 8,
-                                                encW, encH, param.rowMt);   // ★ 新增 param.rowMt
+                                                encW, encH, param.rowMt,
+                                                cfg.Encoder, cfg.EncoderCustomParams,
+                                                cfg.Denoise, cfg.ArNrUseMaxFrames, cfg.RgbMode);
 
             string cacheFile = Path.Combine(_outputDir, "_enc_cache", $"{EncodeHelpers.Sha256(cacheKey)}.avif");
 

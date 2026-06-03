@@ -164,8 +164,7 @@ namespace AvifEncoder
 
         private readonly PresetConfig.IFileSystem _fs;   // 改为完整限定名
 
-        // 文件级失败跟踪器（当前未使用，保留以供将来扩展）
-        private readonly ConcurrentDictionary<string, FileScopedFailTracker> _failTrackers = new();
+
 
 
         // 记录某文件的某像素格式是否已发生“完全无法写入”的致命错误，用于跳过后续尝试
@@ -1001,11 +1000,6 @@ namespace AvifEncoder
             if (!ok)
                 throw new Exception($"缩放失败: {err}");
         }
-        private static double ComputeMixScore(QualityMetrics m)
-        {
-            return MetricRegistry.ComputeMixScore(m);
-        }
-
         private async Task<string> RunProbeAsync(string file, string args)
         {
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
@@ -1022,7 +1016,7 @@ namespace AvifEncoder
             lock (_journalLock)
             {
                 _journalWriter?.Dispose();
-                for (int retry = 0; ; retry++)
+                for (int retry = 0; retry < 20; retry++)
                 {
                     try
                     {
@@ -1030,7 +1024,16 @@ namespace AvifEncoder
                         { AutoFlush = true };
                         break;
                     }
-                    catch (IOException) when (retry < 20) { Thread.Sleep(200); }
+                    catch (IOException)
+                    {
+                        if (retry >= 19)
+                        {
+                            var msg = $"[FATAL] 无法打开 journal 文件（已重试 20 次）: {_journalPath}，可能被其他进程锁定或磁盘故障";
+                            _logger?.LogError(msg);
+                            throw new IOException(msg);
+                        }
+                        Thread.Sleep(200);
+                    }
                 }
                 _lastSnapshotTime = DateTime.UtcNow;
                 _journalCountSinceSnapshot = 0;
@@ -1402,13 +1405,16 @@ namespace AvifEncoder
 
         #region Probe 探测
 
-        private readonly ConcurrentDictionary<string, ProbeInfo> _probeCache = new();
+        private readonly ConcurrentDictionary<string, Task<ProbeInfo?>> _probeCache = new();
 
-        private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
+        private Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             string key = GetNormalizedPathForCache(filePath);
-            if (_probeCache.TryGetValue(key, out var cached)) return cached;
+            return _probeCache.GetOrAdd(key, _ => ProbeFileCoreAsync(filePath));
+        }
 
+        private async Task<ProbeInfo?> ProbeFileCoreAsync(string filePath)
+        {
             // 一次性 ffprobe 获取所有信息
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
             string json = await RunProbeAsync(_ffprobePath, args);
@@ -1459,7 +1465,6 @@ namespace AvifEncoder
                     ColorSpace = colorSpace,
                     ColorRange = colorRange
                 };
-                _probeCache[key] = info;
                 return info;
             }
             catch { return null; }
@@ -1538,54 +1543,9 @@ namespace AvifEncoder
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
                               $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
 
-                using var process = new Process
-                {
-                    StartInfo = new ProcessStartInfo(_ffmpegPath, args)
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        WorkingDirectory = metricsDir
-                    }
-                };
-
-                process.Start();
-                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
-
-                // ★ 内存兜底追踪（Job Object 失败时备用）
-                _spawnedProcesses.Add(process);
-
-                // ★ 仅在 Windows 平台将子进程加入全局 Job Object
-                if (OperatingSystem.IsWindows())
-                {
-                    JobObjectHelper.AssignProcess(process);
-                }
-
-                var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                var stderrTask = process.StandardError.ReadToEndAsync();
-
                 var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
-                using var timeoutCts = new CancellationTokenSource(timeout);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
-
-                try
-                {
-                    await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
-                }
-                catch (OperationCanceledException)
-                {
-                    if (!process.HasExited)
-                    {
-                        try { process.Kill(entireProcessTree: true); } catch { }
-                        try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
-                    }
-                }
-
-                string stdout = await stdoutTask;
-                string stderr = await stderrTask;
-                int exitCode = process.ExitCode;
+                var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                    _ffmpegPath, args, timeout, _globalCts?.Token ?? default);
 
                 if (!string.IsNullOrWhiteSpace(stderr))
                     _logger.LogInfo($"ComputeAllMetrics stderr [{Path.GetFileName(refPath)}]: {stderr.Trim()}");
@@ -2156,6 +2116,16 @@ namespace AvifEncoder
                     {
                         try
                         {
+                            // ★ 排空后台指标队列，确保高级指标已写入缓存后再保存快照
+                            var pendingBg = new List<Task>();
+                            while (_advancedMetricTasks.TryDequeue(out var t)) pendingBg.Add(t);
+                            while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
+                            if (pendingBg.Count > 0)
+                            {
+                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(5)); }
+                                catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
+                            }
+
                             var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
                             var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
                                 .Select(r => r!.InputPath).ToList();
@@ -2174,12 +2144,44 @@ namespace AvifEncoder
                     }
                     else
                     {
-                        _logger.LogInfo("[SNAPSHOT] results=null，跳过快照保存");
+                        // ★ results=null 兜底：从 journal 回放重建快照，避免进度丢失
+                        _logger.LogInfo("[SNAPSHOT] results=null，从 journal 回放兜底保存快照...");
+                        try
+                        {
+                            // 排空后台指标队列（与正常路径一致）
+                            var pendingBg = new List<Task>();
+                            while (_advancedMetricTasks.TryDequeue(out var t)) pendingBg.Add(t);
+                            while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
+                            if (pendingBg.Count > 0)
+                            {
+                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(5)); }
+                                catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
+                            }
+
+                            var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
+                            var (replayCompleted, replayMetrics, _, _) = ReplayJournalWithMetrics(0);
+                            // 跳过已标记为 completed 的文件（旧快照 + 增量 journal 的并集）
+                            var allCompleted = oldCompleted.Union(replayCompleted).ToList();
+                            var allMetrics = MergeMetrics(oldMetrics, replayMetrics);
+                            _logger.LogInfo($"[SNAPSHOT] 兜底保存: old={oldCompleted.Count} journal={replayCompleted.Count} merged={allCompleted.Count} metrics={allMetrics.Count}");
+                            SaveSnapshot(allCompleted, allMetrics);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogInfo($"[SNAPSHOT] 兜底保存失败: {ex.Message}");
+                        }
                     }
                 }
 
                 if (results != null)
+                {
                     await PrintSummaryAndExport(results);
+                }
+                else
+                {
+                    // results=null 时 CSV 行已由 AppendCsvRow 逐行写入磁盘，无需重新导出
+                    _logger.LogInfo("[SUMMARY] results=null，CSV 数据已逐行写入磁盘，跳过最终导出");
+                }
             }
             finally
             {
@@ -2493,9 +2495,6 @@ namespace AvifEncoder
         /// <summary> 清理编码缓存及临时文件 </summary>
         private void FinalCleanup()
         {
-            try { foreach (var p in Process.GetProcessesByName("ffmpeg")) try { p.Kill(true); } catch { } } catch { }
-            try { foreach (var p in Process.GetProcessesByName("ffprobe")) try { p.Kill(true); } catch { } } catch { }
-
             // ★ 兜底：强制杀掉所有曾启动的 ffmpeg 子进程（Job Object 失败时保底）
             foreach (var p in _spawnedProcesses)
             {

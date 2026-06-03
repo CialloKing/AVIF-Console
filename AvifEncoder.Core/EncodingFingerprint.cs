@@ -10,7 +10,7 @@ namespace AvifEncoder
     public readonly record struct EncodingFingerprint
     {
         /// <summary>缓存 Key 格式版本。格式变更时递增此值，自动失效所有旧缓存。</summary>
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
 
         public int Version { get; init; }
         public string NormalizedPath { get; init; }
@@ -25,6 +25,11 @@ namespace AvifEncoder
         public int Width { get; init; }
         public int Height { get; init; }
         public string RowMt { get; init; }
+        public string Encoder { get; init; }
+        public string? EncoderCustomParams { get; init; }
+        public int Denoise { get; init; }
+        public bool ArNrUseMaxFrames { get; init; }
+        public string? RgbMode { get; init; }
 
         /// <summary>
         /// 指标模式（仅指标缓存使用，编码缓存留空）。
@@ -47,31 +52,9 @@ namespace AvifEncoder
             string normalizedPath, int crf, string pixFmt,
             int tileCols, int cpuUsed, bool isTrueLossless,
             string aomParams, bool isJpeg, int bitDepth,
-            int width, int height, string rowMt)
-        {
-            return new EncodingFingerprint
-            {
-                Version = CurrentVersion,
-                NormalizedPath = normalizedPath,
-                Crf = crf,
-                PixFmt = pixFmt,
-                TileCols = tileCols,
-                CpuUsed = cpuUsed,
-                IsTrueLossless = isTrueLossless,
-                AomParams = aomParams,
-                IsJpeg = isJpeg,
-                BitDepth = bitDepth,
-                Width = width,
-                Height = height,
-                RowMt = rowMt
-            };
-        }
-
-        public static EncodingFingerprint ForMetrics(
-            string normalizedPath, int crf, string pixFmt,
-            int tileCols, int cpuUsed, bool isTrueLossless,
-            string aomParams, bool isJpeg, int bitDepth,
-            int width, int height, string rowMt, string metricMode)
+            int width, int height, string rowMt,
+            string encoder, string? encoderCustomParams,
+            int denoise, bool arnrUseMaxFrames, string? rgbMode)
         {
             return new EncodingFingerprint
             {
@@ -88,7 +71,43 @@ namespace AvifEncoder
                 Width = width,
                 Height = height,
                 RowMt = rowMt,
-                MetricMode = metricMode
+                Encoder = encoder,
+                EncoderCustomParams = encoderCustomParams,
+                Denoise = denoise,
+                ArNrUseMaxFrames = arnrUseMaxFrames,
+                RgbMode = rgbMode
+            };
+        }
+
+        public static EncodingFingerprint ForMetrics(
+            string normalizedPath, int crf, string pixFmt,
+            int tileCols, int cpuUsed, bool isTrueLossless,
+            string aomParams, bool isJpeg, int bitDepth,
+            int width, int height, string rowMt, string metricMode,
+            string encoder, string? encoderCustomParams,
+            int denoise, bool arnrUseMaxFrames, string? rgbMode)
+        {
+            return new EncodingFingerprint
+            {
+                Version = CurrentVersion,
+                NormalizedPath = normalizedPath,
+                Crf = crf,
+                PixFmt = pixFmt,
+                TileCols = tileCols,
+                CpuUsed = cpuUsed,
+                IsTrueLossless = isTrueLossless,
+                AomParams = aomParams,
+                IsJpeg = isJpeg,
+                BitDepth = bitDepth,
+                Width = width,
+                Height = height,
+                RowMt = rowMt,
+                MetricMode = metricMode,
+                Encoder = encoder,
+                EncoderCustomParams = encoderCustomParams,
+                Denoise = denoise,
+                ArNrUseMaxFrames = arnrUseMaxFrames,
+                RgbMode = rgbMode
             };
         }
     }

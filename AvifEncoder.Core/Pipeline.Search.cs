@@ -610,7 +610,10 @@ namespace AvifEncoder
 
                 consecutiveFailures++;
                 if (consecutiveFailures >= failThreshold)
+                {
                     _logger.LogInfo($"连续失败达到阈值，后续 CRF 点将优先使用降级参数 [{name}]");
+                    SafeWriteLine($"  [{name}] [WARN] 搜索评分连续失败 ≥{failThreshold} 次，已启用降级策略（降速/降格式）");
+                }
 
                 return -1;
             };
@@ -738,6 +741,8 @@ namespace AvifEncoder
         private void ExportCsv(IEnumerable<EncodeResult> results,
             Dictionary<string, QualityMetrics>? resumeMetrics = null)
         {
+            lock (_csvLock)
+            {
             // ★ 合并导出：读取已有 CSV + 用当前 results 更新/追加 + 用 resumeMetrics 修补旧行指标
             try
             {
@@ -813,6 +818,7 @@ namespace AvifEncoder
             {
                 _logger.LogError($"[CSV-EXPORT] 导出失败: {ex.Message}");
             }
+            } // lock (_csvLock)
         }
 
         private static string FormatSize(long b) => b switch

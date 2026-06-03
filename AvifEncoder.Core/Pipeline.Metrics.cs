@@ -163,13 +163,15 @@ namespace AvifEncoder
     string normalizedPath, int crf, string pixFmt,
     int tileCols, int cpuUsed, bool isJpeg,
     string effectiveAomParams, int bitDepth,
-    int width = 0, int height = 0,
-    string rowMt = "")
+    int width, int height, string rowMt,
+    string encoder, string? encoderCustomParams,
+    int denoise, bool arnrUseMaxFrames, string? rgbMode)
         {
             return EncodingFingerprint.ForEncode(
                 normalizedPath, crf, pixFmt, tileCols,
                 cpuUsed, isTrueLossless: false, effectiveAomParams, isJpeg, bitDepth,
-                width, height, rowMt).ToCacheKey();
+                width, height, rowMt,
+                encoder, encoderCustomParams, denoise, arnrUseMaxFrames, rgbMode).ToCacheKey();
         }
 
 
@@ -214,7 +216,9 @@ namespace AvifEncoder
             string key = EncodingFingerprint.ForMetrics(
                 normalizedInput, crf, pixFmt, tileCols, cpuUsed,
                 isTrueLossless: false, effectiveAom, jpeg, actualDepth,
-                metricsW, metricsH, rowMtArg, metricMode).ToCacheKey();
+                metricsW, metricsH, rowMtArg, metricMode,
+                cfg.Encoder, cfg.EncoderCustomParams,
+                cfg.Denoise, cfg.ArNrUseMaxFrames, cfg.RgbMode).ToCacheKey();
 
             if (_cache.TryGetMetrics(key, out QualityMetrics? cached))
             {
