@@ -34,6 +34,26 @@ namespace AvifEncoder
         /// </summary>
         public string? EncoderCustomParams { get; set; }
 
+        /// <summary>
+        /// 编码降噪值。0=关闭。
+        /// libaom: 根据 ArNrUseMaxFrames 映射为 arnr-strength(0-6) 或 arnr-max-frames(0-15)
+        /// libsvtav1: 直接映射 film-grain(0-15)
+        /// librav1e / 硬件编码器: 忽略
+        /// </summary>
+        public int Denoise { get; set; } = 0;
+
+        /// <summary>
+        /// libaom 降噪模式。false=arnr-strength(强度0-6), true=arnr-max-frames(帧数0-15)。
+        /// 仅 libaom-av1 有效，其他编码器忽略。
+        /// </summary>
+        public bool ArNrUseMaxFrames { get; set; } = false;
+
+        /// <summary>
+        /// RGB 直通模式。空=关闭，gbrp=8位RGB，gbrap=8位RGBA，gbrp16le=16位RGB。
+        /// 仅 libaom-av1 有效，自动覆盖 -pix_fmt。
+        /// </summary>
+        public string? RgbMode { get; set; }
+
         // 在 PresetConfig 类中，将 AomParams 属性更新为：
         public string AomParams { get; set; } =
             "aq-mode=3:deltaq-mode=0:enable-chroma-deltaq=1:sharpness=0:" +

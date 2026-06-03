@@ -1197,7 +1197,10 @@ namespace AvifEncoder
                         _config.SweepMode,
                         _config.DryRun,
                         _config.Verbose,
-                        _config.EncoderCustomParams
+                        _config.EncoderCustomParams,
+                        _config.Denoise,
+                        _config.ArNrUseMaxFrames,
+                        _config.RgbMode
                     }
                 };
                 string tmp = _snapshotPath + ".tmp";
@@ -1876,6 +1879,12 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("Verbose", out var vb)) _config.Verbose = vb.GetBoolean();
                             if (cfg.TryGetProperty("EncoderCustomParams", out var ecp) && ecp.ValueKind != JsonValueKind.Null)
                                 _config.EncoderCustomParams = ecp.GetString();
+                            if (cfg.TryGetProperty("Denoise", out var dn))
+                                _config.Denoise = dn.GetInt32();
+                            if (cfg.TryGetProperty("ArNrUseMaxFrames", out var auf) && auf.ValueKind != JsonValueKind.Null)
+                                _config.ArNrUseMaxFrames = auf.GetBoolean();
+                            if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != JsonValueKind.Null)
+                                _config.RgbMode = rgb.GetString();
                             _logger.LogInfo($"[RESUME] 已从快照恢复编码配置: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
                         }
                         catch (Exception ex)

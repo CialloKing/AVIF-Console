@@ -78,6 +78,9 @@ namespace AvifEncoder
             public bool Resume { get; set; } = false;
             public string? Extensions { get; set; }
             public string? EncoderCustomParams { get; set; }
+            public int? Denoise { get; set; }
+            public bool ArNrUseMaxFrames { get; set; }
+            public string? RgbMode { get; set; } = "";  // 默认关闭
         }
 
         // ========== 参数解析 ==========
@@ -188,6 +191,43 @@ namespace AvifEncoder
                         case "output-template": opts.OutputTemplate = GetValue().Trim('"', '\''); break;
                         case "encoder": opts.Encoder = GetValue(); break;
                         case "enc-params": opts.EncoderCustomParams = GetValue(); break;
+                        case "denoise":
+                            if (int.TryParse(GetValue(), out int dn) && dn >= 0)
+                                opts.Denoise = Math.Min(dn, 15);
+                            else throw new Exception("--denoise 需要非负整数");
+                            break;
+                        case "arnr-strength":
+                            if (int.TryParse(GetValue(), out int ars) && ars >= 0)
+                            {
+                                opts.Denoise = Math.Min(ars, 6);
+                                opts.ArNrUseMaxFrames = false;
+                            }
+                            else throw new Exception("--arnr-strength 需要 0-6 之间的整数");
+                            break;
+                        case "arnr-max-frames":
+                            if (int.TryParse(GetValue(), out int armf) && armf >= 0)
+                            {
+                                opts.Denoise = Math.Min(armf, 15);
+                                opts.ArNrUseMaxFrames = true;
+                            }
+                            else throw new Exception("--arnr-max-frames 需要 0-15 之间的整数");
+                            break;
+                        case "rgb-mode":
+                            {
+                                string v = GetValue().ToLower();
+                                if (v is "auto")
+                                    opts.RgbMode = null;
+                                else if (v is "off" or "none")
+                                    opts.RgbMode = "";
+                                else if (v is "gbrp" or "rgb24" or "24")
+                                    opts.RgbMode = "gbrp";
+                                else if (v is "gbrap" or "rgb32" or "32")
+                                    opts.RgbMode = "gbrap";
+                                else if (v is "gbrp16le" or "rgb48" or "48")
+                                    opts.RgbMode = "gbrp16le";
+                                else throw new Exception("--rgb-mode 仅支持 auto/off/gbrp/gbrap/gbrp16le");
+                            }
+                            break;
                         case "jobs":
                             if (int.TryParse(GetValue(), out int jobs) && jobs > 0)
                                 opts.Jobs = jobs;
@@ -426,6 +466,40 @@ namespace AvifEncoder
                 config.InputExtensions = opts.Extensions;
             if (opts.EncoderCustomParams != null)
                 config.EncoderCustomParams = opts.EncoderCustomParams;
+            if (opts.Denoise.HasValue)
+                config.Denoise = opts.Denoise.Value;
+            config.ArNrUseMaxFrames = opts.ArNrUseMaxFrames;
+            config.RgbMode = opts.RgbMode;  // ""=关闭(默认), null=auto, "gbrp"等=强制
+            // 降噪参数通过 EncoderCustomParams 拼接，值为 0 时不参与
+            if (opts.Denoise.HasValue && opts.Denoise.Value > 0 && string.IsNullOrEmpty(opts.EncoderCustomParams))
+            {
+                string encParams = config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase)
+                    ? $"-aom-params {config.AomParams}"
+                    : config.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase)
+                        ? "-svtav1-params \"tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\""
+                        : "";
+                if (config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (opts.ArNrUseMaxFrames)
+                        encParams += $":arnr-max-frames={Math.Clamp(opts.Denoise.Value, 1, 15)}:arnr-strength=4";
+                    else
+                    {
+                        int s = Math.Clamp(opts.Denoise.Value, 1, 6);
+                        int f = s <= 2 ? 3 : s <= 4 ? 7 : 15;
+                        encParams += $":arnr-strength={s}:arnr-max-frames={f}";
+                    }
+                }
+                else if (config.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase))
+                {
+                    int grain = Math.Clamp(opts.Denoise.Value, 1, 15);
+                    int lastQ = encParams.LastIndexOf('"');
+                    if (lastQ >= 0)
+                        encParams = encParams.Insert(lastQ, $":film-grain={grain}:film-grain-denoise=1");
+                    else
+                        encParams += $" -svtav1-params \"film-grain={grain}:film-grain-denoise=1\"";
+                }
+                config.EncoderCustomParams = encParams;
+            }
             if (opts.Resume)
                 config.Resume = true;
             config.DryRun = opts.DryRun;

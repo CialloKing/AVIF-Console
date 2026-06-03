@@ -24,6 +24,19 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -e, --encoder <名称>         指定 AV1 编码器 (默认: libaom-av1)
       --enc-params <参数>      编码器私有参数，直接传递到 ffmpeg 命令行（含前缀）
                                空字符串则清空所有私有参数。示例:
+      --denoise <0-15>         编码降噪，0=关闭 (默认: 0)
+                               libaom: 映射 arnr-strength(0-6)，arnr-max-frames 自动推导
+                               libsvtav1: 映射 film-grain(0-15)
+      --arnr-strength <0-6>   libaom ARNr 降噪强度，arnr-max-frames 自动推导
+      --arnr-max-frames <0-15> libaom ARNr 参考帧数，arnr-strength 默认 4
+                               2-3=温和, 4-6=中等, 7-10=激进, 11-15=极限
+                               仅 libaom-av1 有效，其他编码器忽略
+      --rgb-mode <模式>        RGB 直通模式: off(关闭, 默认) / auto(自动) / gbrp / gbrap / gbrp16le
+                               off: 强制使用 YUV 色彩空间（默认）
+                               auto: 源文件为 RGB 时自动直通，YUV 时走常规流程
+                               仅 libaom-av1 有效
+      --enc-params <参数>      编码器私有参数，直接传递到 ffmpeg 命令行（含前缀）
+                               空字符串则清空所有私有参数。示例:
                                  libaom:    --enc-params ""-aom-params sharpness=2:enable-cdef=0""
                                  libsvtav1: --enc-params ""-svtav1-params tune=3:film-grain=8:enable-qm=0""
                                  librav1e:  --enc-params ""-rav1e-params quantizer=100""
@@ -442,6 +455,60 @@ ffmpeg 命令预览  -> 文本框 txtParamsPreview（选项页，只读）
     • 点击右侧按钮可复制完整命令到剪贴板
 
   提示：修改编码页任何选项后，预览会实时更新。
+
+═══════════════════════════════════════════════════════════════════════
+
+【编码降噪（选项页）】
+
+  在「选项」页中可用数字框设置降噪强度（0-15）。
+
+  降噪是提升 AVIF 压缩率的关键手段之一：
+    • 编码前去除图像中的自然噪点，编码器可更高效压缩
+    • 解码端根据元数据合成噪点还原观感（Film Grain 合成）
+    • 噪点丰富的图片（手机拍摄、低光、扫描件）收益最大
+
+  强度建议：
+    0     关闭 — 动漫、UI 截图、文字、纯色图
+    2-3   温和 — 低 ISO 自然照片，几乎无可见差异
+    4-6   中等 — 手机拍摄、ISO 800-1600，体积 -15%~25%
+    7-10  激进 — 高噪点老照片，体积 -30%~40%
+    11-15 极限 — 极小体积优先，接受柔和/涂抹感
+
+  编码器映射：
+    libaom-av1 → arnr-strength (钳制 0-6)
+    libsvtav1  → film-grain (直接使用 0-15)
+    librav1e / 硬件编码器 → 不支持，自动忽略
+
+  提示：降噪参数嵌入到 -aom-params / -svtav1-params 末尾。
+  若同时使用自定义参数（--enc-params）指定了相同 key，
+  自定义参数优先（ffmpeg last-wins 覆盖）。
+
+═══════════════════════════════════════
+
+【RGB 直通（选项页）】
+
+  在「选项」页中可用下拉框选择 RGB 色彩空间模式。
+
+  常规 AVIF 编码会将 RGB 转为 YUV，解码时再转回 RGB。
+  两次色彩空间转换会导致色度损失，尤其影响：
+    • 红蓝边界出现伪影
+    • 细线条（UI 截图、图标）变模糊
+    • 纯色区域产生轻微色偏
+
+  RGB 直通跳过 YUV 转换，直接在 RGB 空间编码：
+    • libaom-av1 编码器原生支持（其他编码器自动禁用）
+    • 8 位 RGB（gbrp）：适合 UI 截图、图表、文字密集图片
+    • 8 位 RGBA（gbrap）：保留 Alpha 透明通道，适合 PNG 图标
+    • 16 位 RGB（gbrp16le）：高位深，适合摄影导出、HDR
+
+  选项：
+    关闭（默认）— 强制使用 YUV 色彩空间
+    自动 — 源文件为 RGB 时自动直通，YUV 时走常规流程
+    gbrp — 强制 8 位 RGB 直通
+    gbrap — 强制 8 位 RGBA 直通（含 Alpha）
+    gbrp16le — 强制 16 位 RGB 直通
+
+  对应 CLI 选项：--rgb-mode auto/off/gbrp/gbrap/gbrp16le
 
 ═══════════════════════════════════════
 

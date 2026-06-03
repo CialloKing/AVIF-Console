@@ -1172,13 +1172,45 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
             string name = Path.GetFileName(inputPath);
             bool isLosslessMode = config.Lossless;
             bool isTrulyLossless = isLosslessMode;   // ★ 已修改
+            var probe = await GetProbeInfoAsync(inputPath);
             string srcFmt = await GetSourcePixelFormat(inputPath);
+            string srcRawFmt = probe?.PixFmt ?? srcFmt;  // 原始格式（rgba/rgb24 等），不做归一化
             bool hasAlpha = await SourceHasAlpha(inputPath);
             string actualPixFmt = await GetPixelFormatForFileAsync(inputPath, isLosslessMode, hasAlpha);
+
+            // ── RGB 直通模式：覆盖像素格式 ──
+            if (config.RgbMode == null && config.AutoSource && config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase) && !isLosslessMode)
+            {
+                // 自动检测：源文件为 RGB 时自动直通
+                string rawFmt = srcRawFmt;
+                bool isRgb = rawFmt.StartsWith("rgb") || rawFmt.StartsWith("bgr") || rawFmt.StartsWith("gbr") ||
+                             rawFmt.StartsWith("argb") || rawFmt.StartsWith("abgr") ||
+                             rawFmt.StartsWith("rgba") || rawFmt.StartsWith("bgra");
+                if (isRgb)
+                {
+                    int totalBits = 0;
+                    var m = System.Text.RegularExpressions.Regex.Match(rawFmt, @"(\d+)");
+                    if (m.Success && int.TryParse(m.Groups[1].Value, out int b))
+                        totalBits = b;
+                    int components = (rawFmt.Contains('a') || rawFmt.Contains('0') || rawFmt.Contains('x') ||
+                                      rawFmt == "argb" || rawFmt == "abgr") ? 4 : 3;
+                    if (totalBits == 0) totalBits = components * 8;
+                    int perComp = totalBits / components;
+                    if (hasAlpha)
+                        actualPixFmt = perComp > 8 ? "gbrap16le" : "gbrap";
+                    else
+                        actualPixFmt = perComp > 8 ? "gbrp16le" : "gbrp";
+                }
+            }
+            else if (!string.IsNullOrEmpty(config.RgbMode) && config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase))
+            {
+                actualPixFmt = config.RgbMode;
+            }
+
             // ===== 补全缺失的 pixInfo、w、h =====
             string pixInfo;
             if (config.AutoSource && !isLosslessMode)
-                pixInfo = $"源: {srcFmt} -> 输出: {actualPixFmt}";
+                pixInfo = $"源: {srcRawFmt} -> 输出: {actualPixFmt}";
             else
                 pixInfo = actualPixFmt;
             var (w, h) = await GetResolutionAsync(inputPath);
@@ -1242,7 +1274,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
 
             return new EncodingInfo
             {
-                SourcePixFmt = srcFmt,
+                SourcePixFmt = srcRawFmt,
                 ActualPixFmt = actualPixFmt,
                 PixInfo = pixInfo + (alphaDropped ? " (Alpha 已丢弃)" : ""),
                 Width = w,

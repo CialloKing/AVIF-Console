@@ -326,6 +326,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 MarkCustom(s, e);
                 UpdateCpuUsedLimits();
+                UpdateDenoiseLimit();
+                UpdateRgbModeEnabled();
                 OptionsPage?.UpdateEncoderDefaultParams(cmbEncoder.SelectedItem?.ToString());
             };
             numJobs.ValueChanged += MarkCustom;
@@ -598,6 +600,38 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     numCrfMax.Value = numCrfFix.Value;
                     rbCrfRange.Checked = true;
                 }
+            }
+        }
+
+        private void UpdateRgbModeEnabled()
+        {
+            string? encoder = cmbEncoder.SelectedItem?.ToString();
+            bool isLibAom = encoder != null && encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase);
+            OptionsPage?.SetRgbModeEnabled(isLibAom);
+        }
+
+        public void UpdateDenoiseLimit()
+        {
+            string? encoder = cmbEncoder.SelectedItem?.ToString();
+            bool isLibAom = encoder != null && encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase);
+            bool isSvtAv1 = encoder != null && encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase);
+
+            if (isLibAom)
+            {
+                bool useMaxFrames = OptionsPage?.GetArNrUseMaxFrames() ?? false;
+                int max = useMaxFrames ? 15 : 6;
+                OptionsPage?.SetDenoiseLimit(max, true);
+                OptionsPage?.SetArnrEnabled(true);
+            }
+            else if (isSvtAv1)
+            {
+                OptionsPage?.SetDenoiseLimit(15, true);
+                OptionsPage?.SetArnrEnabled(false);
+            }
+            else
+            {
+                OptionsPage?.SetDenoiseLimit(0, false);
+                OptionsPage?.SetArnrEnabled(false);
             }
         }
 
@@ -1082,6 +1116,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
                     config.DryRun = optsPage.DryRun;
                     config.Verbose = optsPage.VerboseOutput;
+                    config.EncoderCustomParams = string.IsNullOrWhiteSpace(optsPage.GetEncoderCustomParams())
+                        ? null : optsPage.GetEncoderCustomParams();
+                    config.Denoise = optsPage.Denoise;
+                    config.ArNrUseMaxFrames = optsPage.GetArNrUseMaxFrames();
+                    config.RgbMode = optsPage.GetRgbMode();
                 }
             }
             config.UsePriorSearch = chkPriorSearch.Checked;
@@ -1184,6 +1223,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     SetComboBoxItem(cmbBitDepth, cfg.EncodeBitDepth);
                 }
+                if (cfg.EncodeRgbMode != null)
+                {
+                    OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
+                }
                 chkLossless.Checked = cfg.EncodeLossless;
                 chkRecursive.Checked = cfg.EncodeRecursive;
                 numMaxRes.Value = cfg.EncodeMaxRes;
@@ -1221,6 +1264,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     optsPage.SetVerboseOutput(cfg.EncodeVerbose);
                     if (cfg.EncodeEncoderParams != null)
                         optsPage.SetEncoderCustomParams(cfg.EncodeEncoderParams);
+                    optsPage.SetDenoise(cfg.EncodeDenoise);
+                    optsPage.SetArNrUseMaxFrames(cfg.EncodeArNrUseMaxFrames);
+                    if (cfg.EncodeRgbMode != null)
+                        OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
                 }
             }
             finally
@@ -1252,7 +1299,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             string QualityMode, // 质量模式
             double QualityValue,
             bool Lossless,
-            bool EnableSearch
+            bool EnableSearch,
+            int Denoise,
+            bool ArNrUseMaxFrames,
+            string? RgbMode
         );
 
         /// <summary>返回当前 UI 控件状态，供 ffmpeg 命令预览使用</summary>
@@ -1272,7 +1322,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 QualityMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString()?.ToLower() ?? "vmaf",
                 QualityValue = (double)numQualityValue.Value,
                 Lossless = chkLossless.Checked,
-                EnableSearch = chkSearch.Checked
+                EnableSearch = chkSearch.Checked,
+                Denoise = OptionsPage?.Denoise ?? 0,
+                ArNrUseMaxFrames = OptionsPage?.GetArNrUseMaxFrames() ?? false,
+                RgbMode = OptionsPage?.GetRgbMode()
             };
         }
 
@@ -1334,6 +1387,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     cfg.EncodeDryRun = optsPage.DryRun;
                     cfg.EncodeVerbose = optsPage.VerboseOutput;
                     cfg.EncodeEncoderParams = optsPage.GetEncoderCustomParams();
+                    cfg.EncodeDenoise = optsPage.Denoise;
+                    cfg.EncodeArNrUseMaxFrames = optsPage.GetArNrUseMaxFrames();
+                    cfg.EncodeRgbMode = OptionsPage?.GetRgbMode();
                 }
             }
         }
@@ -1481,6 +1537,21 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
                     optsPage?.SetSsimTimeout(ss.GetInt32());
+                }
+                // ★ 恢复新增字段（EncoderCustomParams / Denoise / ArNrUseMaxFrames / RgbMode）
+                {
+                    var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
+                    if (optsPage != null)
+                    {
+                        if (cfg.TryGetProperty("EncoderCustomParams", out var ecp) && ecp.ValueKind != System.Text.Json.JsonValueKind.Null)
+                            optsPage.SetEncoderCustomParams(ecp.GetString());
+                        if (cfg.TryGetProperty("Denoise", out var dn))
+                            optsPage.SetDenoise(dn.GetInt32());
+                        if (cfg.TryGetProperty("ArNrUseMaxFrames", out var auf) && auf.ValueKind != System.Text.Json.JsonValueKind.Null)
+                            optsPage.SetArNrUseMaxFrames(auf.GetBoolean());
+                        if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != System.Text.Json.JsonValueKind.Null)
+                            optsPage.SetRgbMode(rgb.GetString());
+                    }
                 }
                 if (cfg.TryGetProperty("SweepMode", out var sw)) chkSweep.Checked = sw.GetBoolean();
                 _isApplyingPreset = false;

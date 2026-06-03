@@ -53,6 +53,9 @@ namespace AvifEncoder
 
         // ===== 编码器自定义参数 =====
         public string? EncodeEncoderParams { get; set; }
+        public int EncodeDenoise { get; set; }
+        public bool EncodeArNrUseMaxFrames { get; set; }
+        public string? EncodeRgbMode { get; set; }
 
         // ===== 选项页 =====
         public string? EncodeExtensions { get; set; }
