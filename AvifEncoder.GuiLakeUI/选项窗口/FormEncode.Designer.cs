@@ -200,8 +200,11 @@
             cmbTemplate.DropDownBackdropBlurPasses = 2;
             cmbTemplate.DropDownBackdropBlurRadius = 5;
             cmbTemplate.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbTemplate.DropDownBorderColor = Color.White;
             cmbTemplate.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbTemplate.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbTemplate.DropDownScrollBarColor = Color.Gainsboro;
+            cmbTemplate.DropDownScrollBarHoverColor = Color.White;
             cmbTemplate.DropDownSelectedColor = Color.Transparent;
             cmbTemplate.DropDownSelectedForeColor = Color.White;
             cmbTemplate.ForeColor = Color.WhiteSmoke;
@@ -214,6 +217,7 @@
             cmbTemplate.TabIndex = 65;
             cmbTemplate.Text = "输出文件名模板";
             cmbTemplate.ToolTipBackColor = Color.DimGray;
+            cmbTemplate.ToolTipForeColor = Color.White;
             // 
             // cmbPreset
             // 
@@ -253,6 +257,8 @@
             cmbEncoder.DropDownBorderColor = Color.White;
             cmbEncoder.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbEncoder.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbEncoder.DropDownScrollBarColor = Color.Gainsboro;
+            cmbEncoder.DropDownScrollBarHoverColor = Color.White;
             cmbEncoder.DropDownSelectedColor = Color.Transparent;
             cmbEncoder.DropDownSelectedForeColor = Color.White;
             cmbEncoder.ForeColor = Color.WhiteSmoke;
@@ -356,6 +362,8 @@
             cmbQualityMode.DropDownBorderColor = Color.White;
             cmbQualityMode.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbQualityMode.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbQualityMode.DropDownScrollBarColor = Color.Gainsboro;
+            cmbQualityMode.DropDownScrollBarHoverColor = Color.White;
             cmbQualityMode.DropDownSelectedColor = Color.Transparent;
             cmbQualityMode.DropDownSelectedForeColor = Color.White;
             cmbQualityMode.ForeColor = Color.WhiteSmoke;
@@ -608,6 +616,8 @@
             cmbMetric.DropDownBorderColor = Color.White;
             cmbMetric.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbMetric.DropDownScrollBarColor = Color.Gainsboro;
+            cmbMetric.DropDownScrollBarHoverColor = Color.White;
             cmbMetric.DropDownSelectedColor = Color.Transparent;
             cmbMetric.DropDownSelectedForeColor = Color.White;
             cmbMetric.ForeColor = Color.WhiteSmoke;

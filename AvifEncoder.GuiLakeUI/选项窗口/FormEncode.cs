@@ -86,6 +86,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         public FormEncode()
         {
             InitializeComponent();
+
+            // ★ ExFloatingTip 主题：暗色背景+纯白文字
+            LakeUI.ExFloatingTipTheme.Current.CardBackColor = Color.FromArgb(44, 44, 44);
+            LakeUI.ExFloatingTipTheme.Current.CardBorderColor = Color.FromArgb(70, 70, 70);
+            LakeUI.ExFloatingTipTheme.Current.MessageForeColor = Color.White;
+
             progressBar1.Maximum = 100;
             progressBar1.Value = 0;
             btnStop.Enabled = false;
@@ -913,11 +919,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 int result = _pipeline.SetMaxJobs(newJobs);
                 if (numJobs.Value != result) numJobs.Value = result;
-                LogPage?.AppendLog($"[并发] 已更新为 {result}");
+                LogPage?.AppendLog($"[并发] 实时更新为 {result}");
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs, $"并发已实时更新为 {result}");
             }
             else
             {
-                LogPage?.AppendLog($"[并发] 已设为 {newJobs}（将在启动编码时生效）");
+                LogPage?.AppendLog($"[并发] 已设为 {newJobs}");
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs, $"并发数已设为 {newJobs}");
             }
         }
 
