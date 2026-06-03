@@ -77,6 +77,7 @@ namespace AvifEncoder
             public bool RecomputeMetrics { get; set; } = false;
             public bool Resume { get; set; } = false;
             public string? Extensions { get; set; }
+            public string? EncoderCustomParams { get; set; }
         }
 
         // ========== 参数解析 ==========
@@ -186,6 +187,7 @@ namespace AvifEncoder
                         case "lossless": opts.Lossless = true; break;
                         case "output-template": opts.OutputTemplate = GetValue().Trim('"', '\''); break;
                         case "encoder": opts.Encoder = GetValue(); break;
+                        case "enc-params": opts.EncoderCustomParams = GetValue(); break;
                         case "jobs":
                             if (int.TryParse(GetValue(), out int jobs) && jobs > 0)
                                 opts.Jobs = jobs;
@@ -422,6 +424,8 @@ namespace AvifEncoder
             }
             if (!string.IsNullOrWhiteSpace(opts.Extensions))
                 config.InputExtensions = opts.Extensions;
+            if (opts.EncoderCustomParams != null)
+                config.EncoderCustomParams = opts.EncoderCustomParams;
             if (opts.Resume)
                 config.Resume = true;
             config.DryRun = opts.DryRun;

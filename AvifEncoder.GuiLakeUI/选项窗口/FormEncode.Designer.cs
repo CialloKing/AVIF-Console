@@ -229,6 +229,7 @@
             cmbPreset.DropDownBackdropBlurPasses = 2;
             cmbPreset.DropDownBackdropBlurRadius = 5;
             cmbPreset.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbPreset.DropDownBorderColor = Color.White;
             cmbPreset.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbPreset.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbPreset.DropDownSelectedColor = Color.Transparent;
@@ -284,6 +285,7 @@
             cmbConflict.DropDownBackdropBlurPasses = 2;
             cmbConflict.DropDownBackdropBlurRadius = 5;
             cmbConflict.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbConflict.DropDownBorderColor = Color.White;
             cmbConflict.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbConflict.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbConflict.DropDownSelectedColor = Color.Transparent;
@@ -309,6 +311,7 @@
             cmbChroma.DropDownBackdropBlurPasses = 2;
             cmbChroma.DropDownBackdropBlurRadius = 5;
             cmbChroma.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbChroma.DropDownBorderColor = Color.White;
             cmbChroma.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbChroma.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbChroma.DropDownSelectedColor = Color.Transparent;
@@ -334,6 +337,7 @@
             cmbBitDepth.DropDownBackdropBlurPasses = 2;
             cmbBitDepth.DropDownBackdropBlurRadius = 5;
             cmbBitDepth.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbBitDepth.DropDownBorderColor = Color.White;
             cmbBitDepth.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbBitDepth.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbBitDepth.DropDownSelectedColor = Color.Transparent;

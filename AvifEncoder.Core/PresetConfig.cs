@@ -27,6 +27,13 @@ namespace AvifEncoder
         public int MaxJobs { get; set; }
         public string? PixelFormat { get; set; }
 
+        /// <summary>
+        /// 用户自定义编码器私有参数，追加到 -aom-params / -svtav1-params / -rav1e-params 末尾。
+        /// null 时不改变默认行为；非 null 时使用此字符串替换默认私有参数段。
+        /// 传入 "" 将清空私有参数。示例: "sharpness=2:enable-cdef=0"
+        /// </summary>
+        public string? EncoderCustomParams { get; set; }
+
         // 在 PresetConfig 类中，将 AomParams 属性更新为：
         public string AomParams { get; set; } =
             "aq-mode=3:deltaq-mode=0:enable-chroma-deltaq=1:sharpness=0:" +

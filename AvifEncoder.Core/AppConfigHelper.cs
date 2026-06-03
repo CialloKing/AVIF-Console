@@ -51,6 +51,9 @@ namespace AvifEncoder
         public bool EncodeProxy { get; set; }
         public bool EncodeSweep { get; set; }
 
+        // ===== 编码器自定义参数 =====
+        public string? EncodeEncoderParams { get; set; }
+
         // ===== 选项页 =====
         public string? EncodeExtensions { get; set; }
         public int EncodeTimeoutEncode { get; set; }

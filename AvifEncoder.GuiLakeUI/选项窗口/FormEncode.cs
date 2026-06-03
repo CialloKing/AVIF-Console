@@ -28,6 +28,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public FormLog? LogPage { get; set; }
 
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public FormOptions? OptionsPage { get; set; }
+
         /// <summary>缓存顶层 Form1 句柄用于任务栏进度（子 Form 的 Handle 不被任务栏识别）</summary>
         private IntPtr _topLevelHandle;
         public void SetTopLevelHandle(IntPtr h) => _topLevelHandle = h;
@@ -319,10 +322,15 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void AttachCustomMarkEvents()
         {
-            cmbEncoder.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); UpdateCpuUsedLimits(); };
+            cmbEncoder.SelectedIndexChanged += (s, e) =>
+            {
+                MarkCustom(s, e);
+                UpdateCpuUsedLimits();
+                OptionsPage?.UpdateEncoderDefaultParams(cmbEncoder.SelectedItem?.ToString());
+            };
             numJobs.ValueChanged += MarkCustom;
             numSearchCpuUsed.ValueChanged += MarkCustom;
-            numFinalCpuUsed.ValueChanged += MarkCustom;
+            numFinalCpuUsed.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             txtTemplate.TextChanged += MarkCustom;
 
             // cmbTemplate 选择 → 同步到 txtTemplate
@@ -354,18 +362,18 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (!found && cmbTemplate.SelectedIndex != cmbTemplate.Items.Count - 1)
                     cmbTemplate.SelectedIndex = cmbTemplate.Items.Count - 1;
             };
-            chkSearch.CheckedChanged += MarkCustom;
-            rbCrfFix.CheckedChanged += MarkCustom;
-            rbCrfRange.CheckedChanged += MarkCustom;
-            numCrfFix.ValueChanged += MarkCustom;
-            numCrfMin.ValueChanged += MarkCustom;
-            numCrfMax.ValueChanged += MarkCustom;
+            chkSearch.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            rbCrfFix.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            rbCrfRange.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            numCrfFix.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            numCrfMin.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            numCrfMax.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             cmbMetric.SelectedIndexChanged += MarkCustom;
-            cmbQualityMode.SelectedIndexChanged += MarkCustom;
-            numQualityValue.ValueChanged += MarkCustom;
-            cmbChroma.SelectedIndexChanged += MarkCustom;
-            cmbBitDepth.SelectedIndexChanged += MarkCustom;
-            chkLossless.CheckedChanged += MarkCustom;
+            cmbQualityMode.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            numQualityValue.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            cmbChroma.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            cmbBitDepth.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            chkLossless.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             chkRecursive.CheckedChanged += MarkCustom;
             numMaxRes.ValueChanged += MarkCustom;
             chkOutputFullRes.CheckedChanged += MarkCustom;
@@ -1211,6 +1219,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
                     optsPage.SetDryRun(cfg.EncodeDryRun);
                     optsPage.SetVerboseOutput(cfg.EncodeVerbose);
+                    if (cfg.EncodeEncoderParams != null)
+                        optsPage.SetEncoderCustomParams(cfg.EncodeEncoderParams);
                 }
             }
             finally
@@ -1223,6 +1233,48 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// 从 UI 控件收集编码设置到 AppConfig。
         /// </summary>
         public string GetOutputDir() => txtOutput.Text.Trim();
+
+        /// <summary>返回当前选择的编码器名称</summary>
+        public string GetSelectedEncoder()
+            => cmbEncoder.SelectedItem?.ToString() ?? "libaom-av1";
+
+        /// <summary>供 FormOptions 预览 ffmpeg 命令的上下文</summary>
+        public readonly record struct PreviewContext(
+            string Encoder,
+            string Chroma,      // "auto" / "420" / "422" / "444"
+            string BitDepth,    // "auto" / "8" / "10" / "12"
+            int Crf,            // 固定 CRF 值
+            int CrfMin,         // CRF 范围下限
+            int CrfMax,         // CRF 范围上限
+            bool CrfFixed,      // true=固定CRF, false=范围搜索
+            int FinalCpuUsed,
+            int SearchCpuUsed,
+            string QualityMode, // 质量模式
+            double QualityValue,
+            bool Lossless,
+            bool EnableSearch
+        );
+
+        /// <summary>返回当前 UI 控件状态，供 ffmpeg 命令预览使用</summary>
+        public PreviewContext GetPreviewContext()
+        {
+            return new PreviewContext
+            {
+                Encoder = GetSelectedEncoder(),
+                Chroma = cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString()?.ToLower() ?? "auto",
+                BitDepth = cmbBitDepth.Items[cmbBitDepth.SelectedIndex]?.ToString()?.ToLower() ?? "auto",
+                Crf = (int)numCrfFix.Value,
+                CrfMin = (int)numCrfMin.Value,
+                CrfMax = (int)numCrfMax.Value,
+                CrfFixed = rbCrfFix.Checked,
+                FinalCpuUsed = (int)numFinalCpuUsed.Value,
+                SearchCpuUsed = (int)numSearchCpuUsed.Value,
+                QualityMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString()?.ToLower() ?? "vmaf",
+                QualityValue = (double)numQualityValue.Value,
+                Lossless = chkLossless.Checked,
+                EnableSearch = chkSearch.Checked
+            };
+        }
 
         public void ResetToDefaults()
         {
@@ -1281,6 +1333,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     cfg.EncodeTimeoutSsim = optsPage.SsimTimeout;
                     cfg.EncodeDryRun = optsPage.DryRun;
                     cfg.EncodeVerbose = optsPage.VerboseOutput;
+                    cfg.EncodeEncoderParams = optsPage.GetEncoderCustomParams();
                 }
             }
         }

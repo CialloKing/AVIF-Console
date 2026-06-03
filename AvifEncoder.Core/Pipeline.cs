@@ -1196,7 +1196,8 @@ namespace AvifEncoder
                         _config.SsimTimeoutMinutes,
                         _config.SweepMode,
                         _config.DryRun,
-                        _config.Verbose
+                        _config.Verbose,
+                        _config.EncoderCustomParams
                     }
                 };
                 string tmp = _snapshotPath + ".tmp";
@@ -1873,6 +1874,8 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("SweepMode", out var sw)) _config.SweepMode = sw.GetBoolean();
                             if (cfg.TryGetProperty("DryRun", out var dr)) _config.DryRun = dr.GetBoolean();
                             if (cfg.TryGetProperty("Verbose", out var vb)) _config.Verbose = vb.GetBoolean();
+                            if (cfg.TryGetProperty("EncoderCustomParams", out var ecp) && ecp.ValueKind != JsonValueKind.Null)
+                                _config.EncoderCustomParams = ecp.GetString();
                             _logger.LogInfo($"[RESUME] 已从快照恢复编码配置: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
                         }
                         catch (Exception ex)

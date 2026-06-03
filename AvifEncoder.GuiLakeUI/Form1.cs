@@ -183,6 +183,8 @@ namespace AvifEncoder.GuiLakeUI
 
             modernTabListControl1.SelectedIndex = 0;
             _encodePage.LogPage = _logPage!;
+            _encodePage.OptionsPage = _optionsPage!;
+            _optionsPage.UpdateEncoderDefaultParams(_encodePage.GetSelectedEncoder());
 
             await RunStartupCheckAsync();
 
