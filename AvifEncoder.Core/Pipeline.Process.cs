@@ -19,84 +19,27 @@ namespace AvifEncoder
                 int crfCount = config.MaxCRF - config.MinCRF + 1;
                 if (crfCount <= 0) crfCount = 1;
                 int totalTasks = files.Count * crfCount;
-                _progress.SetTotalFiles(totalTasks);   // 遍历模式下总进度 = 图片数 × CRF 范围
+                _progress.SetTotalFiles(totalTasks);
                 return await ProcessFilesSweepAsync(files, config);
             }
             var results = new ConcurrentDictionary<int, EncodeResult>();
-            using var semaphore = new SemaphoreSlim(config.MaxJobs);
-            var tasks = files.Select(async file =>
-                {
-                    try
-                    {
-                        bool acquired = await semaphore.WaitAsync(TimeSpan.FromMinutes(720), _globalCts?.Token ?? default);
-                        if (!acquired)
-                        {
-                            _logger.LogInfo($"任务信号量获取超时，跳过文件: {Path.GetFileName(file.filePath)}");
-                            // 信号量超时
-                            var failResult = new EncodeResult
-                            {
-                                Index = file.index,
-                                FileName = GetOutputFileName(file.filePath, file.index),
-                                OriginalFileName = Path.GetFileName(file.filePath),
-                                InputPath = file.filePath,                     // ★ 新增
-                                Success = false,
-                                Skipped = false,
-                                ErrorMessage = "任务信号量获取超时",
-                                TotalTime = TimeSpan.Zero
-                            };
-                            results[file.index] = failResult;
-                            MarkProcessed(failResult);
-                            return;
-                        }
-                        try
-                        {
-                            var r = await ProcessSingleFileAsync(file.filePath, file.index, config, isRetry);
-                            if (r != null) results[r.Index] = r;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogInfo($"文件处理异常: {file.filePath} - {ex.Message}");
-                            // 异常处理中的 failResult
-                            var failResult = new EncodeResult
-                            {
-                                Index = file.index,
-                                FileName = GetOutputFileName(file.filePath, file.index),
-                                OriginalFileName = Path.GetFileName(file.filePath),
-                                InputPath = file.filePath,
-                                Success = false,
-                                Skipped = false,
-                                ErrorMessage = $"异常: {ex.Message}",
-                                TotalTime = TimeSpan.Zero
-                            };
-                            results[file.index] = failResult;
-                            MarkProcessed(failResult);
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // ★ 修复 Bug3：全局取消时优雅退出，记录取消结果
-                        _logger.LogInfo($"操作取消，跳过文件: {Path.GetFileName(file.filePath)}");
-                        // 取消操作
-                        var cancelResult = new EncodeResult
-                        {
-                            Index = file.index,
-                            FileName = GetOutputFileName(file.filePath, file.index),
-                            OriginalFileName = Path.GetFileName(file.filePath),
-                            InputPath = file.filePath,
-                            Success = false,
-                            Skipped = false,
-                            ErrorMessage = "用户取消操作",
-                            TotalTime = TimeSpan.Zero
-                        };
-                        results[file.index] = cancelResult;
-                        MarkProcessed(cancelResult);
-                    }
-                });
-            await Task.WhenAll(tasks);
+            int remaining = files.Count;
+            using var doneSignal = new SemaphoreSlim(0, files.Count);
+            var token = _globalCts?.Token ?? CancellationToken.None;
+
+            // 通过 Channel 投递文件，长驻 Worker 自动消费
+            foreach (var (path, idx) in files)
+            {
+                if (token.IsCancellationRequested) break;
+                await _fileChannel.Writer.WriteAsync(
+                    new FileWorkItem(path, idx, config, isRetry, results, doneSignal),
+                    token);
+            }
+
+            // 等待 Worker 处理完成
+            for (int i = 0; i < files.Count; i++)
+                await doneSignal.WaitAsync(token);
+
             return results.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value);
         }
 
@@ -1075,6 +1018,8 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 InputPath = inputPath,
                 OriginalSize = encodeResult.Success ? _fs.GetFileLength(inputPath) : 0,
                 OutputSize = encodeResult.Success ? _fs.GetFileLength(outputPath) : 0,
+                Width = encInfo.Width,
+                Height = encInfo.Height,
                 UsedCRF = encodeResult.Success ? encodeResult.Crf : -1,
                 FinalSSIM = ssim,
                 EncodeTime = encodeResult.EncodeTime,

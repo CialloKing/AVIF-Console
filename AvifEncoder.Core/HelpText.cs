@@ -733,7 +733,7 @@ ffmpeg 命令预览  -> 文本框 txtParamsPreview（选项页，只读）
   .session/                        断点续传数据（正常完成自动清理）
 
   CSV 报告包含以下栏目：
-    文件名、原始大小、输出大小、压缩率、CRF、
+    文件名、原始大小(字节)、输出大小(字节)、压缩率、源文件宽、源文件长、CRF、
     SSIM、VMAF、PSNR-Y、MS-SSIM、MixScore、
     XPSNR-Y/U/V/W、SSIMULACRA2、Butteraugli_Raw/3norm、
     GMSD、编码耗时、搜索耗时、重试次数、像素格式、

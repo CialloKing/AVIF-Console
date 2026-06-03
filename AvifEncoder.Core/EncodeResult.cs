@@ -9,6 +9,8 @@ namespace AvifEncoder
         public string OriginalFileName { get; set; } = "";
         public long OriginalSize { get; set; }
         public long OutputSize { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
         public int UsedCRF { get; set; }
         public double FinalSSIM { get; set; }
         public double CompressionRatio => OriginalSize == 0 ? 0 : Math.Round(1.0 - (double)OutputSize / OriginalSize, 4);

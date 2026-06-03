@@ -127,6 +127,15 @@ namespace AvifEncoder
         private readonly DynamicConcurrencyLimiter _ssimConcurrency;
         private readonly DynamicConcurrencyLimiter _ffmpegSlots;
         private readonly string _instanceId = Guid.NewGuid().ToString("N");
+
+        // ── 长驻 Worker 池 ──
+        private System.Threading.Channels.Channel<FileWorkItem> _fileChannel = null!;
+        private readonly CancellationTokenSource _fileWorkerCts = new();
+        private readonly List<Task> _fileWorkers = new();
+        private int _targetFileWorkers;
+
+        private record struct FileWorkItem(string FilePath, int Index, PresetConfig Config, bool IsRetry,
+            ConcurrentDictionary<int, EncodeResult> Results, SemaphoreSlim DoneSignal);
         private ConsoleCancelEventHandler? _cancelKeyHandler;
 
         private static readonly object _consoleLock = new();
@@ -836,8 +845,8 @@ namespace AvifEncoder
             if (!config.UserSpecifiedMaxJobs)
             {
                 config.MaxJobs = isHardwareEncoder
-                    ? Math.Max(2, cpuCount * 2)               // 硬件编码器可适当提高并行
-                    : Math.Max(2, (int)Math.Sqrt(cpuCount));  // 软件编码器：核心数平方根
+                    ? Math.Max(1, cpuCount)                    // 硬件编码器：用物理核心数，现代CPU有超线程
+                    : Math.Max(1, (int)Math.Sqrt(cpuCount));   // 软件编码器：核心数平方根
             }
             if (config.MaxJobs < 1) config.MaxJobs = 1;
 
@@ -846,6 +855,14 @@ namespace AvifEncoder
             _maxFfmpegConcurrency = config.MaxJobs;
             _ssimConcurrency = new DynamicConcurrencyLimiter(ssimSlots);
             _ffmpegSlots = new DynamicConcurrencyLimiter(config.MaxJobs);
+
+            // ★ 长驻文件 Worker 池
+            _targetFileWorkers = config.MaxJobs;
+            _fileChannel = System.Threading.Channels.Channel.CreateBounded<FileWorkItem>(
+                new System.Threading.Channels.BoundedChannelOptions(config.MaxJobs * 2)
+                { FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait });
+            for (int i = 0; i < config.MaxJobs; i++)
+                _fileWorkers.Add(FileWorkerLoopAsync());
 
             _guiProgress = progress;       // ★ 改为 _guiProgress
 
@@ -891,8 +908,63 @@ namespace AvifEncoder
             int result = _ffmpegSlots.SetMax(Math.Max(1, maxJobs));
             _config.MaxJobs = result;
             _maxFfmpegConcurrency = result;
+            SetFileWorkerCount(result);
             _logger.LogInfo($"[CONCURRENCY] 并行数更新: {result}");
             return result;
+        }
+
+        private void SetFileWorkerCount(int target)
+        {
+            target = Math.Max(1, target);
+            int diff = target - _targetFileWorkers;
+            _targetFileWorkers = target;
+            for (int i = 0; i < diff; i++)
+                _fileWorkers.Add(FileWorkerLoopAsync());
+            for (int i = 0; i < -diff; i++)
+                _fileChannel.Writer.TryWrite(default);  // 毒丸，多余 Worker 看到后退出（TryWrite 不阻塞，满了不影响）
+        }
+
+        private async Task FileWorkerLoopAsync()
+        {
+            try
+            {
+                await foreach (var item in _fileChannel.Reader.ReadAllAsync(
+                    _fileWorkerCts.Token))
+                {
+                    if (item.Config == null)  // 毒丸
+                    {
+                        return;
+                    }
+                    try
+                    {
+                        var r = await ProcessSingleFileAsync(item.FilePath, item.Index, item.Config, item.IsRetry);
+                        if (r != null)
+                            item.Results[r.Index] = r;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInfo($"Worker 异常: {item.FilePath} - {ex.Message}");
+                        var failResult = new EncodeResult
+                        {
+                            Index = item.Index,
+                            FileName = GetOutputFileName(item.FilePath, item.Index),
+                            OriginalFileName = Path.GetFileName(item.FilePath),
+                            InputPath = item.FilePath,
+                            Success = false,
+                            Skipped = false,
+                            ErrorMessage = $"异常: {ex.Message}",
+                            TotalTime = TimeSpan.Zero
+                        };
+                        item.Results[item.Index] = failResult;
+                        MarkProcessed(failResult);
+                    }
+                    finally
+                    {
+                        item.DoneSignal?.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
         }
 
         /// <summary> 判断编码器是否支持 -still-picture 1 参数（AVIF 单帧静止图像标志） </summary>
@@ -1319,6 +1391,9 @@ namespace AvifEncoder
             if (_cancelKeyHandler != null)
                 Console.CancelKeyPress -= _cancelKeyHandler;
             _advancedMetricSemaphore?.Dispose();
+            try { _fileChannel.Writer.Complete(); } catch { }
+            try { _fileWorkerCts.Cancel(); } catch { }
+            try { _fileWorkerCts.Dispose(); } catch { }
             _lockStream?.Dispose();
             GC.SuppressFinalize(this);
         }
