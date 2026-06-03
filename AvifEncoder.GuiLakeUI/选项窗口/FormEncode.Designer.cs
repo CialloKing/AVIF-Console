@@ -250,6 +250,7 @@
             cmbEncoder.DropDownBackdropBlurPasses = 2;
             cmbEncoder.DropDownBackdropBlurRadius = 5;
             cmbEncoder.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbEncoder.DropDownBorderColor = Color.White;
             cmbEncoder.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbEncoder.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbEncoder.DropDownSelectedColor = Color.Transparent;
@@ -264,6 +265,8 @@
             cmbEncoder.TabIndex = 63;
             cmbEncoder.Text = "选择编码器";
             cmbEncoder.ToolTipBackColor = Color.DimGray;
+            cmbEncoder.ToolTipBorderColor = Color.White;
+            cmbEncoder.ToolTipForeColor = Color.White;
             // 
             // cmbConflict
             // 
@@ -350,6 +353,7 @@
             cmbQualityMode.DropDownBackdropBlurPasses = 2;
             cmbQualityMode.DropDownBackdropBlurRadius = 5;
             cmbQualityMode.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbQualityMode.DropDownBorderColor = Color.White;
             cmbQualityMode.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbQualityMode.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbQualityMode.DropDownSelectedColor = Color.Transparent;
@@ -364,6 +368,7 @@
             cmbQualityMode.TabIndex = 59;
             cmbQualityMode.Text = "质量指标";
             cmbQualityMode.ToolTipBackColor = Color.DimGray;
+            cmbQualityMode.ToolTipForeColor = Color.White;
             // 
             // numSearchCpuUsed
             // 
@@ -600,6 +605,7 @@
             cmbMetric.DropDownBackdropBlurPasses = 2;
             cmbMetric.DropDownBackdropBlurRadius = 5;
             cmbMetric.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbMetric.DropDownBorderColor = Color.White;
             cmbMetric.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
             cmbMetric.DropDownSelectedColor = Color.Transparent;
@@ -614,6 +620,7 @@
             cmbMetric.TabIndex = 33;
             cmbMetric.Text = "搜索度量";
             cmbMetric.ToolTipBackColor = Color.DimGray;
+            cmbMetric.ToolTipForeColor = Color.White;
             // 
             // grpCrfMode
             // 

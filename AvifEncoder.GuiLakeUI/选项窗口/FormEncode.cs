@@ -41,9 +41,47 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
         private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
+        private static readonly Dictionary<string, string> _encoderTips = new()
+        {
+            ["libaom-av1"] = "AOMedia 官方参考编码器\n• 压缩率最高，同画质下文件最小\n• 支持完整的 -aom-params 高级参数调优\n• 支持无损模式、still-picture、tile 多线程\n• 速度范围：cpu-used 0(最慢/最高质量)~8(最快)\n• 推荐用于最终归档编码",
+            ["libsvtav1"]  = "Intel 主导的 SVT-AV1 编码器\n• 编码速度显著快于 libaom（3~10倍）\n• 多线程效率高，适合批量处理\n• 速度范围：preset 0(最慢/最高质量)~13(最快)\n• 不支持 -aom-params 高级参数\n• 推荐用于高频日常编码",
+            ["librav1e"]   = "Rust 编写的 AV1 编码器（由 Xiph.Org 维护）\n• 质量与速度均衡，心理视觉调优出色\n• 速度范围：speed 0(最慢)~10(最快)\n• 不支持 tile 分片并行\n• 推荐用于对心理视觉质量有要求的场景",
+            ["av1_nvenc"]  = "NVIDIA GPU 硬件加速 (RTX 30 系列及以上)\n• 编码速度极快（实时），CPU 占用极低\n• 画质略低于软件编码（同等码率下）\n• 仅支持 4:2:0 色度采样\n• 推荐用于快速预览或低延迟需求",
+            ["av1_qsv"]    = "Intel 核显硬件加速 (Quick Sync Video)\n• 第 11 代酷睿及以上支持 AV1 硬件编码\n• 编码速度快，CPU 占用低\n• 画质和参数可控性低于软件编码\n• 推荐用于笔记本低功耗场景",
+            ["av1_amf"]    = "AMD GPU 硬件加速 (Advanced Media Framework)\n• RX 7000 系列及以上支持 AV1 硬件编码\n• 编码速度快，适合游戏录屏/直播\n• 画质和参数可控性低于软件编码\n• 推荐用于 AMD 显卡用户快速转码",
+            ["av1_vaapi"]  = "Linux 通用硬件加速接口 (VA-API)\n• 统一的 Linux 显卡加速框架\n• 支持 Intel/AMD 核显和独显\n• 编码速度取决于具体硬件\n• 推荐用于 Linux 桌面/服务器环境",
+        };
         private static readonly string[] _chromaNames = ["auto", "420", "422", "444"];
         private static readonly string[] _bitDepthNames = ["auto", "8", "10", "12"];
         private static readonly string[] _conflictNames = ["自动重命名", "覆盖已存在文件", "跳过已存在文件"];
+        private static readonly Dictionary<string, string> _metricTips = new()
+        {
+            ["vmaf"]   = "Netflix 感知视频质量评估\n• 合法范围 0~100，越高越好\n• 基于机器学习模型，最接近人眼感知\n• 计算开销较大，但准确性最高\n• 推荐作为默认搜索/质量指标",
+
+            ["ssim"]   = "结构相似性指数 (Structural SIMilarity)\n• 合法范围 0~1，越高越好\n• 完全一致的图像 = 1.0\n• 经典图像质量指标，计算快速\n• 关注亮度、对比度和结构三个维度\n• 适合快速评估和对比",
+
+            ["psnr"]   = "峰值信噪比 Y 通道 (Peak Signal-to-Noise Ratio)\n• 合法范围 0 ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• ≥ 60 dB 时程序会自动用独立滤镜重算（libvmaf 有 60dB 上限）\n• 最传统、计算最快的指标\n• 与人眼感知一致性较差，不推荐作为唯一标准\n• 适合技术对比和基准测试",
+
+            ["msssim"] = "多尺度结构相似性 (Multi-Scale SSIM)\n• 合法范围 0~1，越高越好\n• SSIM 的改进版，在多个分辨率下评估\n• 比单尺度 SSIM 更准确地反映感知质量\n• 计算开销略高于 SSIM",
+
+            ["xpsnr"]  = "加权 XPSNR (Weighted eXtended PSNR)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• 专为 HDR 内容设计的感知质量指标\n• 权重 Y:U:V = 6:1:1\n• 需要 ffmpeg 4.4+ 内置支持\n• 推荐用于 HDR 图像评估",
+
+            ["xpsnr_y"] = "XPSNR 亮度通道 (Y)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 仅评估亮度（明暗）分量\n• 适合黑白图像或亮度对比场景",
+
+            ["xpsnr_u"] = "XPSNR 色度通道 (U)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 仅评估蓝色差分量 (Cb)",
+
+            ["xpsnr_v"] = "XPSNR 色度通道 (V)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 仅评估红色差分量 (Cr)",
+
+            ["xpsnr_w"] = "加权 XPSNR (同 xpsnr)\n• Y:U:V = 6:1:1 加权\n• 合法范围 -∞ ~ +∞ dB，越高越好",
+
+            ["ssimu2"] = "SSIMULACRA 2\n• 合法范围 -∞ ~ +∞，越高越好\n• 高质量编码典型值 50~90\n• 极低质量编码可出现负数\n• 需要外部工具 ssimulacra2.exe\n• 高度准确的感知质量评估\n• 可检测传统指标难以发现的伪影\n• 对模糊、振铃、色块等伪影高度敏感",
+
+            ["butter3"] = "Butteraugli 3-norm\n• 合法范围 0 ~ +∞，越小越好\n• 完全一致的图像 = 0\n• 需要外部工具 butteraugli_main.exe\n• Google 开发的感知差异度量\n• 对 JPEG/AVIF 压缩伪影高度敏感\n• 高质量编码典型值 0.5~3.0\n• 极差质量可达数十甚至数百",
+
+            ["gmsd"]   = "梯度幅值相似度偏差 (Gradient Magnitude Similarity Deviation)\n• 合法范围 0~1（可能略超 1），越小越好\n• 完全一致的图像 = 0\n• 内置实现，无需外部工具\n• 基于图像梯度的感知质量评估\n• 对模糊和边缘失真敏感\n• 计算基于 ffmpeg 解码灰度原始数据",
+
+            ["mix"]    = "综合加权评分 (MixScore)\n• 合法范围 0~1，越高越好\n• 融合 VMAF + SSIM + MS-SSIM + PSNR-Y (+ XPSNR)\n• 无 XPSNR 时：VMAF 80% + MS-SSIM 10% + SSIM 5% + PSNR 5%\n• 有 XPSNR 时：VMAF 50% + XPSNR 32% + MS-SSIM 8% + SSIM 5% + PSNR 5%\n• 推荐用于多维度综合评估和自动决策",
+        };
 
         public FormEncode()
         {
@@ -131,7 +169,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbPreset.Items.AddRange(_presetNames);
 
             cmbEncoder.Items.Clear();
-            cmbEncoder.Items.AddRange(_allEncoderNames);
+            cmbEncoder.ItemToolTips.Clear();
+            foreach (var name in _allEncoderNames)
+            {
+                cmbEncoder.Items.Add(name);
+                cmbEncoder.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(name, _encoderTips.GetValueOrDefault(name, name)));
+            }
             SetComboBoxItem(cmbEncoder, "libaom-av1");
             // 如果有缓存的环境检测结果，用它刷新下拉框
             RefreshEncodersFromDetection();
@@ -149,26 +192,42 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             // 模板预设下拉框
             cmbTemplate.Items.Clear();
-            cmbTemplate.Items.AddRange(new[]
+            cmbTemplate.Items.Clear();
+            cmbTemplate.ItemToolTips.Clear();
+            var templates = new (string template, string tip)[]
             {
-                // 简洁模式
-                "covers-{index}.avif",
-                "{name}.avif",
-                "{index:000}_{name}.avif",
-                // 含编码参数
-                "{name}_{crf}.avif",
-                "{name}_{encoder}_crf{crf}.avif",
-                "{name}_{encoder}_crf{crf}_s{speed}.avif",
-                "{name}_{encoder}_crf{crf}_{pixfmt}.avif",
-                "{name}_{encoder}_crf{crf}_s{speed}_{pixfmt}.avif",
-                // 目录归档
-                "{date}/{name}_{crf}.avif",
-                "{dir}/{name}.avif",
-                // 特殊模式
-                "{name}_lossless.avif",
-                "{name}_{bitdepth}bit.avif",
-                "自定义..."
-            });
+                ("covers-{index}.avif",
+                    "简洁数字序号\n示例: covers-01.avif\n• {index} = 文件序号（支持 {index:000} 补零格式）"),
+                ("{name}.avif",
+                    "保留原始文件名\n示例: photo.avif\n• {name} = 输入文件名（不含扩展名）\n⚠ 同名文件会按冲突策略处理"),
+                ("{index:000}_{name}.avif",
+                    "序号+文件名组合\n示例: 001_photo.avif\n• 兼顾排序和可读性"),
+                ("{name}_{crf}.avif",
+                    "文件名+CRF值\n示例: photo_30.avif\n• {crf} = 实际使用的 CRF 值"),
+                ("{name}_{encoder}_crf{crf}.avif",
+                    "文件名+编码器+CRF\n示例: photo_libaom-av1_crf30.avif\n• {encoder} = 编码器名称"),
+                ("{name}_{encoder}_crf{crf}_s{speed}.avif",
+                    "文件名+编码器+CRF+速度\n示例: photo_libaom-av1_crf30_s4.avif\n• {speed} = 最终编码速度参数"),
+                ("{name}_{encoder}_crf{crf}_{pixfmt}.avif",
+                    "文件名+编码器+CRF+像素格式\n示例: photo_libaom-av1_crf30_yuv444p.avif\n• {pixfmt} = 实际像素格式"),
+                ("{name}_{encoder}_crf{crf}_s{speed}_{pixfmt}.avif",
+                    "文件名+编码器+CRF+速度+格式（全参数）\n示例: photo_libaom-av1_crf30_s4_yuv444p.avif\n• 最完整的参数记录"),
+                ("{date}/{name}_{crf}.avif",
+                    "按日期归档\n示例: 2026-06-03/photo_30.avif\n• {date} = 当前日期 (yyyy-MM-dd)"),
+                ("{dir}/{name}.avif",
+                    "保持原始子目录结构\n示例: 子文件夹/photo.avif\n• {dir} = 输入文件所在子目录名\n• 递归模式下保留完整目录层级"),
+                ("{name}_lossless.avif",
+                    "标注无损模式\n示例: photo_lossless.avif\n• {lossless} = 有损时 'lossy'，无损时 'lossless'"),
+                ("{name}_{bitdepth}bit.avif",
+                    "标注位深\n示例: photo_10bit.avif\n• {bitdepth} = 8 / 10 / 12"),
+                ("自定义...",
+                    "手动输入任意模板\n• 支持占位符: {name} {index} {crf} {encoder} {speed} {pixfmt} {lossless} {bitdepth} {dir} {date} {time} {datetime} {ext}\n• {index} 支持补零: {index:000} → 001"),
+            };
+            foreach (var (template, tip) in templates)
+            {
+                cmbTemplate.Items.Add(template);
+                cmbTemplate.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(template, tip));
+            }
             cmbTemplate.SelectedIndex = 0;
 
             numCrfFix.Minimum = 0; numCrfFix.Maximum = 63;
@@ -178,14 +237,24 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkSearch.Checked = false;
 
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
+            cmbMetric.ItemToolTips.Clear();
+            foreach (var key in MetricRegistry.AllKeys)
+            {
+                cmbMetric.Items.Add(key);
+                cmbMetric.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(key, _metricTips.GetValueOrDefault(key, key)));
+            }
             cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
+            cmbQualityMode.ItemToolTips.Clear();
             cmbQualityMode.Items.Add("无");
-            cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
-                .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
-                .Where(n => n.Length > 0).ToArray());
+            cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("无", "不设质量目标，使用预设默认值\n搜索将使用预设的 SSIM 目标进行 CRF 搜索"));
+            foreach (var key in MetricRegistry.AllKeys)
+            {
+                var displayName = MetricRegistry.Get(key)?.DisplayName ?? key;
+                cmbQualityMode.Items.Add(displayName);
+                cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(displayName, _metricTips.GetValueOrDefault(key, key)));
+            }
             cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
             numQualityValue.Value = 0.95; numQualityValue.DecimalPlaces = 4;
@@ -1453,19 +1522,26 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             if (result == null || !result.FfmpegAvailable) return;
 
             cmbEncoder.Items.Clear();
+            cmbEncoder.ItemToolTips.Clear();
             // 优先显示可用编码器，按固定顺序排列
             var preferredOrder = new[] { "libaom-av1", "libsvtav1", "librav1e",
                                      "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi" };
             foreach (var name in preferredOrder)
             {
                 if (result.Encoders.Any(e => e.Name == name && e.Available))
+                {
                     cmbEncoder.Items.Add(name);
+                    cmbEncoder.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(name, _encoderTips.GetValueOrDefault(name, name)));
+                }
             }
             // 补充检测到的额外编码器（不在预设列表中的）
             foreach (var enc in result.Encoders)
             {
                 if (enc.Available && !preferredOrder.Contains(enc.Name) && !cmbEncoder.Items.Contains(enc.Name))
+                {
                     cmbEncoder.Items.Add(enc.Name);
+                    cmbEncoder.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(enc.Name, _encoderTips.GetValueOrDefault(enc.Name, enc.Name)));
+                }
             }
 
             if (cmbEncoder.Items.Count > 0)
@@ -1478,14 +1554,24 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             var result = AvifEnvironmentChecker.LastResult;
             // 质量指标始终显示全部，但外部工具指标标记情况可通过日志了解
             cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
+            cmbMetric.ItemToolTips.Clear();
+            foreach (var key in MetricRegistry.AllKeys)
+            {
+                cmbMetric.Items.Add(key);
+                cmbMetric.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(key, _metricTips.GetValueOrDefault(key, key)));
+            }
             if (cmbMetric.Items.Count > 0) cmbMetric.SelectedIndex = 0;
 
             cmbQualityMode.Items.Clear();
+            cmbQualityMode.ItemToolTips.Clear();
             cmbQualityMode.Items.Add("无");
-            cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
-                .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
-                .Where(n => n.Length > 0).ToArray());
+            cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("无", "不设质量目标，使用预设默认值\n搜索将使用预设的 SSIM 目标进行 CRF 搜索"));
+            foreach (var key in MetricRegistry.AllKeys)
+            {
+                var displayName = MetricRegistry.Get(key)?.DisplayName ?? key;
+                cmbQualityMode.Items.Add(displayName);
+                cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(displayName, _metricTips.GetValueOrDefault(key, key)));
+            }
             if (cmbQualityMode.Items.Count > 0) cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Enabled = false;
         }
