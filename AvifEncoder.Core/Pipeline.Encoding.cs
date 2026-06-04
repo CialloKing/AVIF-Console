@@ -419,11 +419,9 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------
             string primaries = "bt709";
             string trc = "iec61966-2-1";
-            // 仅当像素格式为 gbr*（planar RGB）时使用 identity matrix，
-            // 其他 YUV 格式（yuv420p, yuv444p 等）使用 bt709。
-            string space = pixFmt.StartsWith("gbr", StringComparison.OrdinalIgnoreCase)
-                                   ? "gbr"
-                                   : "bt709";
+            // RGB planar 输出使用 rgb 矩阵，YUV 输出使用 bt709
+            bool isRgbOutput = pixFmt.StartsWith("gbr", StringComparison.OrdinalIgnoreCase);
+            string space = isRgbOutput ? "rgb" : "bt709";
             string rangeVal = "pc";
 
             // ---------- 探测源文件色彩元数据 ----------
@@ -438,8 +436,21 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                 primaries = p;
                 trc = t;
-                // bt2020 色域统一使用 bt2020nc 矩阵；其他色域直接继承源值
-                space = (p == "bt2020") ? "bt2020nc" : s;
+                // bt2020 色域统一使用 bt2020nc 矩阵
+                if (p == "bt2020")
+                {
+                    space = "bt2020nc";
+                }
+                else
+                {
+                    // ★ 归一化：ffprobe 输出 "gbr" 但 ffmpeg -colorspace 只接受 "rgb"
+                    //    YUV 输出时源文件 RGB 矩阵无意义，使用输出格式对应的默认矩阵
+                    space = s switch
+                    {
+                        "gbr" => isRgbOutput ? "rgb" : "bt709",
+                        _ => s
+                    };
+                }
 
                 // range 始终允许继承
                 if (!string.IsNullOrWhiteSpace(srcColor.Value.range))

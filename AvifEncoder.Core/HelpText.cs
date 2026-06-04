@@ -10,7 +10,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   AvifEncoder -i <目录> -o <目录> [选项]
 
 支持的输入格式（默认）:
-    "".jpg"", "".jpeg"", "".png"", "".webp""
+    "".jpg"", "".jpeg"", "".png"", "".webp"", "".gif""
     如需其他格式请使用 --extensions 指定
 
 输入过滤:
@@ -662,7 +662,7 @@ ffmpeg 命令预览  -> 文本框 txtParamsPreview（选项页，只读）
 
   指定要处理的图片文件格式。
 
-  默认值：.jpg,.jpeg,.png,.webp
+  默认值：.jpg,.jpeg,.png,.webp,.gif
   自定义：用英文逗号分隔，如 .jpg,.png,.bmp,.tiff
 
   注意事项：

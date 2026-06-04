@@ -132,7 +132,7 @@ namespace AvifEncoder
 
         /// <summary>默认支持的图片扩展名全集（12 种）</summary>
         public static readonly string[] DefaultInputExtensions =
-            { ".jpg", ".jpeg", ".png", ".webp" };
+            { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
 
         // 在 PresetConfig 类中添加
         public bool SerialEncode { get; set; } = false;

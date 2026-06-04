@@ -207,9 +207,11 @@ namespace AvifEncoder
                             double? butter3 = null;
                             double? gmsd = null;
 
-                            string? refPng = await ConvertToPngAsync(srcPath, tempDir);
                             string refClean = await SanitizePngIfNeededAsync(
                                 srcPath, tempDir);
+                            string? refPng = Path.GetExtension(refClean).ToLower() == ".png"
+                                ? refClean
+                                : await ConvertToPngAsync(refClean, tempDir);
 
                             if (EncoderUtils.FindExecutable("ssimulacra2") != null
                                 && refPng != null)

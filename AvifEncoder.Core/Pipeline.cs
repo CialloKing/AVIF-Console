@@ -254,22 +254,21 @@ namespace AvifEncoder
         private static int FindIendEndOffset(byte[] bytes)
         {
             // 标准 IEND chunk: 长度 0 (4 bytes) + "IEND" (4 bytes) + CRC (4 bytes)
-            int limit = bytes.Length - 12; // 至少需要 8 字节的块 + 最后可能的 CRC
+            // ★ 反向扫描：PNG 规范保证 IEND 是最后一个 chunk，从末尾向前找可避免
+            //    像素数据中误匹配 0x00 0x00 0x00 0x00 "IEND" 字节序列
+            int limit = bytes.Length - 12;
 
-            for (int i = 0; i <= limit; i++)
+            for (int i = limit; i >= 0; i--)
             {
                 if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
                 {
-                    // 找到 "IEND"，检查前 4 字节是否为 0（块长度必须为 0）
                     if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
                     {
-                        // IEND 块结束 = 类型起始 + 8（类型 + CRC）
                         return i + 8;
                     }
                 }
             }
 
-            // 未找到任何有效 IEND 块
             return -1;
         }
 
@@ -289,7 +288,6 @@ namespace AvifEncoder
                 {
                     _fs.CreateDirectory(advancedTempDir);
                     string? cleanRef = await SanitizePngIfNeededAsync(refPath, advancedTempDir);
-                    bool ownClean = cleanRef != refPath;
 
                     string? refPng = cleanRef;
                     if (Path.GetExtension(cleanRef).ToLower() != ".png")
@@ -336,7 +334,7 @@ namespace AvifEncoder
                         catch (Exception ex) { _logger.LogInfo($"[ADV] GMSD FAIL {advName}: {ex.Message}"); }
                     }
 
-                    if (ownClean && _fs.FileExists(cleanRef))
+                    if (cleanRef != refPath && _fs.FileExists(cleanRef))
                         try { _fs.DeleteFile(cleanRef); } catch { }
                 }
                 finally

@@ -54,17 +54,26 @@
             // 
             // thisIsYourWindow1
             // 
-            thisIsYourWindow1.BackdropBlurPasses = 2;
+            thisIsYourWindow1.BackdropBlurPasses = 1;
             thisIsYourWindow1.BackdropBlurRadius = 5;
+            thisIsYourWindow1.BackdropDownsampleFactor = 8;
             thisIsYourWindow1.BackdropImage = (Image)resources.GetObject("thisIsYourWindow1.BackdropImage");
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;
-            thisIsYourWindow1.BackdropTintColor = Color.FromArgb(100, 32, 32, 32);
-            thisIsYourWindow1.BackdropTintInactiveColor = Color.FromArgb(100, 32, 32, 32);
-            thisIsYourWindow1.BorderInactiveColor = Color.Transparent;
+            thisIsYourWindow1.BackdropNoiseOpacity = 10;
+            thisIsYourWindow1.BackdropTintColor = Color.FromArgb(80, 0, 0, 0);
+            thisIsYourWindow1.BackdropTintInactiveColor = Color.FromArgb(80, 0, 0, 0);
+            thisIsYourWindow1.BorderColor = Color.FromArgb(118, 106, 183);
+            thisIsYourWindow1.BorderInactiveColor = Color.FromArgb(118, 106, 183);
+            thisIsYourWindow1.CaptionBackColor = Color.Transparent;
             thisIsYourWindow1.CaptionButtonGlyphColor = Color.FromArgb(200, 200, 200);
             thisIsYourWindow1.CaptionHeight = 40;
             thisIsYourWindow1.CaptionInactiveBackColor = Color.Transparent;
             thisIsYourWindow1.CloseButtonGlyphColor = Color.FromArgb(200, 200, 200);
+            thisIsYourWindow1.LayerShadowColor = Color.FromArgb(118, 106, 183);
+            thisIsYourWindow1.LayerShadowDepth = 10;
+            thisIsYourWindow1.LayerShadowOpacity = 200;
+            thisIsYourWindow1.LayerShadowResizeFullArea = true;
+            thisIsYourWindow1.ShadowMode = LakeUI.ThisIsYourWindow.ShadowModeEnum.Layer;
             // 
             // Form1
             // 
