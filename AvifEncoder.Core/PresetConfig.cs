@@ -34,6 +34,9 @@ namespace AvifEncoder
         /// </summary>
         public string? EncoderCustomParams { get; set; }
 
+        /// <summary>动图完整编码命令模板（来自 txtAnimatedCommand）。null 时使用硬编码逻辑。</summary>
+        public string? AnimatedCommand { get; set; }
+
         /// <summary>
         /// 编码降噪值。0=关闭。
         /// libaom: 根据 ArNrUseMaxFrames 映射为 arnr-strength(0-6) 或 arnr-max-frames(0-15)
@@ -148,6 +151,8 @@ namespace AvifEncoder
         public bool DryRun { get; set; } = false;
         public bool Verbose { get; set; } = false;
         public bool Resume { get; set; } = false;
+
+
 
 
 

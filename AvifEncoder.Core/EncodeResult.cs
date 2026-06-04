@@ -52,5 +52,10 @@ namespace AvifEncoder
 
         public int SearchEvaluations { get; set; }
         public string InputPath { get; set; } = "";
+
+        // 动图相关
+        public bool IsAnimated { get; set; }
+        public int FrameCount { get; set; } = 1;
+        public double Fps { get; set; }
     }
 }

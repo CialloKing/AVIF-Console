@@ -15,7 +15,8 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
 输入过滤:
   -x, --extensions <.ext,.ext> 限制输入图片格式，逗号分隔 (例: "".jpg,.png"")
-                               默认 4 种，可选: bmp tif tiff gif jp2 j2k jpx avif
+                               默认 5 种，可选: bmp tif tiff gif jp2 j2k jpx avif
+                              GIF 动图自动检测帧数，编码为动画 AVIF
 
 主要选项:
   -i, --input <目录>           输入目录 (默认: input)
@@ -733,11 +734,12 @@ ffmpeg 命令预览  -> 文本框 txtParamsPreview（选项页，只读）
   .session/                        断点续传数据（正常完成自动清理）
 
   CSV 报告包含以下栏目：
-    文件名、原始大小(字节)、输出大小(字节)、压缩率、源文件宽、源文件长、CRF、
+    文件名、原始大小(字节)、输出大小(字节)、压缩率、源文件宽、源文件长、动图、帧数、FPS、CRF、
     SSIM、VMAF、PSNR-Y、MS-SSIM、MixScore、
     XPSNR-Y/U/V/W、SSIMULACRA2、Butteraugli_Raw/3norm、
     GMSD、编码耗时、搜索耗时、重试次数、像素格式、
     安全模式、AOM 参数、缓存复用、状态、失败原因
+    （动图的质量指标为所有帧的平均值）
 
 ═══════════════════════════════════════
 

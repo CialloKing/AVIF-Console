@@ -31,6 +31,12 @@ namespace AvifEncoder
         public string? ColorTransfer { get; set; }
         public string? ColorSpace { get; set; }
         public string? ColorRange { get; set; }
+
+        // 动图相关
+        public bool IsAnimated { get; set; }
+        public int FrameCount { get; set; } = 1;
+        public double Duration { get; set; }
+        public double Fps { get; set; }
     }
 
 
@@ -1405,6 +1411,9 @@ namespace AvifEncoder
 
         private readonly ConcurrentDictionary<string, Task<ProbeInfo?>> _probeCache = new();
 
+        /// <summary>每文件异步流范围内的动图标记（线程安全，替代共享字段）</summary>
+        private readonly System.Threading.AsyncLocal<bool> _isAnimatedFile = new();
+
         private Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             string key = GetNormalizedPathForCache(filePath);
@@ -1413,8 +1422,8 @@ namespace AvifEncoder
 
         private async Task<ProbeInfo?> ProbeFileCoreAsync(string filePath)
         {
-            // 一次性 ffprobe 获取所有信息
-            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range -of json \"{filePath}\"";
+            // 一次性 ffprobe 获取所有信息（含动图帧数）
+            string args = $"-v error -count_frames -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range,nb_read_frames,duration,r_frame_rate -of json \"{filePath}\"";
             string json = await RunProbeAsync(_ffprobePath, args);
             if (string.IsNullOrEmpty(json)) return null;
 
@@ -1435,6 +1444,26 @@ namespace AvifEncoder
                     "rgba64le" or "bgra64le" => true,
                     _ => false
                 };
+
+                // 动图检测
+                int frameCount = 1;
+                if (stream.TryGetProperty("nb_read_frames", out var nbf) && nbf.TryGetInt32(out int fc))
+                    frameCount = Math.Max(1, fc);
+                double duration = 0;
+                if (stream.TryGetProperty("duration", out var dur) && dur.TryGetDouble(out double d))
+                    duration = d;
+                double fps = 0;
+                if (stream.TryGetProperty("r_frame_rate", out var rfr))
+                {
+                    string? rfrStr = rfr.GetString();
+                    if (!string.IsNullOrEmpty(rfrStr))
+                    {
+                        var parts = rfrStr.Split('/');
+                        if (parts.Length == 2 && double.TryParse(parts[0], out double num) && double.TryParse(parts[1], out double den) && den > 0)
+                            fps = num / den;
+                    }
+                }
+                bool isAnimated = frameCount > 1 || duration > 0.5;
 
                 // 尝试提取色彩字段，忽略 unknown/reserved
                 static string? TryGetStringProperty(JsonElement element, string propertyName)
@@ -1461,7 +1490,11 @@ namespace AvifEncoder
                     ColorPrimaries = colorPrimaries,
                     ColorTransfer = colorTransfer,
                     ColorSpace = colorSpace,
-                    ColorRange = colorRange
+                    ColorRange = colorRange,
+                    IsAnimated = isAnimated,
+                    FrameCount = frameCount,
+                    Duration = duration,
+                    Fps = fps
                 };
                 return info;
             }
@@ -1505,7 +1538,8 @@ namespace AvifEncoder
         /// 使用 libvmaf 一次性计算 ref (原图) 与 dist (编码后) 的 SSIM / PSNR?Y / MS?SSIM / VMAF。
         /// 返回 QualityMetrics，失败返回 null。会自动处理分辨率不一致的情况（缩放至相同尺寸）。
         /// </summary>
-        private async Task<QualityMetrics?> ComputeAllMetricsAsync(string refPath, string distPath)
+        private async Task<QualityMetrics?> ComputeAllMetricsAsync(string refPath, string distPath,
+            bool isAnimated = false)
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
@@ -1538,8 +1572,9 @@ namespace AvifEncoder
                              $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
                 }
 
+                string frameLimit = isAnimated ? "" : "-frames:v 1";
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
-                              $"-filter_complex \"{filter}\" -frames:v 1 -f null -";
+                              $"-filter_complex \"{filter}\" {frameLimit} -f null -";
 
                 var timeout = TimeSpan.FromMinutes(_config.SsimTimeoutMinutes);
                 var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
@@ -2679,6 +2714,11 @@ namespace AvifEncoder
                 {
                     bool is10bit = fmt.Contains("16") || fmt.Contains("10");
                     fmt = is10bit ? "yuv420p10le" : "yuv420p";
+                }
+                else if (fmt == "pal8" || fmt.StartsWith("pal"))
+                {
+                    // GIF 调色板格式 → yuv444p（保留清晰边缘）
+                    fmt = "yuv444p";
                 }
                 else if (fmt.Contains("yuvj"))
                 {

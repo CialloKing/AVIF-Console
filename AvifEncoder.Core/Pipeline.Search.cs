@@ -682,6 +682,9 @@ namespace AvifEncoder
         FormatMetric(r.CompressionRatio),
         r.Width.ToString(CultureInfo.InvariantCulture),
         r.Height.ToString(CultureInfo.InvariantCulture),
+        r.IsAnimated ? "是" : "否",
+        r.FrameCount.ToString(CultureInfo.InvariantCulture),
+        r.Fps > 0 ? r.Fps.ToString("F2", CultureInfo.InvariantCulture) : "",
         r.UsedCRF.ToString(CultureInfo.InvariantCulture),
         FormatMetric(r.FinalSSIM),
         vmaf,
@@ -784,17 +787,17 @@ namespace AvifEncoder
                             if (mk == fileName || merged[mk].Contains(fileName))
                             {
                                 var cols = SplitCsvLine(merged[mk]);
-                                if (cols.Length >= 21)
+                                if (cols.Length >= 24)
                                 {
                                     var m = kv.Value;
-                                    if (m.XPSNR_Y.HasValue) cols[13] = FormatDbValue(m.XPSNR_Y.Value);
-                                    if (m.XPSNR_U.HasValue) cols[14] = FormatDbValue(m.XPSNR_U.Value);
-                                    if (m.XPSNR_V.HasValue) cols[15] = FormatDbValue(m.XPSNR_V.Value);
-                                    if (m.W_XPSNR.HasValue) cols[16] = FormatDbValue(m.W_XPSNR.Value);
-                                    if (m.SSIMULACRA2.HasValue) cols[17] = FormatMetric(m.SSIMULACRA2.Value);
-                                    if (m.Butteraugli_Raw.HasValue) cols[18] = FormatMetric(m.Butteraugli_Raw.Value);
-                                    if (m.Butteraugli_3norm.HasValue) cols[19] = FormatMetric(m.Butteraugli_3norm.Value);
-                                    if (m.GMSD.HasValue) cols[20] = FormatMetric(m.GMSD.Value);
+                                    if (m.XPSNR_Y.HasValue) cols[16] = FormatDbValue(m.XPSNR_Y.Value);
+                                    if (m.XPSNR_U.HasValue) cols[17] = FormatDbValue(m.XPSNR_U.Value);
+                                    if (m.XPSNR_V.HasValue) cols[18] = FormatDbValue(m.XPSNR_V.Value);
+                                    if (m.W_XPSNR.HasValue) cols[19] = FormatDbValue(m.W_XPSNR.Value);
+                                    if (m.SSIMULACRA2.HasValue) cols[20] = FormatMetric(m.SSIMULACRA2.Value);
+                                    if (m.Butteraugli_Raw.HasValue) cols[21] = FormatMetric(m.Butteraugli_Raw.Value);
+                                    if (m.Butteraugli_3norm.HasValue) cols[22] = FormatMetric(m.Butteraugli_3norm.Value);
+                                    if (m.GMSD.HasValue) cols[23] = FormatMetric(m.GMSD.Value);
                                     merged[mk] = string.Join(",", cols.Select(f => CsvEscape(f)));
                                     patched++;
                                 }

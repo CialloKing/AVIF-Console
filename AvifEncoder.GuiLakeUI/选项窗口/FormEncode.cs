@@ -1121,6 +1121,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     config.Denoise = optsPage.Denoise;
                     config.ArNrUseMaxFrames = optsPage.GetArNrUseMaxFrames();
                     config.RgbMode = optsPage.GetRgbMode();
+                    config.AnimatedCommand = string.IsNullOrWhiteSpace(optsPage.GetAnimatedCommand())
+                        ? null : optsPage.GetAnimatedCommand();
                 }
             }
             config.UsePriorSearch = chkPriorSearch.Checked;
@@ -1387,6 +1389,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     cfg.EncodeDryRun = optsPage.DryRun;
                     cfg.EncodeVerbose = optsPage.VerboseOutput;
                     cfg.EncodeEncoderParams = optsPage.GetEncoderCustomParams();
+                    cfg.EncodeAnimatedCommand = optsPage.GetAnimatedCommand();
                     cfg.EncodeDenoise = optsPage.Denoise;
                     cfg.EncodeArNrUseMaxFrames = optsPage.GetArNrUseMaxFrames();
                     cfg.EncodeRgbMode = OptionsPage?.GetRgbMode();
@@ -1551,6 +1554,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             optsPage.SetArNrUseMaxFrames(auf.GetBoolean());
                         if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetRgbMode(rgb.GetString());
+                        if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != System.Text.Json.JsonValueKind.Null)
+                            optsPage.SetAnimatedCommand(ac.GetString() ?? "");
                     }
                 }
                 if (cfg.TryGetProperty("SweepMode", out var sw)) chkSweep.Checked = sw.GetBoolean();

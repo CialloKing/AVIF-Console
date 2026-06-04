@@ -12,6 +12,9 @@
         public int TileCols { get; set; }
         public int BaseCrf { get; set; }
         public bool HasAlpha { get; set; } = false;
+        public bool IsAnimated { get; set; }
+        public int FrameCount { get; set; } = 1;
+        public double Fps { get; set; }
     }
 
     internal class CRFSearchResult

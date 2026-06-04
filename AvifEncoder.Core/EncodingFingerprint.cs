@@ -10,7 +10,7 @@ namespace AvifEncoder
     public readonly record struct EncodingFingerprint
     {
         /// <summary>缓存 Key 格式版本。格式变更时递增此值，自动失效所有旧缓存。</summary>
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         public int Version { get; init; }
         public string NormalizedPath { get; init; }
@@ -30,6 +30,7 @@ namespace AvifEncoder
         public int Denoise { get; init; }
         public bool ArNrUseMaxFrames { get; init; }
         public string? RgbMode { get; init; }
+        public int FrameCount { get; init; }
 
         /// <summary>
         /// 指标模式（仅指标缓存使用，编码缓存留空）。
@@ -54,7 +55,8 @@ namespace AvifEncoder
             string aomParams, bool isJpeg, int bitDepth,
             int width, int height, string rowMt,
             string encoder, string? encoderCustomParams,
-            int denoise, bool arnrUseMaxFrames, string? rgbMode)
+            int denoise, bool arnrUseMaxFrames, string? rgbMode,
+            int frameCount = 1)
         {
             return new EncodingFingerprint
             {
@@ -75,7 +77,8 @@ namespace AvifEncoder
                 EncoderCustomParams = encoderCustomParams,
                 Denoise = denoise,
                 ArNrUseMaxFrames = arnrUseMaxFrames,
-                RgbMode = rgbMode
+                RgbMode = rgbMode,
+                FrameCount = frameCount
             };
         }
 
@@ -85,7 +88,8 @@ namespace AvifEncoder
             string aomParams, bool isJpeg, int bitDepth,
             int width, int height, string rowMt, string metricMode,
             string encoder, string? encoderCustomParams,
-            int denoise, bool arnrUseMaxFrames, string? rgbMode)
+            int denoise, bool arnrUseMaxFrames, string? rgbMode,
+            int frameCount = 1)
         {
             return new EncodingFingerprint
             {
@@ -107,7 +111,8 @@ namespace AvifEncoder
                 EncoderCustomParams = encoderCustomParams,
                 Denoise = denoise,
                 ArNrUseMaxFrames = arnrUseMaxFrames,
-                RgbMode = rgbMode
+                RgbMode = rgbMode,
+                FrameCount = frameCount
             };
         }
     }

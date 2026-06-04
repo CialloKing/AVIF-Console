@@ -71,6 +71,9 @@ namespace AvifEncoder
                 var scaling = await HandlePreScalingAsync(inputPath, config, name);
                 string workingInput = scaling.WorkingPath;
 
+                // ★ 动图标记（AsyncLocal，遍历模式 Task.Run 会自动继承）
+                _isAnimatedFile.Value = encInfo.IsAnimated;
+
                 // 3. 为当前文件创建所有 CRF 任务，用信号量控制文件内并发
                 using var semaphore = new SemaphoreSlim(config.MaxJobs);
                 var crfTasks = new List<Task>();
@@ -184,7 +187,10 @@ namespace AvifEncoder
                                 // FinalADM = metrics?.ADM,       // 暂不可用
                                 AomParamsUsed = actualAom ?? config.GetEffectiveAomParams(),
                                 AdvancedMetricsCacheKey = sweepCacheKey,
-                                SearchEvaluations = 0
+                                SearchEvaluations = 0,
+                                IsAnimated = encInfo.IsAnimated,
+                                FrameCount = encInfo.FrameCount,
+                                Fps = encInfo.Fps
                             };
 
                             // 标注 AOM 参数降级
@@ -298,6 +304,9 @@ namespace AvifEncoder
                                       inputPath, "无法获取分辨率", fileStartTime);
 
                 SafeWriteLine($"[START] {name} [{encInfo.PixInfo}]");
+
+                // ★ 动图标记（AsyncLocal，无竞态）
+                _isAnimatedFile.Value = encInfo.IsAnimated;
 
                 // 搜索 + 最终编码
                 var swTotal = System.Diagnostics.Stopwatch.StartNew();
@@ -430,6 +439,7 @@ namespace AvifEncoder
             }
             finally
             {
+                _isAnimatedFile.Value = false;  // 重置
                 if (scaling.TempFilePath != null)
                     try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
             }
@@ -592,7 +602,9 @@ namespace AvifEncoder
             QualityMetrics? metrics = null;
             try
             {
-                metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath);
+                // 动图：逐帧计算，libvmaf 自动输出所有帧的平均值
+                metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath,
+                    isAnimated: encInfo.IsAnimated);
             }
             catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
 
@@ -1056,7 +1068,12 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 // FinalADM = metrics?.ADM,       // 暂不可用
 
                 SearchEvaluations = searchResult.SearchEvalCount,
-                AdvancedMetricsCacheKey = advancedCacheKey
+                AdvancedMetricsCacheKey = advancedCacheKey,
+
+                // 动图字段
+                IsAnimated = encInfo.IsAnimated,
+                FrameCount = encInfo.FrameCount,
+                Fps = encInfo.Fps
             };
 
             // 标注 AOM 参数降级
@@ -1227,7 +1244,10 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 IsLosslessMode = isLosslessMode,
                 TileCols = tileCols,
                 BaseCrf = crf,
-                HasAlpha = hasAlpha
+                HasAlpha = hasAlpha,
+                IsAnimated = probe?.IsAnimated ?? false,
+                FrameCount = probe?.FrameCount ?? 1,
+                Fps = probe?.Fps ?? 0
             };
         }
     }

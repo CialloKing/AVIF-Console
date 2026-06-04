@@ -469,10 +469,50 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             // ── 用户自定义编码器参数（含完整 CLI 前缀） ──
             string customPart = cfg.EncoderCustomParams ?? "";
 
+            // ── 动图模板：用户自定义完整命令 ──
+            if (_isAnimatedFile.Value && !string.IsNullOrEmpty(cfg.AnimatedCommand))
+            {
+                string cmd = cfg.AnimatedCommand
+                    .Replace("{PIXFMT}", actualPixFmt)
+                    .Replace("{CRF}", crf.ToString())
+                    .Replace("{COLORMETA}", colorMeta)
+                    .Replace("INPUT.gif", EncodeHelpers.EscapeArg(input))
+                    .Replace("INPUT.GIF", EncodeHelpers.EscapeArg(input))
+                    .Replace("OUTPUT.avif", EncodeHelpers.EscapeArg(output))
+                    .Replace("OUTPUT.AVIF", EncodeHelpers.EscapeArg(output));
+                return cmd;
+            }
+
+            // ── 动图 + Alpha：filter_complex 双流映射 ──
+            bool hasAlpha = actualPixFmt.Contains('a') || actualPixFmt.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
+            if (_isAnimatedFile.Value && hasAlpha && encoder.SupportsStillPicture)
+            {
+                string cleanPixFmt = actualPixFmt.Replace("a", "");
+                string filterComplex = $"-filter_complex \"[0:v]format=yuva444p10le,split=2[c][a];[a]alphaextract[alpha]\"";
+                string colorMap = $"-map \"[c]\" -c:v:0 {cfg.Encoder} -pix_fmt {cleanPixFmt}";
+                string alphaMap = $"-map \"[alpha]\" -c:v:1 {cfg.Encoder} -pix_fmt gray10le";
+                return $"{logLevel} -i \"{EncodeHelpers.EscapeArg(input)}\" " +
+                       $"{filterComplex} " +
+                       $"{colorMap} {rangeArg} {colorMeta} " +
+                       $"{crfPart} {bitrateGuard} {encoderSpecific} " +
+                       $"{alphaMap} " +
+                       $"-vsync vfr {aomCombined} {customPart} {threadsArg} -y \"{EncodeHelpers.EscapeArg(output)}\"";
+            }
+
+            // ── 动图：去掉单帧限制 ──
+            string framesPart = "-frames:v 1";
+            string animPart = "";
+            if (_isAnimatedFile.Value)
+            {
+                stillPic = "";           // 动图不用 still-picture
+                framesPart = "";         // 动图不限制帧数
+                animPart = "-vsync vfr"; // 保留原始帧率
+            }
+
             return $"{logLevel} -i \"{EncodeHelpers.EscapeArg(input)}\" " +
                    $"-c:v {cfg.Encoder} -pix_fmt {actualPixFmt} {rangeArg} {colorMeta} " +
                    $"{crfPart} {bitrateGuard} {encoderSpecific} " +
-                   $"{stillPic} -frames:v 1 {aomCombined} {customPart} {threadsArg} -y \"{EncodeHelpers.EscapeArg(output)}\"";
+                   $"{stillPic} {framesPart} {animPart} {aomCombined} {customPart} {threadsArg} -y \"{EncodeHelpers.EscapeArg(output)}\"";
         }
 
         private static string CsvEscape(string field)

@@ -264,7 +264,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     // 提前获取分辨率，用于合法 tile 计算
                     var (w, h) = await GetResolutionAsync(inputPath);
 
-                    string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart, w);
+                    string args = BuildSafeModeArgs(inputPath, tmpAvif, config, testCrf, aomPart, w, _isAnimatedFile.Value);
                     (bool ok, string _) = await RunFfmpegExAsync(_ffmpegPath, args,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !_fs.FileExists(tmpAvif) || _fs.GetFileLength(tmpAvif) < 100) return -1;
@@ -398,7 +398,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
         /// 若启用了 SerialEncode，则强制 tile=0 且关闭 row?mt。
         /// </summary>
         private static string BuildSafeModeArgs(string inputPath, string outputPath, PresetConfig config,
-                                 int crf, string aomPart, int imageWidth)
+                                 int crf, string aomPart, int imageWidth, bool isAnimated = false)
         {
             bool useStillPic = Av1EncoderFactory.Get(config.Encoder).SupportsStillPicture;
             string stillPic = useStillPic ? "-still-picture 1" : "";
@@ -431,10 +431,16 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             string safePixFmt = config.BitDepth >= 12 ? "yuv420p12le"
                 : config.BitDepth >= 10 ? "yuv420p10le" : "yuv420p";
+
+            // 动图：去掉单帧限制
+            string safeStillPic = isAnimated ? "" : stillPic;
+            string safeFramesPart = isAnimated ? "" : "-frames:v 1";
+            string safeAnimPart = isAnimated ? "-vsync vfr" : "";
+
             return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
                    $"-c:v {config.Encoder} -pix_fmt {safePixFmt} " +
                    $"-crf {crf} -b:v 0 {encArgs} " +
-                   $"-color_range pc {stillPic} -frames:v 1 {aomPart} {threadsArg} -y \"{outputPath}\"";
+                   $"-color_range pc {safeStillPic} {safeFramesPart} {safeAnimPart} {aomPart} {threadsArg} -y \"{outputPath}\"";
         }
 
 
@@ -478,7 +484,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             {
                 SafeWriteLine($" [WARN] [{name}] 常规/降级均失败，尝试最终安全模式（yuv420p）...");
                 // 构建安全模式参数，传入图像宽度以满足 tile 合法性
-                string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, encInfo.Width);
+                string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, encInfo.Width, _isAnimatedFile.Value);
                 var swSafe = Stopwatch.StartNew();
                 (bool safeOk, string safeErr) = await RunFfmpegExAsync(_ffmpegPath, safeArgs, TimeSpan.FromMinutes(timeoutMinutes * 2));
                 swSafe.Stop();
@@ -531,7 +537,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             var startTime = DateTime.Now;
             int crf = searchResult.Crf;
 
-            string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, imageWidth);
+            string safeArgs = BuildSafeModeArgs(inputPath, outputPath, config, crf, aomPart, imageWidth, _isAnimatedFile.Value);
 
             var swSafe = Stopwatch.StartNew();
             (bool success, string failReason) = await RunFfmpegExAsync(_ffmpegPath, safeArgs, TimeSpan.FromMinutes(timeoutMinutes));
