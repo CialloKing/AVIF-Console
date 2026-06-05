@@ -60,7 +60,8 @@ namespace AvifEncoder
                 if (!encResult.ok || !_fs.FileExists(tmpOutput) || _fs.GetFileLength(tmpOutput) < 100)
                     return -1;
 
-                QualityMetrics? m = await ComputeAllMetricsAsync(input, tmpOutput);
+                QualityMetrics? m = await ComputeAllMetricsAsync(input, tmpOutput,
+                    isAnimated: _isAnimatedFile.Value);
                 if (m == null) return -1;
 
                 return GetSearchScore(m, cfg.MetricMode ?? "vmaf");

@@ -269,13 +269,13 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                            PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName,
                            string cacheKey, string cacheFile)
         {
-            _logger.LogSearch($"  ? [{fileName}] 等待编码资源 (CRF={crf})...");
+            _logger.LogSearch($"  [ENCODE] [{fileName}] 等待编码资源 (CRF={crf})...");
             bool slotTaken = false;
             try
             {
                 if (!await _ffmpegSlots.WaitAsync(TimeSpan.FromSeconds(300), _globalCts?.Token ?? default))
                 {
-                    _logger.LogSearch($"? 编码信号量获取超时: {input} CRF={crf}");
+                    _logger.LogSearch($"[ENCODE] 编码信号量获取超时: {input} CRF={crf}");
                     return (false, TimeSpan.Zero, 0, "编码信号量获取超时", false, null, null);
                 }
                 slotTaken = true;
@@ -285,7 +285,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 if (jitterMs > 0)
                     await Task.Delay(jitterMs, _globalCts?.Token ?? default);
 
-                _logger.LogSearch($"  ? [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
+                _logger.LogSearch($"  [ENCODE] [{fileName}] 开始编码 (CRF={crf}, pix={currentPixFmt})");
 
                 // ★ 原子重命名：先写到临时文件，成功后再 rename 到最终路径
                 string outputDir = Path.GetDirectoryName(output) ?? ".";
@@ -472,14 +472,20 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             // ── 动图模板：用户自定义完整命令 ──
             if (_isAnimatedFile.Value && !string.IsNullOrEmpty(cfg.AnimatedCommand))
             {
+                // filter_complex 已提取 Alpha 到独立流，颜色流去掉 'a' 避免 libaom 拒绝
+                string templatePixFmt = actualPixFmt.Replace("a", "");
                 string cmd = cfg.AnimatedCommand
-                    .Replace("{PIXFMT}", actualPixFmt)
+                    .Replace("{PIXFMT}", templatePixFmt)
                     .Replace("{CRF}", crf.ToString())
                     .Replace("{COLORMETA}", colorMeta)
                     .Replace("INPUT.gif", EncodeHelpers.EscapeArg(input))
                     .Replace("INPUT.GIF", EncodeHelpers.EscapeArg(input))
                     .Replace("OUTPUT.avif", EncodeHelpers.EscapeArg(output))
                     .Replace("OUTPUT.AVIF", EncodeHelpers.EscapeArg(output));
+                // ★ 模板以 "ffmpeg" 开头（用于预览展示），编码时去掉（args 不含二进制路径）
+                if (cmd.StartsWith("ffmpeg ", StringComparison.OrdinalIgnoreCase))
+                    cmd = cmd.Substring(7);
+                _logger.LogInfo($"[ANIM] 使用动图模板命令: {cmd}");
                 return cmd;
             }
 
@@ -507,6 +513,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 stillPic = "";           // 动图不用 still-picture
                 framesPart = "";         // 动图不限制帧数
                 animPart = "-vsync vfr"; // 保留原始帧率
+                _logger.LogInfo($"[ANIM] 硬编码动图命令 (isAnimated={_isAnimatedFile.Value})");
             }
 
             return $"{logLevel} -i \"{EncodeHelpers.EscapeArg(input)}\" " +

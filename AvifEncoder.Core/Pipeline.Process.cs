@@ -381,7 +381,7 @@ namespace AvifEncoder
                         }
 
                         _logger.LogInfo(
-                            $"?? 无损验证失败：{verReport.ToSummary()} ({name})");
+                            $"[VERIFY] 无损验证失败：{verReport.ToSummary()} ({name})");
                         SafeWriteLine(
                             $" [FAIL] [{name}] 无损验证失败，" +
                             $"{verReport.FailureType}，" +
@@ -530,34 +530,32 @@ namespace AvifEncoder
                     catch (Exception ex) { _logger.LogInfo($"PSNR 上限重算异常: {ex.Message}"); }
                 }
 
-                // XPSNR 后台异步计算（不阻塞主流程）
-                if (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
-                    !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue)
+                // XPSNR 同步计算（确保 BuildResult 时已就绪）
+                // ★ 动图 XPSNR 在高级指标后台任务中逐帧计算，这里跳过
+                if (!encInfo.IsAnimated &&
+                    (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
+                     !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue))
                 {
-                    var xKey = cacheKey;
-                    var xTask = Task.Run(async () =>
+                    try
                     {
-                        try
+                        var (y, u, v, weighted) = await ComputeXPSNRAsync(
+                            workingInputPath, outputPath, "yuv444p",
+                            isAnimated: encInfo.IsAnimated);
+                        _cache.UpdateMetrics(cacheKey, m =>
                         {
-                            var (y, u, v, weighted) = await ComputeXPSNRAsync(
-                                workingInputPath, outputPath, "yuv444p");
-                            _cache.UpdateMetrics(xKey, m =>
-                            {
-                                m.XPSNR_Y = y; m.XPSNR_U = u;
-                                m.XPSNR_V = v; m.W_XPSNR = weighted;
-                            });
-                            _logger.LogInfo(
-                                $"XPSNR 后台完成: Y={y?.ToString("F4")}, " +
-                                $"U={u?.ToString("F4")}, V={v?.ToString("F4")}, " +
-                                $"W={weighted?.ToString("F4")}");
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogInfo($"XPSNR 后台异常: {ex.Message}");
-                        }
-                    });
-                    _xpsnrTasks.Enqueue(xTask);
-                    needUpdate = true;
+                            m.XPSNR_Y = y; m.XPSNR_U = u;
+                            m.XPSNR_V = v; m.W_XPSNR = weighted;
+                        });
+                        _logger.LogInfo(
+                            $"XPSNR 完成: Y={y?.ToString("F4")}, " +
+                            $"U={u?.ToString("F4")}, V={v?.ToString("F4")}, " +
+                            $"W={weighted?.ToString("F4")}");
+                        needUpdate = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInfo($"XPSNR 异常: {ex.Message}");
+                    }
                 }
 
                 // 补算缺失的高级指标（异步后台执行）
@@ -572,7 +570,8 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath));
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath),
+                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
                     }
@@ -612,28 +611,27 @@ namespace AvifEncoder
             {
                 // XPSNR
                 // XPSNR 后台异步计算
-                var xKey2 = cacheKey;
-                _xpsnrTasks.Enqueue(Task.Run(async () =>
+                // XPSNR 同步计算（确保 BuildResult 时已就绪）
+                // ★ 动图 XPSNR 在高级指标后台任务中逐帧计算，这里跳过
+                if (!encInfo.IsAnimated)
                 {
                     try
                     {
                         var (y, u, v, weighted) = await ComputeXPSNRAsync(
-                            workingInputPath, outputPath, "yuv444p");
-                        _cache.UpdateMetrics(xKey2, m =>
-                        {
-                            m.XPSNR_Y = y; m.XPSNR_U = u;
-                            m.XPSNR_V = v; m.W_XPSNR = weighted;
-                        });
+                            workingInputPath, outputPath, "yuv444p",
+                            isAnimated: false);
+                        metrics!.XPSNR_Y = y; metrics.XPSNR_U = u;
+                        metrics.XPSNR_V = v; metrics.W_XPSNR = weighted;
                         _logger.LogInfo(
-                            $"XPSNR 后台完成: Y={y?.ToString("F4")}, " +
+                            $"XPSNR 完成: Y={y?.ToString("F4")}, " +
                             $"U={u?.ToString("F4")}, V={v?.ToString("F4")}, " +
                             $"W={weighted?.ToString("F4")}");
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogInfo($"XPSNR 后台异常: {ex.Message}");
+                        _logger.LogInfo($"XPSNR 异常: {ex.Message}");
                     }
-                }));
+                }
 
                 // 高级指标（改为异步后台执行）
                 bool advancedUpdated = false;
@@ -647,7 +645,8 @@ namespace AvifEncoder
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath));
+                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath),
+                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
                         _advancedMetricTasks.Enqueue(bgTask);
                     }
                     else
@@ -822,7 +821,7 @@ namespace AvifEncoder
                 };
 
                 _logger.LogInfo(
-                    $"?? 无损验证失败 ({name})：" +
+                    $"[VERIFY] 无损验证失败 ({name})：" +
                     $"FailureType={failureType} " +
                     $"Mismatches={mismatchCount} MaxDelta={maxDelta} " +
                     $"FirstAt=({firstMismatchX},{firstMismatchY}) " +

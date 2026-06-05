@@ -286,7 +286,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
             else
             {
-                crfPart = "{CRF}";
+                crfPart = "-crf {CRF}";
             }
 
             // ── 速度 ──
@@ -298,7 +298,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             // ── AOM 参数 ──
             string aomPart = encDef.SupportsAomParams
-                ? $"-aom-params aq-mode=3:sharpness=2:enable-fwd-kf=0:lag-in-frames=19:arnr-strength=2"
+                ? $"-aom-params aq-mode=3:sharpness=2:arnr-strength=2"
                 : "";
 
             // ── 拼接 ──
@@ -307,12 +307,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 "ffmpeg -loglevel info -hide_banner",
                 "-i \"INPUT.gif\"",
                 "-filter_complex \"[0:v]format=yuva444p10le,split=2[c][a];[a]alphaextract[alpha]\"",
-                $"-map \"[c]\" -c:v:0 {enc} -pix_fmt {pixFmt}",
+                $"-map \"[c]\" -c:v:0 {enc}",
                 $"{crfPart} -b:v 0",
                 "{COLORMETA}",
                 $"{speedPart} {tilePart} {rowMtPart}".Trim(),
-                $"-map \"[alpha]\" -c:v:1 {enc} -pix_fmt gray10le",
-                "-still-picture 0 -vsync vfr -g 30",
+                $"-map \"[alpha]\" -c:v:1 {enc}",
+                "-still-picture 0 -vsync vfr",
                 aomPart,
                 "-y \"OUTPUT.avif\"",
             };
@@ -613,7 +613,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             txtAnimatedCommand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtAnimatedCommand.AnimationFPS = 0;
             txtAnimatedCommand.BackColor1 = Color.Transparent;
-            txtAnimatedCommand.BorderColor = Color.White;
             txtAnimatedCommand.BorderColorFocus = Color.White;
             txtAnimatedCommand.ForeColor = Color.WhiteSmoke;
             txtAnimatedCommand.Location = new Point(16, 343);

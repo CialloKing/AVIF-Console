@@ -269,7 +269,8 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                         TimeSpan.FromMinutes(config.SafeEncodeTimeoutMinutes));
                     if (!ok || !_fs.FileExists(tmpAvif) || _fs.GetFileLength(tmpAvif) < 100) return -1;
 
-                    QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif);
+                    QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif,
+                        isAnimated: _isAnimatedFile.Value);
                     if (metrics != null)
                     {
                         string normalizedInput = GetNormalizedPathForCache(inputPath);

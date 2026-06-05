@@ -787,7 +787,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 }
             }
 
-            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
             var searchOption = chkRecursive.Checked ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             var files = Directory.EnumerateFiles(inputDir, "*.*", searchOption)
                                  .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))

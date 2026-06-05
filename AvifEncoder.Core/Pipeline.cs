@@ -212,13 +212,17 @@ namespace AvifEncoder
 
 
         // ===== 工具：将任意图片转为 PNG（SSIMULACRA2/Butteraugli 需要） =====
-        private async Task<string?> ConvertToPngAsync(string inputPath, string tempDir)
+        private async Task<string?> ConvertToPngAsync(string inputPath, string tempDir,
+            int? frameIndex = null, string? inputStreamSpec = null)
         {
             string tempPng = Path.Combine(tempDir, $"_tool_{Guid.NewGuid():N}.png");
             string cleanInput = NormalizePathForExternalTool(inputPath);
             string cleanOutput = NormalizePathForExternalTool(tempPng);
-            // ★ 使用已验证可工作的命令：-y -loglevel error -i "输入" -pix_fmt rgb24 -frames:v 1 "输出"
-            string args = $"-y -loglevel error -i \"{cleanInput}\" -pix_fmt rgb24 -frames:v 1 \"{cleanOutput}\"";
+            string streamPart = inputStreamSpec != null ? $"-map {inputStreamSpec} " : "";
+            string vfPart = frameIndex.HasValue
+                ? $"-vf \"select='eq(n,{frameIndex.Value})'\" "
+                : "";
+            string args = $"-y -loglevel error -i \"{cleanInput}\" {streamPart}{vfPart}-pix_fmt rgb24 -frames:v 1 \"{cleanOutput}\"";
             var (ok, _) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(1));
             return ok && _fs.FileExists(tempPng) ? tempPng : null;
         }
@@ -279,13 +283,103 @@ namespace AvifEncoder
         }
 
 
+        // ===== 批量帧提取（优化动图逐帧计算） =====
+        private async Task<List<string>?> ExtractAllPngFramesAsync(
+            string inputPath, string outputDir, string prefix,
+            string? inputStreamSpec, int expectedCount,
+            string pngPixFmt = "rgb24")
+        {
+            string cleanInput = NormalizePathForExternalTool(inputPath);
+            string streamPart = inputStreamSpec != null ? $"-map {inputStreamSpec} " : "";
+            string pattern = NormalizePathForExternalTool(Path.Combine(outputDir, $"{prefix}_%04d.png"));
+            // -vsync 0: 保留原始帧，不丢帧不重复；-start_number 0: 从 0 开始编号
+            string args = $"-y -loglevel error -i \"{cleanInput}\" {streamPart}-vsync 0 -start_number 0 -pix_fmt {pngPixFmt} -frames:v {expectedCount} \"{pattern}\"";
+            var (ok, _) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(3));
+            if (!ok)
+            {
+                _logger.LogInfo($"[ADV] 批量 PNG 提取失败: {Path.GetFileName(inputPath)}");
+                return null;
+            }
+
+            var files = new List<string>();
+            for (int i = 0; i < expectedCount; i++)
+            {
+                string f = Path.Combine(outputDir, $"{prefix}_{i:D4}.png");
+                if (_fs.FileExists(f)) files.Add(f);
+                else break;
+            }
+            _logger.LogInfo($"[ADV] 批量 PNG 提取: {files.Count} 帧 ← {Path.GetFileName(inputPath)}");
+            return files.Count > 0 ? files : null;
+        }
+
+        private async Task<(int w, int h, byte[] data)?> ExtractAllGrayFramesAsync(
+            string inputPath, string? inputStreamSpec, int expectedFrames)
+        {
+            string cleanPath = NormalizePathForExternalTool(inputPath);
+            string streamPart = inputStreamSpec != null ? $"-map {inputStreamSpec} " : "";
+
+            var (w, h) = await GetResolutionAsync(inputPath);
+            if (w <= 0 || h <= 0) return null;
+
+            string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" {streamPart}-vf format=gray -f rawvideo -pix_fmt gray pipe:1";
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(_ffmpegPath, args)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+                _spawnedProcesses.Add(process);
+                if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
+
+                using var ms = new MemoryStream();
+                var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
+                var stderrTask = process.StandardError.ReadToEndAsync();
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(timeoutCts.Token));
+
+                if (process.ExitCode != 0) return null;
+                byte[] data = ms.ToArray();
+                if (data.Length != w * h * expectedFrames)
+                {
+                    _logger.LogInfo($"[ADV] 灰度帧数据尺寸异常: 期望={w * h * expectedFrames} 实际={data.Length}");
+                    return null;
+                }
+                return (w, h, data);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInfo($"[ADV] 批量灰度提取异常: {ex.Message}");
+                return null;
+            }
+        }
+
         private async Task ComputeAdvancedMetricsInBackgroundAsync(
             string refPath, string distPath, string outputDir, string cacheKey,
             bool needSsimu2, bool needButter, bool needGmsd,
-            CancellationToken cancellationToken, string? inputPath = null, string? outputFileName = null)
+            CancellationToken cancellationToken, string? inputPath = null, string? outputFileName = null,
+            int frameCount = 1, string encodingPixFmt = "yuv444p")
         {
             string advName = inputPath != null ? Path.GetFileName(inputPath) : (outputFileName ?? "?");
-            _logger.LogInfo($"[ADV] START {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd}");
+            bool isAnimated = frameCount > 1;
+            // ★ 根据编码像素格式推导 PNG 提取格式和 XPSNR 比较格式
+            bool bit10 = encodingPixFmt.Contains("10le");
+            bool bit12 = encodingPixFmt.Contains("12le");
+            string pngPixFmt = (bit10 || bit12) ? "rgb48le" : "rgb24";
+            string xpsnrPixFmt = encodingPixFmt.Replace("a", ""); // yuv444p / yuv444p10le / yuv420p 等
+            // 保留后缀中的位深标记（10le/12le），只替换基础后缀 "p" → "p10le"/"p12le"
+            if (bit10 && !xpsnrPixFmt.Contains("10le"))
+                xpsnrPixFmt = Regex.Replace(xpsnrPixFmt, @"p(?=($|[^0-9]))", "p10le");
+            else if (bit12 && !xpsnrPixFmt.Contains("12le"))
+                xpsnrPixFmt = Regex.Replace(xpsnrPixFmt, @"p(?=($|[^0-9]))", "p12le");
+            _logger.LogInfo($"[ADV] START {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd} frames={frameCount} pixFmt={encodingPixFmt} png={pngPixFmt} xpsnr={xpsnrPixFmt}");
             await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
             {
@@ -295,49 +389,197 @@ namespace AvifEncoder
                     _fs.CreateDirectory(advancedTempDir);
                     string? cleanRef = await SanitizePngIfNeededAsync(refPath, advancedTempDir);
 
-                    string? refPng = cleanRef;
-                    if (Path.GetExtension(cleanRef).ToLower() != ".png")
+                    // ★ 动图逐帧平均 + per-frame CSV（批量提取优化）
+                    if (isAnimated)
                     {
-                        try { refPng = await ConvertToPngAsync(cleanRef, advancedTempDir); }
-                        catch { refPng = null; }
-                    }
+                        const string distStream = "0:v:2";
+                        double ssimu2Sum = 0; int ssimu2Count = 0;
+                        double butterRawSum = 0; double butter3Sum = 0; int butterCount = 0;
+                        double gmsdSum = 0; int gmsdCount = 0;
+                        double xpsnrYSum = 0, xpsnrUSum = 0, xpsnrVSum = 0; int xpsnrCount = 0;
 
-                    string? distPng = null;
-                    if (needSsimu2 || needButter)
-                    {
-                        try { distPng = await ConvertToPngAsync(distPath, advancedTempDir); }
-                        catch { distPng = null; }
-                    }
+                        // per-frame CSV
+                        string csvPath = Path.Combine(outputDir, $"{advName}_perframe.csv");
+                        var csvLines = new List<string> { "Frame,SSIMULACRA2,Butteraugli_3norm,GMSD,XPSNR_Y,XPSNR_U,XPSNR_V,W_XPSNR" };
 
-                    if (needSsimu2 && refPng != null && distPng != null)
-                    {
-                        try
+                        // ★ 批量提取：ref 全帧 PNG + dist 全帧 PNG + GMSD 灰度 raw（仅 3 次 ffmpeg 调用）
+                        var swBatch = Stopwatch.StartNew();
+                        List<string>? refFrames = null, distFrames = null;
+                        (int w, int h, byte[] data)? refGrayAll = null, distGrayAll = null;
+
+                        var batchTasks = new List<Task>();
+                        if (needSsimu2 || needButter)
                         {
-                            var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                            if (s.HasValue) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={s.Value:F2}"); }
+                            batchTasks.Add(Task.Run(async () =>
+                                refFrames = await ExtractAllPngFramesAsync(cleanRef, advancedTempDir, "_ref", null, frameCount, pngPixFmt)));
+                            batchTasks.Add(Task.Run(async () =>
+                                distFrames = await ExtractAllPngFramesAsync(distPath, advancedTempDir, "_dist", distStream, frameCount, pngPixFmt)));
                         }
-                        catch (Exception ex) { _logger.LogInfo($"[ADV] SSIMU2 FAIL {advName}: {ex.Message}"); }
-                    }
-
-                    if (needButter && refPng != null && distPng != null)
-                    {
-                        try
+                        if (needGmsd)
                         {
-                            var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
-                            if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
-                            if (p3.HasValue) { UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3); _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={p3.Value:F4}"); }
+                            batchTasks.Add(Task.Run(async () =>
+                                refGrayAll = await ExtractAllGrayFramesAsync(cleanRef, null, frameCount)));
+                            batchTasks.Add(Task.Run(async () =>
+                                distGrayAll = await ExtractAllGrayFramesAsync(distPath, distStream, frameCount)));
                         }
-                        catch (Exception ex) { _logger.LogInfo($"[ADV] BUTTER FAIL {advName}: {ex.Message}"); }
-                    }
+                        await Task.WhenAll(batchTasks);
+                        _logger.LogInfo($"[ADV] 批量帧提取完成: {swBatch.Elapsed.TotalSeconds:F1}s");
 
-                    if (needGmsd)
-                    {
-                        try
+                        if (refGrayAll != null && distGrayAll != null)
                         {
-                            var g = await ComputeGMSDAsync(cleanRef, distPath);
-                            if (g.HasValue) { UpdateCachedMetrics(cacheKey, m => m.GMSD = g); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={g.Value:F4}"); }
+                            int gs = refGrayAll.Value.w * refGrayAll.Value.h;
+                            if (refGrayAll.Value.data.Length != gs * frameCount ||
+                                distGrayAll.Value.data.Length != gs * frameCount)
+                            {
+                                _logger.LogInfo($"[ADV] GMSD 灰度数据尺寸异常，跳过");
+                                refGrayAll = null; distGrayAll = null;
+                            }
                         }
-                        catch (Exception ex) { _logger.LogInfo($"[ADV] GMSD FAIL {advName}: {ex.Message}"); }
+
+                        // ★ 逐帧处理（外部工具并发、GMSD 内存内计算）
+                        var swFrames = Stopwatch.StartNew();
+                        for (int i = 0; i < frameCount && !cancellationToken.IsCancellationRequested; i++)
+                        {
+                            string? refPng = refFrames?.ElementAtOrDefault(i);
+                            string? distPng = distFrames?.ElementAtOrDefault(i);
+
+                            double? frameSsimu2 = null, frameButter3 = null, frameGmsd = null;
+                            double? frameXpsnrY = null, frameXpsnrU = null, frameXpsnrV = null;
+
+                            // SSIMULACRA2 + Butteraugli 并发
+                            if (refPng != null && distPng != null)
+                            {
+                                if (needSsimu2 && needButter)
+                                {
+                                    var tSsimu2 = ComputeSSIMULACRA2Async(refPng, distPng);
+                                    var tButter = ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                                    await Task.WhenAll(tSsimu2, tButter);
+                                    if (tSsimu2.Result.HasValue) { ssimu2Sum += tSsimu2.Result.Value; ssimu2Count++; frameSsimu2 = tSsimu2.Result; }
+                                    var br = tButter.Result;
+                                    if (br.raw.HasValue && br.p3.HasValue) { butterRawSum += br.raw.Value; butter3Sum += br.p3.Value; butterCount++; frameButter3 = br.p3; }
+                                }
+                                else if (needSsimu2)
+                                {
+                                    var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                                    if (s.HasValue) { ssimu2Sum += s.Value; ssimu2Count++; frameSsimu2 = s; }
+                                }
+                                else if (needButter)
+                                {
+                                    var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                                    if (raw.HasValue && p3.HasValue) { butterRawSum += raw.Value; butter3Sum += p3.Value; butterCount++; frameButter3 = p3; }
+                                }
+                            }
+
+                            // GMSD：从批量灰度 raw 数据中切片计算（零 I/O）
+                            if (needGmsd && refGrayAll != null && distGrayAll != null)
+                            {
+                                int gs = refGrayAll.Value.w * refGrayAll.Value.h;
+                                var refSlice = refGrayAll.Value.data.AsSpan(i * gs, gs);
+                                var distSlice = distGrayAll.Value.data.AsSpan(i * gs, gs);
+                                double g = ComputeGMSD_C(refSlice.ToArray(), refGrayAll.Value.w,
+                                    refGrayAll.Value.h, distSlice.ToArray());
+                                if (g >= 0) { gmsdSum += g; gmsdCount++; frameGmsd = g; }
+                            }
+
+                            // XPSNR：单帧 PNG 对计算（动图全帧平均，避免多帧 ffmpeg crash）
+                            if (refPng != null && distPng != null)
+                            {
+                                var (y, u, v) = await ComputeXPSNRFrameAsync(refPng, distPng, xpsnrPixFmt);
+                                if (y.HasValue && u.HasValue && v.HasValue)
+                                {
+                                    xpsnrYSum += y.Value; xpsnrUSum += u.Value; xpsnrVSum += v.Value;
+                                    xpsnrCount++;
+                                    frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
+                                }
+                            }
+
+                            // 写入逐帧 CSV 行
+                            double? frameWXpsnr = frameXpsnrY.HasValue && frameXpsnrU.HasValue && frameXpsnrV.HasValue
+                                ? ComputeWXPSNR(frameXpsnrY, frameXpsnrU, frameXpsnrV) : null;
+                            csvLines.Add($"{i}," +
+                                $"{frameSsimu2?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameButter3?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameGmsd?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameXpsnrY?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameXpsnrU?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameXpsnrV?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
+                                $"{frameWXpsnr?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}");
+                        }
+                        swFrames.Stop();
+                        _logger.LogInfo($"[ADV] 逐帧计算完成: {swFrames.Elapsed.TotalSeconds:F1}s ({frameCount}帧)");
+
+                        // ★ 保存逐帧 CSV（UTF-8 + BOM）
+                        string csvContent = "\uFEFF" + string.Join("\n", csvLines) + "\n";
+                        await _fs.WriteAllBytesAsync(csvPath, System.Text.Encoding.UTF8.GetBytes(csvContent));
+                        _logger.LogInfo($"[ADV] 逐帧 CSV 已保存: {csvPath} ({frameCount}行)");
+
+                        if (ssimu2Count > 0) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = ssimu2Sum / ssimu2Count); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={ssimu2Sum / ssimu2Count:F2} ({ssimu2Count}帧)"); }
+                        if (butterCount > 0)
+                        {
+                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = butterRawSum / butterCount);
+                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = butter3Sum / butterCount);
+                            _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={butter3Sum / butterCount:F4} ({butterCount}帧)");
+                        }
+                        if (gmsdCount > 0) { UpdateCachedMetrics(cacheKey, m => m.GMSD = gmsdSum / gmsdCount); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={gmsdSum / gmsdCount:F4} ({gmsdCount}帧)"); }
+                        if (xpsnrCount > 0)
+                        {
+                            double avgY = xpsnrYSum / xpsnrCount, avgU = xpsnrUSum / xpsnrCount, avgV = xpsnrVSum / xpsnrCount;
+                            double? avgW = ComputeWXPSNR(avgY, avgU, avgV);
+                            UpdateCachedMetrics(cacheKey, m =>
+                            {
+                                m.XPSNR_Y = avgY; m.XPSNR_U = avgU;
+                                m.XPSNR_V = avgV; m.W_XPSNR = avgW;
+                            });
+                            _logger.LogInfo($"[ADV] XPSNR DONE {advName} Y={avgY:F2} U={avgU:F2} V={avgV:F2} W={avgW:F2} ({xpsnrCount}帧)");
+                        }
+                    }
+                    else
+                    {
+                        // 静图路径（原有逻辑）
+                        string? refPng = cleanRef;
+                        if (Path.GetExtension(cleanRef).ToLower() != ".png")
+                        {
+                            try { refPng = await ConvertToPngAsync(cleanRef, advancedTempDir); }
+                            catch { refPng = null; }
+                        }
+
+                        string? distPng = null;
+                        if (needSsimu2 || needButter)
+                        {
+                            try { distPng = await ConvertToPngAsync(distPath, advancedTempDir); }
+                            catch { distPng = null; }
+                        }
+
+                        if (needSsimu2 && refPng != null && distPng != null)
+                        {
+                            try
+                            {
+                                var s = await ComputeSSIMULACRA2Async(refPng, distPng);
+                                if (s.HasValue) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = s); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={s.Value:F2}"); }
+                            }
+                            catch (Exception ex) { _logger.LogInfo($"[ADV] SSIMU2 FAIL {advName}: {ex.Message}"); }
+                        }
+
+                        if (needButter && refPng != null && distPng != null)
+                        {
+                            try
+                            {
+                                var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
+                                if (raw.HasValue) UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = raw);
+                                if (p3.HasValue) { UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = p3); _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={p3.Value:F4}"); }
+                            }
+                            catch (Exception ex) { _logger.LogInfo($"[ADV] BUTTER FAIL {advName}: {ex.Message}"); }
+                        }
+
+                        if (needGmsd)
+                        {
+                            try
+                            {
+                                var g = await ComputeGMSDAsync(cleanRef, distPath, 1);
+                                if (g.HasValue) { UpdateCachedMetrics(cacheKey, m => m.GMSD = g); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={g.Value:F4}"); }
+                            }
+                            catch (Exception ex) { _logger.LogInfo($"[ADV] GMSD FAIL {advName}: {ex.Message}"); }
+                        }
                     }
 
                     if (cleanRef != refPath && _fs.FileExists(cleanRef))
@@ -428,10 +670,10 @@ namespace AvifEncoder
             string cleanRef = NormalizePathForExternalTool(refPath);
             string cleanDist = NormalizePathForExternalTool(distPath);
             string args = $"\"{cleanRef}\" \"{cleanDist}\"";
-            _logger.LogInfo($"?? SSIMULACRA2 调用: {exe} {args}");   // ← 新增
+            _logger.LogInfo($"[SSIMU2] 调用: {exe} {args}");
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
-            _logger.LogInfo($"?? SSIMULACRA2 返回: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ← 新增
+            _logger.LogInfo($"[SSIMU2] 返回: exit={exitCode}, val={stdout.Trim()}");
             if (exitCode != 0) return null;
             string output = (stdout + stderr).Trim();
             if (double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
@@ -448,10 +690,10 @@ namespace AvifEncoder
             string cleanDist = NormalizePathForExternalTool(distPath);
             string cleanDiff = NormalizePathForExternalTool(diffPng);
             string args = $"\"{cleanRef}\" \"{cleanDist}\" --distmap \"{cleanDiff}\"";
-            _logger.LogInfo($"?? Butteraugli 调用: {exe} {args}");   // ★ 新增
+            _logger.LogInfo($"[BUTTER] 调用: {exe} {args}");
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 exe, args, TimeSpan.FromMinutes(2), _globalCts?.Token ?? default);
-            _logger.LogInfo($"?? Butteraugli 返回: exit={exitCode}, stdout={stdout.Trim()}, stderr={stderr.Trim()}"); // ★ 新增
+            _logger.LogInfo($"[BUTTER] 返回: exit={exitCode}, val={stdout.Trim()}");
 
             if (_fs.FileExists(diffPng)) try { _fs.DeleteFile(diffPng); } catch { }
 
@@ -472,29 +714,73 @@ namespace AvifEncoder
         }
 
         // ===== GMSD（自定义实现：仿 C++ 版本，使用 ffmpeg 解码灰度图计算） =====
-        private async Task<double?> ComputeGMSDAsync(string refPath, string distPath)
+        private async Task<double?> ComputeGMSDAsync(string refPath, string distPath,
+            int frameCount = 1)
         {
-            // 1. 解码两张图到 8 位灰度原始数据
-            var refGray = await DecodeGrayRawAsync(refPath);
-            if (refGray == null) return null;
-            var distGray = await DecodeGrayRawAsync(distPath);
-            if (distGray == null) return null;
+            if (frameCount <= 1)
+            {
+                // 单帧路径
+                var refGray = await DecodeGrayRawAsync(refPath);
+                if (refGray == null) return null;
+                var distGray = await DecodeGrayRawAsync(distPath);
+                if (distGray == null) return null;
+                if (refGray.Value.w != distGray.Value.w || refGray.Value.h != distGray.Value.h)
+                    return null;
+                double score = ComputeGMSD_C(refGray.Value.data, refGray.Value.w, refGray.Value.h,
+                                              distGray.Value.data);
+                return score >= 0 ? score : null;
+            }
 
-            // 2. 尺寸必须一致
+            // ★ 动图逐帧平均
+            double sum = 0;
+            int valid = 0;
+            // dist 是编码后的 AVIF，动画流是 stream 2
+            const string distStream = "0:v:2";
+            for (int i = 0; i < frameCount; i++)
+            {
+                var refGray = await DecodeGrayRawAsync(refPath, i);
+                if (refGray == null) continue;
+                var distGray = await DecodeGrayRawAsync(distPath, i, distStream);
+                if (distGray == null) continue;
+                if (refGray.Value.w != distGray.Value.w || refGray.Value.h != distGray.Value.h)
+                    continue;
+                double score = ComputeGMSD_C(refGray.Value.data, refGray.Value.w, refGray.Value.h,
+                                              distGray.Value.data);
+                if (score >= 0)
+                {
+                    sum += score;
+                    valid++;
+                }
+            }
+
+            return valid > 0 ? sum / valid : null;
+        }
+
+        /// <summary> 计算单帧 GMSD（供动图逐帧循环调用）。distStream 为 AVIF 动画流选择器（"0:v:2"）。</summary>
+        private async Task<double?> ComputeGMSDFrameAsync(string refPath, string distPath,
+            int frameIndex, string distStream)
+        {
+            var refGray = await DecodeGrayRawAsync(refPath, frameIndex);
+            if (refGray == null) return null;
+            var distGray = await DecodeGrayRawAsync(distPath, frameIndex, distStream);
+            if (distGray == null) return null;
             if (refGray.Value.w != distGray.Value.w || refGray.Value.h != distGray.Value.h)
                 return null;
-
-            // 3. 计算 GMSD
             double score = ComputeGMSD_C(refGray.Value.data, refGray.Value.w, refGray.Value.h,
                                           distGray.Value.data);
             return score >= 0 ? score : null;
         }
 
         /// <summary> 用 ffmpeg 将任意图片解码为 8 位灰度原始字节数组，并返回宽、高。失败返回 null。 </summary>
-        private async Task<(int w, int h, byte[] data)?> DecodeGrayRawAsync(string imagePath)
+        private async Task<(int w, int h, byte[] data)?> DecodeGrayRawAsync(string imagePath,
+            int? frameIndex = null, string? inputStreamSpec = null)
         {
             string cleanPath = NormalizePathForExternalTool(imagePath);
-            string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" -vf format=gray -f rawvideo -pix_fmt gray pipe:1";
+            string streamPart = inputStreamSpec != null ? $"-map {inputStreamSpec} " : "";
+            string vfPart = frameIndex.HasValue
+                ? $"-vf \"select='eq(n,{frameIndex.Value})',format=gray\""
+                : "-vf format=gray";
+            string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" {streamPart}{vfPart} -frames:v 1 -f rawvideo -pix_fmt gray pipe:1";
             try
             {
                 using var process = new Process
@@ -1422,8 +1708,8 @@ namespace AvifEncoder
 
         private async Task<ProbeInfo?> ProbeFileCoreAsync(string filePath)
         {
-            // 一次性 ffprobe 获取所有信息（含动图帧数）
-            string args = $"-v error -count_frames -select_streams v:0 -show_entries stream=pix_fmt,width,height,is_lossless,color_primaries,color_transfer,color_space,color_range,nb_read_frames,duration,r_frame_rate -of json \"{filePath}\"";
+            // 一次性 ffprobe 获取所有信息（含动图帧数，用 duration×fps 估算，无需 -count_frames）
+            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,nb_frames,color_primaries,color_transfer,color_space,color_range,duration,r_frame_rate -of json \"{filePath}\"";
             string json = await RunProbeAsync(_ffprobePath, args);
             if (string.IsNullOrEmpty(json)) return null;
 
@@ -1445,13 +1731,23 @@ namespace AvifEncoder
                     _ => false
                 };
 
-                // 动图检测
+                // 动图检测：nb_frames → duration×fps 回退
                 int frameCount = 1;
-                if (stream.TryGetProperty("nb_read_frames", out var nbf) && nbf.TryGetInt32(out int fc))
-                    frameCount = Math.Max(1, fc);
+                if (stream.TryGetProperty("nb_frames", out var nbf))
+                {
+                    if (nbf.ValueKind == JsonValueKind.Number)
+                        frameCount = Math.Max(1, nbf.GetInt32());
+                    else if (nbf.ValueKind == JsonValueKind.String && int.TryParse(nbf.GetString(), out int fc))
+                        frameCount = Math.Max(1, fc);
+                }
                 double duration = 0;
-                if (stream.TryGetProperty("duration", out var dur) && dur.TryGetDouble(out double d))
-                    duration = d;
+                if (stream.TryGetProperty("duration", out var dur))
+                {
+                    if (dur.ValueKind == JsonValueKind.Number)
+                        duration = dur.GetDouble();
+                    else if (dur.ValueKind == JsonValueKind.String && double.TryParse(dur.GetString(), out double d))
+                        duration = d;
+                }
                 double fps = 0;
                 if (stream.TryGetProperty("r_frame_rate", out var rfr))
                 {
@@ -1463,6 +1759,9 @@ namespace AvifEncoder
                             fps = num / den;
                     }
                 }
+                // 容器不提供 nb_frames 时，用 duration × fps 估算
+                if (frameCount <= 1 && duration > 0 && fps > 0)
+                    frameCount = Math.Max(1, (int)Math.Ceiling(duration * fps));
                 bool isAnimated = frameCount > 1 || duration > 0.5;
 
                 // 尝试提取色彩字段，忽略 unknown/reserved
@@ -1549,7 +1848,8 @@ namespace AvifEncoder
 
             string jsonName = $"_metrics_{Guid.NewGuid():N}.json";
             string jsonPath = Path.Combine(metricsDir, jsonName);
-            string logPathSafe = jsonName;
+            // ★ 相对路径：ffmpeg 进程的 CWD = Environment.CurrentDirectory = workDir
+            string logPathSafe = $"avif_metrics_tmp_{_instanceId}/{jsonName}";
 
             try
             {
@@ -1557,20 +1857,35 @@ namespace AvifEncoder
                 var (w2, h2) = await GetResolutionAsync(distPath).WaitAsync(TimeSpan.FromSeconds(30));
 
                 string filter;
-                if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
+                if (isAnimated)
+                {
+                    // ★ 动图需要时间轴对齐 + stream 2（AVIF 的动画颜色流，避开封面流 stream 0）
+                    string distStream = "[1:v:2]";
+                    if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
+                    {
+                        int w = Math.Min(w1, w2);
+                        int h = Math.Min(h1, h2);
+                        filter = $"[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale={w}:{h}[ref];{distStream}settb=AVTB,setpts=PTS-STARTPTS,scale={w}:{h}[dist];[ref][dist]libvmaf=";
+                    }
+                    else
+                    {
+                        filter = $"[0:v]settb=AVTB,setpts=PTS-STARTPTS[ref];{distStream}settb=AVTB,setpts=PTS-STARTPTS[dist];[ref][dist]libvmaf=";
+                    }
+                }
+                else if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
                 {
                     int w = Math.Min(w1, w2);
                     int h = Math.Min(h1, h2);
-                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=" +
-                             $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
-                             $"model='version=vmaf_float_v0.6.1':log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]libvmaf=";
                 }
                 else
                 {
-                    filter = $"[0:v][1:v]libvmaf=feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
-                             $"model='version=vmaf_float_v0.6.1':" +
-                             $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
+                    filter = $"[0:v][1:v]libvmaf=";
                 }
+                // 公共后缀
+                filter += $"feature=name=psnr|name=float_ssim|name=float_ms_ssim:" +
+                          $"model='version=vmaf_float_v0.6.1':" +
+                          $"log_path={logPathSafe}:log_fmt=json:n_threads=4";
 
                 string frameLimit = isAnimated ? "" : "-frames:v 1";
                 string args = $"-loglevel error -hide_banner -i \"{refPath}\" -i \"{distPath}\" " +
@@ -2155,15 +2470,19 @@ namespace AvifEncoder
                             while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
                             if (pendingBg.Count > 0)
                             {
-                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(5)); }
+                                // ★ 动态超时 = 120s 基准 + 每帧 1.5s（动图逐帧平均耗时）
+                                var valid = results?.Where(r => r != null).ToList() ?? new List<EncodeResult?>();
+                                int totalFrames = valid.Sum(r => r!.FrameCount);
+                                int timeoutSec = Math.Max(120, 5 + (int)(totalFrames * 1.5));
+                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(timeoutSec)); }
                                 catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
                             }
 
                             var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
-                            var newCompleted = results.Where(r => r != null && (r.Success || r.Skipped))
+                            var newCompleted = results!.Where(r => r != null && (r.Success || r.Skipped))
                                 .Select(r => r!.InputPath).ToList();
                             var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-                            foreach (var r in results)
+                            foreach (var r in results!)
                             {
                                 if (r != null && r.Success && !string.IsNullOrEmpty(r.AdvancedMetricsCacheKey)
                                     && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
@@ -2187,7 +2506,11 @@ namespace AvifEncoder
                             while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
                             if (pendingBg.Count > 0)
                             {
-                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(5)); }
+                                // ★ 动态超时 = 120s 基准 + 每帧 1.5s（动图逐帧平均耗时）
+                                var valid2 = results?.Where(r => r != null).ToList() ?? new List<EncodeResult?>();
+                                int totalFrames2 = valid2.Sum(r => r!.FrameCount);
+                                int timeoutSec2 = Math.Max(120, 5 + (int)(totalFrames2 * 1.5));
+                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(timeoutSec2)); }
                                 catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
                             }
 

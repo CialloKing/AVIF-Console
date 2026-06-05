@@ -278,12 +278,14 @@ namespace AvifEncoder
                         }
                         else if (metricMode == "vmaf" || metricMode == "msssim" || metricMode == "mix")
                         {
-                            metrics = await ComputeAllMetricsAsync(input, tmp);
+                            metrics = await ComputeAllMetricsAsync(input, tmp,
+                                isAnimated: _isAnimatedFile.Value);
                         }
                         else
                         {
                             // XPSNR / 高级指标 等 → 先用 libvmaf 获取基础指标
-                            metrics = await ComputeAllMetricsAsync(input, tmp);
+                            metrics = await ComputeAllMetricsAsync(input, tmp,
+                                isAnimated: _isAnimatedFile.Value);
                         }
 
                         if (metrics != null)
@@ -293,7 +295,8 @@ namespace AvifEncoder
                             {
                                 try
                                 {
-                                    var (y, u, v, w) = await ComputeXPSNRAsync(input, tmp, pixFmt);
+                                    var (y, u, v, w) = await ComputeXPSNRAsync(input, tmp, pixFmt,
+                                        isAnimated: _isAnimatedFile.Value);
                                     metrics.XPSNR_Y = y;
                                     metrics.XPSNR_U = u;
                                     metrics.XPSNR_V = v;
@@ -443,7 +446,8 @@ namespace AvifEncoder
         /// 默认使用 yuv444p 色彩空间，可通过 pixFmt 覆盖。
         /// </summary>
         private async Task<(double? y, double? u, double? v, double? weighted)> ComputeXPSNRAsync(
-                string refPath, string distPath, string pixFmt = "yuv444p")
+                string refPath, string distPath, string pixFmt = "yuv444p",
+                bool isAnimated = false)
         {
             if (!_fs.FileExists(refPath) || !_fs.FileExists(distPath))
                 return (null, null, null, null);
@@ -477,9 +481,98 @@ namespace AvifEncoder
             // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
             string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
 
-            string args = $"-i \"{safeDist}\" -i \"{safeRef}\" " +
+            // ★ 动图 AVIF：先试 [0:v]，若 Y<20 dB 则提取 stream 2 到临时文件再测
+            string? tempDist = null;
+            string actualDist = safeDist;
+            try
+            {
+                if (isAnimated)
+                {
+                    // 第一次尝试：[0:v]（封面流/单流）
+                    var (y1, u1, v1) = await TryXpsnrAsync(safeDist, safeRef, "[0:v]", actualPixFmt, isAnimated: true);
+                    if (y1.HasValue && y1.Value > 20)
+                        return (y1, u1, v1, ComputeWXPSNR(y1, u1, v1));
+
+                    _logger.LogInfo($"XPSNR [0:v] Y={(y1?.ToString("F2") ?? "null")}，提取动画流重试...");
+
+                    // ★ 提取 stream 2 到临时文件，避免 [0:v:2] 触发 ffmpeg heap corruption
+                    tempDist = Path.Combine(Path.GetTempPath(), $"_xpsnr_stream2_{Guid.NewGuid():N}.mp4");
+                    string extractArgs = $"-y -loglevel error -i \"{safeDist}\" -map 0:v:2 -c copy -f mp4 \"{tempDist}\"";
+                    var (extExit, _, extErr) = await _processRunner.RunAsync(_ffmpegPath, extractArgs,
+                        TimeSpan.FromSeconds(30), _globalCts?.Token ?? default);
+                    if (extExit == 0)
+                    {
+                        actualDist = tempDist;
+                        _logger.LogInfo($"XPSNR 动画流已提取: {tempDist}");
+                    }
+                    else
+                    {
+                        _logger.LogInfo($"XPSNR 动画流提取失败: {extErr}");
+                    }
+                }
+
+                var (y, u, v) = await TryXpsnrAsync(actualDist, safeRef, "[0:v]", actualPixFmt, isAnimated: isAnimated);
+                double? w = ComputeWXPSNR(y, u, v);
+                return (y, u, v, w);
+            }
+            finally
+            {
+                if (tempDist != null && File.Exists(tempDist))
+                    try { File.Delete(tempDist); } catch { }
+            }
+        }
+
+        /// <summary>单帧 XPSNR：对两张 PNG 文件计算 XPSNR（用于动图逐帧平均）</summary>
+        public async Task<(double? y, double? u, double? v)> ComputeXPSNRFrameAsync(
+            string refPng, string distPng,
+            string xpsnrPixFmt = "yuv444p")
+        {
+            // ★ PNG 是 RGB 格式，xpsnr 默认输出 r/g/b 通道，需先转 YUV
+            //    根据编码位深选择对应 YUV 格式（yuv444p / yuv444p10le / yuv444p12le）
+            string args = $"-loglevel info -i \"{distPng}\" -i \"{refPng}\" " +
+                $"-lavfi \"[0:v]format={xpsnrPixFmt}[dist];[1:v]format={xpsnrPixFmt}[ref];[dist][ref]xpsnr\" -frames:v 1 -f null -";
+
+            var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
+                _ffmpegPath, args, TimeSpan.FromSeconds(30),
+                _globalCts?.Token ?? default);
+
+            string combined = stdout + stderr;
+            double? y = null, u = null, v = null;
+
+            var m = Regex.Match(combined,
+                @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
+                RegexOptions.IgnoreCase);
+            if (!m.Success)
+                m = Regex.Match(combined,
+                @"XPSNR\s+y\s*(-?inf|[0-9.]+)\s+u\s*(-?inf|[0-9.]+)\s+v\s*(-?inf|[0-9.]+)",
+                RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                y = ParseSingleValue(m.Groups[1].Value);
+                u = ParseSingleValue(m.Groups[2].Value);
+                v = ParseSingleValue(m.Groups[3].Value);
+            }
+            else
+            {
+                string tail = combined.Length > 300 ? combined[..300] : combined;
+                _logger.LogInfo($"[XPSNR-FRAME] 解析失败 exit={exitCode} combined={tail}");
+            }
+            return (y, u, v);
+        }
+
+        private async Task<(double? y, double? u, double? v)> TryXpsnrAsync(
+            string distPath, string refPath, string distStream, string actualPixFmt,
+            bool isAnimated = false)
+        {
+            // ★ 动图多帧 XPSNR 在部分 ffmpeg 版本触发 heap corruption（0xFFFFFFFFFFFFFFFF）
+            //    临时方案：限制 1 帧比较，避免崩溃；libvmaf 已有全帧平均
+            string frameLimit = isAnimated ? "-frames:v 1 " : "";
+            if (isAnimated)
+                _logger.LogInfo($"XPSNR 动图首帧模式（多帧全比较触发 ffmpeg 崩溃，仅取首帧）");
+
+            string args = $"-i \"{distPath}\" -i \"{refPath}\" " +
                 $"-lavfi \"" +
-                $"[0:v]settb=AVTB,setpts=PTS-STARTPTS," +
+                $"{distStream}settb=AVTB,setpts=PTS-STARTPTS," +
                 $"scale=in_range=pc:out_range=pc," +
                 $"format={actualPixFmt}," +
                 $"pad=iw:ceil(ih/2)*2:0:0:color=black[dist];" +
@@ -487,68 +580,59 @@ namespace AvifEncoder
                 $"scale=in_range=pc:out_range=pc," +
                 $"format={actualPixFmt}," +
                 $"pad=iw:ceil(ih/2)*2:0:0:color=black[ref];" +
-                $"[dist][ref]xpsnr\" -f null -";
+                $"[dist][ref]xpsnr\" {frameLimit}-f null -";
 
             var (exitCode, stdout, stderr) = await _processRunner.RunAsync(
                 _ffmpegPath, args, TimeSpan.FromMinutes(_config.SsimTimeoutMinutes),
                 _globalCts?.Token ?? default);
 
             string combinedOutput = stdout + stderr;
+            double? y = null, u = null, v = null;
 
-            if (exitCode != 0 || string.IsNullOrWhiteSpace(combinedOutput))
+            // ★ 即使 ffmpeg 崩溃也尝试解析已有输出
+            if (!string.IsNullOrWhiteSpace(combinedOutput))
             {
-                _logger.LogInfo($"XPSNR ffmpeg 失败 (exit={exitCode}) 或输出为空。stdout/stderr 尾部: {combinedOutput.TrimEnd().Split('\n').LastOrDefault()}");
-                return (null, null, null, null);
-            }
-
-            // 先尝试匹配一行中同时包含 y、u、v 的输出（如 "XPSNR y: 48.5 u: 48.0 v: 47.9"）
-            var combinedMatch = Regex.Match(combinedOutput,
-                @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
-                RegexOptions.IgnoreCase);
-            double? y, u, v;
-            if (combinedMatch.Success)
-            {
-                y = ParseSingleValue(combinedMatch.Groups[1].Value);
-                u = ParseSingleValue(combinedMatch.Groups[2].Value);
-                v = ParseSingleValue(combinedMatch.Groups[3].Value);
-            }
-            else
-            {
-                // 如果一行没有，再分别独立提取每个通道（某些 ffmpeg 版本可能分多行输出）
-                var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
-                y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
-                u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
-                v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
+                var combinedMatch = Regex.Match(combinedOutput,
+                    @"XPSNR\s+y:\s*(-?inf|[0-9.]+)\s+u:\s*(-?inf|[0-9.]+)\s+v:\s*(-?inf|[0-9.]+)",
+                    RegexOptions.IgnoreCase);
+                if (combinedMatch.Success)
+                {
+                    y = ParseSingleValue(combinedMatch.Groups[1].Value);
+                    u = ParseSingleValue(combinedMatch.Groups[2].Value);
+                    v = ParseSingleValue(combinedMatch.Groups[3].Value);
+                }
+                else
+                {
+                    var yMatch = Regex.Match(combinedOutput, @"XPSNR\s+y:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                    var uMatch = Regex.Match(combinedOutput, @"XPSNR\s+u:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                    var vMatch = Regex.Match(combinedOutput, @"XPSNR\s+v:\s*(-?inf|[0-9.]+)", RegexOptions.IgnoreCase);
+                    y = yMatch.Success ? ParseSingleValue(yMatch.Groups[1].Value) : null;
+                    u = uMatch.Success ? ParseSingleValue(uMatch.Groups[1].Value) : null;
+                    v = vMatch.Success ? ParseSingleValue(vMatch.Groups[1].Value) : null;
+                }
             }
 
-            // 值解析辅助方法（局部函数）
-            static double? ParseSingleValue(string val)
-            {
-                if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
-                    return double.PositiveInfinity;   // 完全一致 → 正无穷
-                if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
-                    return result;
-                return null;
-            }
+            _logger.LogInfo($"XPSNR [{distStream}] exit={exitCode} Y={y?.ToString("F2")} U={u?.ToString("F2")} V={v?.ToString("F2")}");
+            return (y, u, v);
+        }
 
-            // 计算加权 W?XPSNR
-            double? weighted = null;
-            if (y.HasValue && u.HasValue && v.HasValue)
-            {
-                weighted = ComputeWXPSNR(y.Value, u.Value, v.Value, maxVal);
-            }
-            return (y, u, v, weighted);
+        private static double? ParseSingleValue(string val)
+        {
+            if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
+                return double.PositiveInfinity;
+            if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
+                return result;
+            return null;
         }
 
         /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
-        /// <param name="maxVal">像素最大值，8?bit=255, 10?bit=1023</param>
-        private static double ComputeWXPSNR(double y, double u, double v, double maxVal = 255.0)
+        private static double? ComputeWXPSNR(double? y, double? u, double? v)
         {
-            double mseY = maxVal * maxVal * Math.Pow(10, -y / 10);
-            double mseU = maxVal * maxVal * Math.Pow(10, -u / 10);
-            double mseV = maxVal * maxVal * Math.Pow(10, -v / 10);
+            if (!y.HasValue || !u.HasValue || !v.HasValue) return null;
+            const double maxVal = 255.0;
+            double mseY = maxVal * maxVal * Math.Pow(10, -y.Value / 10);
+            double mseU = maxVal * maxVal * Math.Pow(10, -u.Value / 10);
+            double mseV = maxVal * maxVal * Math.Pow(10, -v.Value / 10);
             double weightedMSE = (6.0 * mseY + 1.0 * mseU + 1.0 * mseV) / 8.0;
             return 10.0 * Math.Log10(maxVal * maxVal / weightedMSE);
         }
