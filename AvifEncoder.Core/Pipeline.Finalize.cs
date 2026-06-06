@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -273,7 +273,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                         isAnimated: _isAnimatedFile.Value);
                     if (metrics != null)
                     {
-                        string normalizedInput = GetNormalizedPathForCache(inputPath);
+                        string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(inputPath);
                         string rowMtSafe = EncodeHelpers.GetRowMtArg(config);
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput, testCrf, "yuv420p", 0, 0,

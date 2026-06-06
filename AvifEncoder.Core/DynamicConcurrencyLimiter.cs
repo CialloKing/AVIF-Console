@@ -36,17 +36,27 @@ namespace AvifEncoder
                 newMax = Math.Max(1, newMax);
                 int diff = newMax - _currentMax;
                 if (diff > 0)
+                {
                     _semaphore.Release(diff);
+                    _currentMax = newMax;
+                }
                 else if (diff < 0)
                 {
                     // 回收空闲槽位 — 不强行中断正在执行的任务
+                    int reclaimed = 0;
                     for (int i = 0; i < -diff; i++)
                     {
-                        if (!_semaphore.Wait(0))
+                        if (_semaphore.Wait(0))
+                            reclaimed++;
+                        else
                             break;
                     }
+                    _currentMax -= reclaimed;  // 仅减去实际回收的槽位数
                 }
-                _currentMax = newMax;
+                else
+                {
+                    _currentMax = newMax;
+                }
                 return _currentMax;
             }
         }

@@ -59,6 +59,9 @@ namespace AvifEncoder
                 if (!process.HasExited)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
+                    // 主动关闭管道流，确保 ReadToEndAsync 不会永久挂起
+                    try { process.StandardOutput.BaseStream.Dispose(); } catch { }
+                    try { process.StandardError.BaseStream.Dispose(); } catch { }
                     try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                 }
                 throw;  // 重新抛出，让调用方知道这是取消而非失败
@@ -102,7 +105,7 @@ namespace AvifEncoder
         public string GetProgressLine(EncodeResult? r)
         {
             int done = ProcessedCount, total = TotalFiles;
-            double pct = done * 100.0 / total;
+            double pct = total > 0 ? done * 100.0 / total : 0.0;
             var elapsed = DateTime.Now - _startTime;
             string eta = "计算中...";
             if (done > 0 && done < total)

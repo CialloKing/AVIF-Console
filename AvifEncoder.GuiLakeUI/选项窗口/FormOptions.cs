@@ -644,6 +644,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbRgbMode.DropDownBorderColor = Color.White;
             cmbRgbMode.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbRgbMode.DropDownMode = ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbRgbMode.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbRgbMode.DropDownScrollBarColor = Color.Gainsboro;
             cmbRgbMode.DropDownScrollBarHoverColor = Color.White;
             cmbRgbMode.DropDownSelectedColor = Color.Transparent;
@@ -653,6 +654,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbRgbMode.Location = new Point(217, 440);
             cmbRgbMode.Margin = new Padding(2, 2, 2, 2);
             cmbRgbMode.Name = "cmbRgbMode";
+            cmbRgbMode.Padding = new Padding(6, 0, 0, 0);
             cmbRgbMode.SelectionColor = Color.Transparent;
             cmbRgbMode.Size = new Size(160, 32);
             cmbRgbMode.TabIndex = 76;
@@ -694,6 +696,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numDenoise.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numDenoise.Location = new Point(16, 440);
             numDenoise.Name = "numDenoise";
+            numDenoise.Padding = new Padding(6, 0, 0, 0);
             numDenoise.Size = new Size(160, 32);
             numDenoise.TabIndex = 72;
             // 
@@ -816,6 +819,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSsim.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numTimeoutSsim.Location = new Point(8, 719);
             numTimeoutSsim.Name = "numTimeoutSsim";
+            numTimeoutSsim.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSsim.Size = new Size(160, 32);
             numTimeoutSsim.TabIndex = 62;
             numTimeoutSsim.ValueChanged += numTimeoutSsim_ValueChanged;
@@ -833,6 +837,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSafe.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numTimeoutSafe.Location = new Point(8, 661);
             numTimeoutSafe.Name = "numTimeoutSafe";
+            numTimeoutSafe.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSafe.Size = new Size(160, 32);
             numTimeoutSafe.TabIndex = 61;
             // 
@@ -849,6 +854,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSearch.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numTimeoutSearch.Location = new Point(8, 603);
             numTimeoutSearch.Name = "numTimeoutSearch";
+            numTimeoutSearch.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSearch.Size = new Size(160, 32);
             numTimeoutSearch.TabIndex = 60;
             // 
@@ -865,6 +871,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutEncode.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numTimeoutEncode.Location = new Point(8, 545);
             numTimeoutEncode.Name = "numTimeoutEncode";
+            numTimeoutEncode.Padding = new Padding(6, 0, 0, 0);
             numTimeoutEncode.Size = new Size(160, 32);
             numTimeoutEncode.TabIndex = 59;
             // 

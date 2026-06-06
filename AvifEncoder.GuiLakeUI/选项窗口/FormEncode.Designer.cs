@@ -203,6 +203,7 @@
             cmbTemplate.DropDownBorderColor = Color.White;
             cmbTemplate.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbTemplate.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbTemplate.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbTemplate.DropDownScrollBarColor = Color.Gainsboro;
             cmbTemplate.DropDownScrollBarHoverColor = Color.White;
             cmbTemplate.DropDownSelectedColor = Color.Transparent;
@@ -212,6 +213,7 @@
             cmbTemplate.Location = new Point(37, 113);
             cmbTemplate.Margin = new Padding(2, 2, 2, 2);
             cmbTemplate.Name = "cmbTemplate";
+            cmbTemplate.Padding = new Padding(6, 0, 0, 0);
             cmbTemplate.SelectionColor = Color.Transparent;
             cmbTemplate.Size = new Size(160, 32);
             cmbTemplate.TabIndex = 65;
@@ -232,6 +234,7 @@
             cmbPreset.DropDownBorderColor = Color.White;
             cmbPreset.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbPreset.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbPreset.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbPreset.DropDownSelectedColor = Color.Transparent;
             cmbPreset.DropDownSelectedForeColor = Color.White;
             cmbPreset.ForeColor = Color.WhiteSmoke;
@@ -239,6 +242,7 @@
             cmbPreset.Location = new Point(37, 187);
             cmbPreset.Margin = new Padding(2, 2, 2, 2);
             cmbPreset.Name = "cmbPreset";
+            cmbPreset.Padding = new Padding(6, 0, 0, 0);
             cmbPreset.SelectionColor = Color.Transparent;
             cmbPreset.Size = new Size(160, 32);
             cmbPreset.TabIndex = 64;
@@ -258,6 +262,7 @@
             cmbEncoder.DropDownBorderColor = Color.White;
             cmbEncoder.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbEncoder.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbEncoder.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbEncoder.DropDownScrollBarColor = Color.Gainsboro;
             cmbEncoder.DropDownScrollBarHoverColor = Color.White;
             cmbEncoder.DropDownSelectedColor = Color.Transparent;
@@ -267,6 +272,7 @@
             cmbEncoder.Location = new Point(37, 247);
             cmbEncoder.Margin = new Padding(2, 2, 2, 2);
             cmbEncoder.Name = "cmbEncoder";
+            cmbEncoder.Padding = new Padding(6, 0, 0, 0);
             cmbEncoder.SelectionColor = Color.Transparent;
             cmbEncoder.Size = new Size(160, 32);
             cmbEncoder.TabIndex = 63;
@@ -288,6 +294,7 @@
             cmbConflict.DropDownBorderColor = Color.White;
             cmbConflict.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbConflict.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbConflict.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbConflict.DropDownSelectedColor = Color.Transparent;
             cmbConflict.DropDownSelectedForeColor = Color.White;
             cmbConflict.ForeColor = Color.WhiteSmoke;
@@ -295,6 +302,7 @@
             cmbConflict.Location = new Point(37, 309);
             cmbConflict.Margin = new Padding(2, 2, 2, 2);
             cmbConflict.Name = "cmbConflict";
+            cmbConflict.Padding = new Padding(6, 0, 0, 0);
             cmbConflict.SelectionColor = Color.Transparent;
             cmbConflict.Size = new Size(160, 32);
             cmbConflict.TabIndex = 62;
@@ -314,6 +322,7 @@
             cmbChroma.DropDownBorderColor = Color.White;
             cmbChroma.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbChroma.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbChroma.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbChroma.DropDownSelectedColor = Color.Transparent;
             cmbChroma.DropDownSelectedForeColor = Color.White;
             cmbChroma.ForeColor = Color.WhiteSmoke;
@@ -321,6 +330,7 @@
             cmbChroma.Location = new Point(37, 380);
             cmbChroma.Margin = new Padding(2, 2, 2, 2);
             cmbChroma.Name = "cmbChroma";
+            cmbChroma.Padding = new Padding(6, 0, 0, 0);
             cmbChroma.SelectionColor = Color.Transparent;
             cmbChroma.Size = new Size(160, 32);
             cmbChroma.TabIndex = 61;
@@ -340,6 +350,7 @@
             cmbBitDepth.DropDownBorderColor = Color.White;
             cmbBitDepth.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbBitDepth.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbBitDepth.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbBitDepth.DropDownSelectedColor = Color.Transparent;
             cmbBitDepth.DropDownSelectedForeColor = Color.White;
             cmbBitDepth.ForeColor = Color.WhiteSmoke;
@@ -347,6 +358,7 @@
             cmbBitDepth.Location = new Point(37, 438);
             cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
             cmbBitDepth.Name = "cmbBitDepth";
+            cmbBitDepth.Padding = new Padding(6, 0, 0, 0);
             cmbBitDepth.SelectionColor = Color.Transparent;
             cmbBitDepth.Size = new Size(160, 32);
             cmbBitDepth.TabIndex = 60;
@@ -366,6 +378,7 @@
             cmbQualityMode.DropDownBorderColor = Color.White;
             cmbQualityMode.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbQualityMode.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbQualityMode.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbQualityMode.DropDownScrollBarColor = Color.Gainsboro;
             cmbQualityMode.DropDownScrollBarHoverColor = Color.White;
             cmbQualityMode.DropDownSelectedColor = Color.Transparent;
@@ -375,6 +388,7 @@
             cmbQualityMode.Location = new Point(230, 438);
             cmbQualityMode.Margin = new Padding(2, 2, 2, 2);
             cmbQualityMode.Name = "cmbQualityMode";
+            cmbQualityMode.Padding = new Padding(7, 0, 0, 0);
             cmbQualityMode.SelectionColor = Color.Transparent;
             cmbQualityMode.Size = new Size(160, 32);
             cmbQualityMode.TabIndex = 59;
@@ -394,6 +408,7 @@
             numSearchCpuUsed.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numSearchCpuUsed.Location = new Point(432, 187);
             numSearchCpuUsed.Name = "numSearchCpuUsed";
+            numSearchCpuUsed.Padding = new Padding(6, 0, 0, 0);
             numSearchCpuUsed.Size = new Size(160, 32);
             numSearchCpuUsed.TabIndex = 58;
             // 
@@ -409,6 +424,7 @@
             numFinalCpuUsed.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numFinalCpuUsed.Location = new Point(432, 247);
             numFinalCpuUsed.Name = "numFinalCpuUsed";
+            numFinalCpuUsed.Padding = new Padding(6, 0, 0, 0);
             numFinalCpuUsed.Size = new Size(160, 32);
             numFinalCpuUsed.TabIndex = 57;
             // 
@@ -426,6 +442,7 @@
             numMaxRes.LargeChange = 1000D;
             numMaxRes.Location = new Point(432, 309);
             numMaxRes.Name = "numMaxRes";
+            numMaxRes.Padding = new Padding(6, 0, 0, 0);
             numMaxRes.Size = new Size(160, 32);
             numMaxRes.SmallChange = 100D;
             numMaxRes.TabIndex = 56;
@@ -442,6 +459,7 @@
             numJobs.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numJobs.Location = new Point(432, 380);
             numJobs.Name = "numJobs";
+            numJobs.Padding = new Padding(6, 0, 0, 0);
             numJobs.Size = new Size(86, 32);
             numJobs.TabIndex = 55;
             // 
@@ -459,6 +477,7 @@
             numQualityValue.LargeChange = 1D;
             numQualityValue.Location = new Point(432, 438);
             numQualityValue.Name = "numQualityValue";
+            numQualityValue.Padding = new Padding(6, 0, 0, 0);
             numQualityValue.Size = new Size(160, 32);
             numQualityValue.SmallChange = 0.1D;
             numQualityValue.TabIndex = 54;
@@ -515,7 +534,7 @@
             // 
             label11.AutoSize = true;
             label11.ForeColor = Color.WhiteSmoke;
-            label11.Location = new Point(37, 290);
+            label11.Location = new Point(40, 290);
             label11.Name = "label11";
             label11.Size = new Size(92, 17);
             label11.TabIndex = 48;
@@ -537,7 +556,7 @@
             // 
             label10.AutoSize = true;
             label10.ForeColor = Color.WhiteSmoke;
-            label10.Location = new Point(432, 290);
+            label10.Location = new Point(435, 290);
             label10.Name = "label10";
             label10.Size = new Size(168, 17);
             label10.TabIndex = 45;
@@ -571,7 +590,7 @@
             // 
             label9.AutoSize = true;
             label9.ForeColor = Color.WhiteSmoke;
-            label9.Location = new Point(37, 419);
+            label9.Location = new Point(40, 419);
             label9.Name = "label9";
             label9.Size = new Size(32, 17);
             label9.TabIndex = 41;
@@ -581,7 +600,7 @@
             // 
             label8.AutoSize = true;
             label8.ForeColor = Color.WhiteSmoke;
-            label8.Location = new Point(37, 359);
+            label8.Location = new Point(40, 359);
             label8.Name = "label8";
             label8.Size = new Size(56, 17);
             label8.TabIndex = 39;
@@ -591,7 +610,7 @@
             // 
             label7.AutoSize = true;
             label7.ForeColor = Color.WhiteSmoke;
-            label7.Location = new Point(230, 419);
+            label7.Location = new Point(233, 419);
             label7.Name = "label7";
             label7.Size = new Size(56, 17);
             label7.TabIndex = 36;
@@ -601,7 +620,7 @@
             // 
             label6.AutoSize = true;
             label6.ForeColor = Color.WhiteSmoke;
-            label6.Location = new Point(230, 363);
+            label6.Location = new Point(232, 361);
             label6.Name = "label6";
             label6.Size = new Size(56, 17);
             label6.TabIndex = 34;
@@ -620,6 +639,7 @@
             cmbMetric.DropDownBorderColor = Color.White;
             cmbMetric.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
             cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbMetric.DropDownPadding = new Padding(3, 0, 0, 0);
             cmbMetric.DropDownScrollBarColor = Color.Gainsboro;
             cmbMetric.DropDownScrollBarHoverColor = Color.White;
             cmbMetric.DropDownSelectedColor = Color.Transparent;
@@ -629,6 +649,7 @@
             cmbMetric.Location = new Point(230, 380);
             cmbMetric.Margin = new Padding(2, 2, 2, 2);
             cmbMetric.Name = "cmbMetric";
+            cmbMetric.Padding = new Padding(7, 0, 0, 0);
             cmbMetric.SelectionColor = Color.Transparent;
             cmbMetric.Size = new Size(160, 32);
             cmbMetric.TabIndex = 33;
@@ -663,6 +684,7 @@
             numCrfMax.HoverButtonBackColor1 = Color.Silver;
             numCrfMax.Location = new Point(90, 143);
             numCrfMax.Name = "numCrfMax";
+            numCrfMax.Padding = new Padding(6, 0, 0, 0);
             numCrfMax.Size = new Size(66, 32);
             numCrfMax.TabIndex = 54;
             // 
@@ -676,6 +698,7 @@
             numCrfMin.HoverButtonBackColor1 = Color.Silver;
             numCrfMin.Location = new Point(6, 143);
             numCrfMin.Name = "numCrfMin";
+            numCrfMin.Padding = new Padding(6, 0, 0, 0);
             numCrfMin.Size = new Size(66, 32);
             numCrfMin.TabIndex = 53;
             // 
@@ -690,6 +713,7 @@
             numCrfFix.HoverButtonBackColor1 = Color.Silver;
             numCrfFix.Location = new Point(6, 52);
             numCrfFix.Name = "numCrfFix";
+            numCrfFix.Padding = new Padding(6, 0, 0, 0);
             numCrfFix.Size = new Size(114, 32);
             numCrfFix.TabIndex = 53;
             // 
@@ -746,6 +770,7 @@
             txtTemplate.Location = new Point(230, 113);
             txtTemplate.Margin = new Padding(2);
             txtTemplate.Name = "txtTemplate";
+            txtTemplate.Padding = new Padding(6, 0, 0, 0);
             txtTemplate.Size = new Size(835, 32);
             txtTemplate.TabIndex = 22;
             txtTemplate.Text = "covers-{index}.avif";
@@ -754,7 +779,7 @@
             // 
             label3.AutoSize = true;
             label3.ForeColor = Color.Gainsboro;
-            label3.Location = new Point(432, 228);
+            label3.Location = new Point(435, 228);
             label3.Name = "label3";
             label3.Size = new Size(80, 17);
             label3.TabIndex = 21;
@@ -764,7 +789,7 @@
             // 
             label2.AutoSize = true;
             label2.ForeColor = Color.WhiteSmoke;
-            label2.Location = new Point(432, 166);
+            label2.Location = new Point(436, 166);
             label2.Name = "label2";
             label2.Size = new Size(56, 17);
             label2.TabIndex = 19;
@@ -774,7 +799,7 @@
             // 
             label1.AutoSize = true;
             label1.ForeColor = Color.WhiteSmoke;
-            label1.Location = new Point(432, 358);
+            label1.Location = new Point(435, 358);
             label1.Name = "label1";
             label1.Size = new Size(110, 17);
             label1.TabIndex = 17;
@@ -813,7 +838,7 @@
             // 
             lblQuality.AutoSize = true;
             lblQuality.ForeColor = Color.WhiteSmoke;
-            lblQuality.Location = new Point(432, 419);
+            lblQuality.Location = new Point(435, 419);
             lblQuality.Name = "lblQuality";
             lblQuality.Size = new Size(80, 17);
             lblQuality.TabIndex = 12;
@@ -823,7 +848,7 @@
             // 
             lblEncoder.AutoSize = true;
             lblEncoder.ForeColor = Color.WhiteSmoke;
-            lblEncoder.Location = new Point(37, 228);
+            lblEncoder.Location = new Point(40, 228);
             lblEncoder.Name = "lblEncoder";
             lblEncoder.Size = new Size(44, 17);
             lblEncoder.TabIndex = 10;
@@ -833,7 +858,7 @@
             // 
             lblPreset.AutoSize = true;
             lblPreset.ForeColor = Color.WhiteSmoke;
-            lblPreset.Location = new Point(37, 166);
+            lblPreset.Location = new Point(40, 166);
             lblPreset.Name = "lblPreset";
             lblPreset.Size = new Size(56, 17);
             lblPreset.TabIndex = 8;
@@ -883,6 +908,7 @@
             txtOutput.Location = new Point(156, 67);
             txtOutput.Margin = new Padding(2);
             txtOutput.Name = "txtOutput";
+            txtOutput.Padding = new Padding(6, 0, 0, 0);
             txtOutput.Size = new Size(909, 32);
             txtOutput.TabIndex = 5;
             txtOutput.WaterText = "输出路径，支持拖入文件夹";
@@ -931,6 +957,7 @@
             txtInput.Location = new Point(156, 21);
             txtInput.Margin = new Padding(2);
             txtInput.Name = "txtInput";
+            txtInput.Padding = new Padding(6, 0, 0, 0);
             txtInput.Size = new Size(909, 32);
             txtInput.TabIndex = 0;
             txtInput.WaterText = "输入路径，支持拖入文件夹";

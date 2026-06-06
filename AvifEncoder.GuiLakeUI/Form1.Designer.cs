@@ -56,10 +56,10 @@
             // 
             thisIsYourWindow1.BackdropBlurPasses = 1;
             thisIsYourWindow1.BackdropBlurRadius = 5;
-            thisIsYourWindow1.BackdropDownsampleFactor = 8;
+            thisIsYourWindow1.BackdropDownsampleFactor = 2;
             thisIsYourWindow1.BackdropImage = (Image)resources.GetObject("thisIsYourWindow1.BackdropImage");
             thisIsYourWindow1.BackdropMode = LakeUI.ThisIsYourWindow.BackdropModeEnum.Image;
-            thisIsYourWindow1.BackdropNoiseOpacity = 10;
+            thisIsYourWindow1.BackdropNoiseOpacity = 5;
             thisIsYourWindow1.BackdropTintColor = Color.FromArgb(80, 0, 0, 0);
             thisIsYourWindow1.BackdropTintInactiveColor = Color.FromArgb(80, 0, 0, 0);
             thisIsYourWindow1.BorderColor = Color.FromArgb(118, 106, 183);

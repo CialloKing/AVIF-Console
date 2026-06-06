@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -61,7 +61,7 @@ EncodeToFileExAsync(string input, string output, int crf, int tileCols, int cpuU
             string[] pixFmtsToTry = GetPixelFormatFallbackList(pixFmt, isTrueLossless);
             string lastError = "所有像素格式尝试均失败";
             string fileName = Path.GetFileName(input);
-            string normalizedKey = GetNormalizedPathForCache(input);
+            string normalizedKey = EncodeHelpers.GetNormalizedPathForCache(input);
             var fatalSet = _fatalFmts.GetOrAdd(normalizedKey, _ => new ConcurrentDictionary<string, byte>());
             foreach (var currentPixFmt in pixFmtsToTry)
             {
@@ -235,7 +235,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                       (string aomParams, string tilePart, int actualCpu, string rowMt) param,
                       PresetConfig cfg, bool isTrueLossless, int timeoutMinutes, string fileName)
         {
-            string normalizedInput = GetNormalizedPathForCache(input);
+            string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(input);
             var (encW, encH) = await GetResolutionAsync(input);
 
             string cacheKey = GetEncodeCacheKey(normalizedInput, crf, currentPixFmt, param.tilePart,

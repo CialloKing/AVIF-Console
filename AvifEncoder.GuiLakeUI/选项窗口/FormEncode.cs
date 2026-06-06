@@ -41,6 +41,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private bool _isResumeDetected;
         private bool _stopping;  // 停止中，冻结进度
         private AvifPipeline? _pipeline;  // 运行时动态调整并发的引用
+        private Task? _runTask;  // RunAsync 返回的 Task，供 FormClosing 等待安全退出
 
         private static readonly string[] _presetNames = ["自定义", "fast", "balanced", "best", "extreme"];
         private static readonly string[] _allEncoderNames = ["libaom-av1", "libsvtav1", "librav1e", "av1_nvenc", "av1_qsv", "av1_amf", "av1_vaapi"];
@@ -817,6 +818,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             catch { }
 
             _isEncoding = true;
+            _resumePollTimer?.Stop();
             btnStart.Enabled = false;
             btnStop.Enabled = true;
             btnUpdateJobs.Enabled = true;
@@ -865,7 +867,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             logger: logger,
                             progress: progress);
                         _pipeline = pipeline;
-                        await pipeline.RunAsync(_cts.Token);
+                        _runTask = pipeline.RunAsync(_cts.Token);
+                        await _runTask;
                     }
                     catch (OperationCanceledException)
                     {
@@ -887,11 +890,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 _isEncoding = false;
                 _isResumeDetected = false;
+                _resumePollTimer?.Start();
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 btnUpdateJobs.Enabled = false;
                 _pipeline = null;
-                _cts?.Dispose(); _cts = null;
+                _cts = null;  // using 块已自动 Dispose，此处仅清空引用
                 if (_topLevelHandle != IntPtr.Zero)
                     SysTaskBarProgress.Clear(_topLevelHandle);
                 _stopping = false;
@@ -922,17 +926,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
         }
         private bool _completedNormally;
-        private static void KillAllFfmpegProcesses()
-        {
-            try
-            {
-                foreach (var p in System.Diagnostics.Process.GetProcessesByName("ffmpeg"))
-                    try { p.Kill(entireProcessTree: true); } catch { }
-                foreach (var p in System.Diagnostics.Process.GetProcessesByName("ffprobe"))
-                    try { p.Kill(entireProcessTree: true); } catch { }
-            }
-            catch { }
-        }
 
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
         {
@@ -940,18 +933,30 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 e.Cancel = true;  // 阻止关闭
                 _stopping = true;  // ★ 标记为中断，防止完成后删除 .session
-                LogPage?.AppendLog("正在安全停止所有 ffmpeg 进程...");
+                LogPage?.AppendLog("正在安全停止编码...");
                 _cts.Cancel();
-                // 启动定时器，等待 Pipeline 清理后自动关闭
-                var timer = new System.Windows.Forms.Timer { Interval = 5000 };
-                timer.Tick += (_, _) =>
-                {
-                    timer.Stop(); timer.Dispose();
-                    _isEncoding = false;
-                    this.Close();
-                };
-                timer.Start();
+                // 仅终止本 Pipeline 追踪的进程，不影响系统其他 ffmpeg
+                _pipeline?.KillTrackedProcesses();
+                // 异步等待 Pipeline 完成后再关闭窗口
+                _ = CloseAfterPipelineAsync();
             }
+        }
+
+        private async Task CloseAfterPipelineAsync()
+        {
+            try
+            {
+                // 等待 _runTask 完成（最多 60 秒，确保 Pipeline 完全清理）
+                if (_runTask != null)
+                    await Task.WhenAny(_runTask, Task.Delay(TimeSpan.FromSeconds(60)));
+            }
+            catch { }
+            _isEncoding = false;
+            if (IsDisposed || !IsHandleCreated) return;
+            if (InvokeRequired)
+                Invoke(new Action(() => { if (!IsDisposed && IsHandleCreated) this.Close(); }));
+            else
+                this.Close();
         }
         private void BtnUpdateJobs_Click(object? sender, EventArgs e)
         {
@@ -975,10 +980,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         {
             if (_cts != null && !_cts.IsCancellationRequested)
             {
-                LogPage?.AppendLog("正在停止所有 ffmpeg 进程...");
+                LogPage?.AppendLog("正在停止编码...");
                 _cts.Cancel();
-                // 强制杀掉本机所有 ffmpeg/ffprobe 子进程
-                KillAllFfmpegProcesses();
+                // 仅终止本 Pipeline 追踪的进程，不影响系统其他 ffmpeg
+                _pipeline?.KillTrackedProcesses();
                 btnStop.Enabled = false;
                 btnUpdateJobs.Enabled = false;
                 _stopping = true;  // 冻结进度条

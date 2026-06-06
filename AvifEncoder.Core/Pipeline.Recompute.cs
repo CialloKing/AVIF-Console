@@ -331,10 +331,7 @@ namespace AvifEncoder
                                     CultureInfo.InvariantCulture) ?? "";
                             }
                             newLines.Add(string.Join(",",
-                                fields.Select(f =>
-                                    f.Contains(',') || f.Contains('"')
-                                        ? $"\"{f.Replace("\"", "\"\"")}\""
-                                        : f)));
+                                fields.Select(f => EncodeHelpers.CsvEscape(f))));
                         }
                         else
                         {

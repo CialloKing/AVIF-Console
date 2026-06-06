@@ -6,7 +6,6 @@ using System.Windows.Forms;
 using AvifEncoder;
 using AvifEncoder.GuiLakeUI.选项窗口;
 using LakeUI;
-using static LakeUI.D2DHelper;
 
 namespace AvifEncoder.GuiLakeUI
 {
@@ -23,7 +22,6 @@ namespace AvifEncoder.GuiLakeUI
 
         public Form1()
         {
-            D2DHelper.GlobalTextQuality = TextQualityMode.ClearType;
             InitializeComponent();
             // 可设置一个合理的初始大小
             this.Size = new Size(1600, 900);             // ← 改为 1600×900

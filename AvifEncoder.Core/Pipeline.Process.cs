@@ -483,7 +483,7 @@ namespace AvifEncoder
             if (!encodeResult.Success)
                 return (0, null, "");
 
-            string normalizedInput = GetNormalizedPathForCache(workingInputPath);
+            string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(workingInputPath);
             string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
             int actualDepth = encodeResult.ActualPixFmt?.Contains("12le") == true ? 12
                 : encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;

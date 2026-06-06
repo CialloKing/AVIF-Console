@@ -1702,7 +1702,7 @@ namespace AvifEncoder
 
         private Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
-            string key = GetNormalizedPathForCache(filePath);
+            string key = EncodeHelpers.GetNormalizedPathForCache(filePath);
             return _probeCache.GetOrAdd(key, _ => ProbeFileCoreAsync(filePath));
         }
 
@@ -1815,22 +1815,7 @@ namespace AvifEncoder
 
 
 
-        /// <summary> 返回编码器特定的参数片段，已包含完整的速度控制和分块部分 </summary>
-
-        private static string GetNormalizedPathForCache(string input)
-        {
-            try
-            {
-                string full = Path.GetFullPath(input).Trim();
-                // 启用长路径支持，确保缓存键一致
-                full = EnsureLongPath(full);
-                return OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
-            }
-            catch
-            {
-                return $"__fallback__{Path.GetFileName(input).ToLowerInvariant()}";
-            }
-        }
+        // ★ GetNormalizedPathForCache 已统一至 EncodeHelpers.cs
 
 
         /// <summary>
@@ -2338,7 +2323,7 @@ namespace AvifEncoder
                     _logger.LogInfo($"[RESUME] metrics restored: {resumeMetrics.Count} files");
                     foreach (var kv in resumeMetrics)
                     {
-                        string metricsKey = GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
+                        string metricsKey = EncodeHelpers.GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
                         _cache.SetMetrics(metricsKey, kv.Value);
                         _logger.LogInfo($"[RESUME] metric: {Path.GetFileName(kv.Key)}");
                     }
@@ -2848,6 +2833,15 @@ namespace AvifEncoder
             ExportCsv(allResults, _resumeMetricsForExport);
         }
 
+        /// <summary>安全终止本 Pipeline 追踪的 ffmpeg 子进程（不影响系统其他实例）。</summary>
+        public void KillTrackedProcesses()
+        {
+            foreach (var p in _spawnedProcesses)
+            {
+                try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch { }
+            }
+        }
+
         /// <summary> 清理编码缓存及临时文件 </summary>
         private void FinalCleanup()
         {
@@ -2969,7 +2963,7 @@ namespace AvifEncoder
         private async Task<bool> SourceHasAlpha(string filePath)
         {
             // ★ 先查轻量 Alpha 缓存，避免重复 ffprobe
-            string normalizedPath = GetNormalizedPathForCache(filePath);
+            string normalizedPath = EncodeHelpers.GetNormalizedPathForCache(filePath);
             if (_srcAlphaCache.TryGetValue(normalizedPath, out bool cachedAlpha))
                 return cachedAlpha;
 
@@ -3028,7 +3022,7 @@ namespace AvifEncoder
                 string fmt = info.PixFmt; // 已经是小写，如 rgba、gray16le 等
 
                 // 填充旧的 Alpha 缓存（如果未填充）
-                string normalizedPath = GetNormalizedPathForCache(filePath);
+                string normalizedPath = EncodeHelpers.GetNormalizedPathForCache(filePath);
                 if (!_srcAlphaCache.ContainsKey(normalizedPath))
                     _srcAlphaCache[normalizedPath] = info.HasAlpha;
 
@@ -3092,7 +3086,7 @@ namespace AvifEncoder
                 fmtFallback = fmtFallback.Contains("64") ? "yuva444p10le" : "yuva444p"; // 保守假设有 alpha
 
             if (string.IsNullOrEmpty(fmtFallback)) fmtFallback = "yuv420p";
-            _srcPixFmtCache[GetNormalizedPathForCache(filePath)] = fmtFallback;
+            _srcPixFmtCache[EncodeHelpers.GetNormalizedPathForCache(filePath)] = fmtFallback;
             return fmtFallback;
         }
 

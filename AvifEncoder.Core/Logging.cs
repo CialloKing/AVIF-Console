@@ -37,21 +37,20 @@ namespace AvifEncoder
         void LogSearch(string msg);   // 新增：搜索阶段专用日志
     }
 
-    /// <summary>基于文件的日志实现，兼容原 Logger 行为</summary>
+    /// <summary>基于文件的日志实现。使用 AppendAllText 逐次写入，简单可靠。</summary>
     public class FileLogger : ILogger
     {
         private readonly object _lock = new();
         private readonly string _logDir;
-        private readonly PresetConfig.IFileSystem _fs;   // 改为完整限定名
+        private readonly PresetConfig.IFileSystem _fs;
 
-
-        public FileLogger(string outputDir, PresetConfig.IFileSystem? fileSystem = null)  // 改为完整限定名
+        public FileLogger(string outputDir, PresetConfig.IFileSystem? fileSystem = null)
         {
             _fs = fileSystem ?? new PresetConfig.RealFileSystem();
             _logDir = Path.Combine(outputDir, "log");
             _fs.CreateDirectory(_logDir);
 
-            // 清理30天前的 run 日志（原有逻辑不变）
+            // 清理30天前的 run 日志
             try
             {
                 var cutoff = DateTime.Now.AddDays(-30);
@@ -79,7 +78,6 @@ namespace AvifEncoder
         {
             lock (_lock)
             {
-                // 错误日志同时写入 run 日志和 error.log
                 _fs.AppendAllText(
                     Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
                     $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}\n");
@@ -97,14 +95,12 @@ namespace AvifEncoder
                 "crf" => "crf_search.log",
                 _ => $"metric_{metricName}.log"
             };
-
             lock (_lock)
                 _fs.AppendAllText(
                     Path.Combine(_logDir, fileName),
                     $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
         }
 
-        // 搜索专用日志：写入 crf_search.log
         public void LogSearch(string msg)
         {
             LogMetric("crf", msg);
@@ -123,28 +119,28 @@ namespace AvifEncoder
         {
             foreach (var l in _loggers)
             {
-                try { l.LogInfo(m); } catch { }
+                try { l.LogInfo(m); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Logger] LogInfo 异常: {ex.Message}"); }
             }
         }
         public void LogError(string m)
         {
             foreach (var l in _loggers)
             {
-                try { l.LogError(m); } catch { }
+                try { l.LogError(m); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Logger] LogError 异常: {ex.Message}"); }
             }
         }
         public void LogMetric(string mt, string m)
         {
             foreach (var l in _loggers)
             {
-                try { l.LogMetric(mt, m); } catch { }
+                try { l.LogMetric(mt, m); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Logger] LogMetric 异常: {ex.Message}"); }
             }
         }
         public void LogSearch(string m)
         {
             foreach (var l in _loggers)
             {
-                try { l.LogSearch(m); } catch { }
+                try { l.LogSearch(m); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Logger] LogSearch 异常: {ex.Message}"); }
             }
         }
     }

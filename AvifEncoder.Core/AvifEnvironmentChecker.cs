@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AvifEncoder
@@ -164,7 +165,7 @@ namespace AvifEncoder
                 p.Start();
                 var outTask = p.StandardOutput.ReadToEndAsync();
                 var errTask = p.StandardError.ReadToEndAsync();
-                await Task.WhenAll(outTask, errTask, p.WaitForExitAsync());
+                await Task.WhenAll(outTask, errTask, p.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)));
 
                 string output = await outTask;
                 using var reader = new StringReader(output);
@@ -204,7 +205,9 @@ namespace AvifEncoder
                     var e when e.StartsWith("av1_vaapi") => "-global_quality 30",
                     _ => "-crf 30"
                 };
-                string args = $"-y -loglevel error -i \"{testInput}\" -c:v {enc} -pix_fmt yuv420p {qpArg} -frames:v 1 \"{outFile}\"";
+                string escInput = EncodeHelpers.EscapeArg(testInput);
+                string escOutput = EncodeHelpers.EscapeArg(outFile);
+                string args = $"-y -loglevel error -i \"{escInput}\" -c:v {enc} -pix_fmt yuv420p {qpArg} -frames:v 1 \"{escOutput}\"";
 
                 var psi = new ProcessStartInfo("ffmpeg", args)
                 {
@@ -214,8 +217,9 @@ namespace AvifEncoder
                 };
                 using var p = Process.Start(psi);
                 if (p == null) return new EncoderStatus { Name = enc, Available = false, Note = "无法启动 ffmpeg" };
+                using var testCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 string stderr = await p.StandardError.ReadToEndAsync();
-                await p.WaitForExitAsync();
+                await p.WaitForExitAsync(testCts.Token);
 
                 if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
                 {
@@ -265,7 +269,7 @@ namespace AvifEncoder
                 process.Start();
                 string stdout = await process.StandardOutput.ReadToEndAsync();
                 string stderr = await process.StandardError.ReadToEndAsync();
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
                 string output = stdout + stderr;
 

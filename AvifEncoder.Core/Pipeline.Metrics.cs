@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -157,6 +157,16 @@ namespace AvifEncoder
     "缓存复用", "状态", "失败原因",
     "搜索评估次数"
 ];
+
+        private static readonly int _colXpsnrY   = Array.IndexOf(CsvColumnNames, "XPSNR-Y");
+        private static readonly int _colXpsnrU   = Array.IndexOf(CsvColumnNames, "XPSNR-U");
+        private static readonly int _colXpsnrV   = Array.IndexOf(CsvColumnNames, "XPSNR-V");
+        private static readonly int _colWXpsnr   = Array.IndexOf(CsvColumnNames, "W-XPSNR");
+        private static readonly int _colSsimu2   = Array.IndexOf(CsvColumnNames, "SSIMULACRA2");
+        private static readonly int _colButterR  = Array.IndexOf(CsvColumnNames, "Butteraugli_Raw");
+        private static readonly int _colButter3  = Array.IndexOf(CsvColumnNames, "Butteraugli_3norm");
+        private static readonly int _colGmsd     = Array.IndexOf(CsvColumnNames, "GMSD");
+
         /// <summary>
         /// 生成用于 SSIM 缓存的一致键，确保所有缓存访问使用相同格式。
         /// </summary>
@@ -207,7 +217,7 @@ namespace AvifEncoder
                 return new QualityMetrics { SSIM = 1.0, PSNR_Y = 100.0, MS_SSIM = 1.0, VMAF = 100.0 };
 
             int actualDepth = pixFmt.Contains("12le") ? 12 : pixFmt.Contains("10le") ? 10 : 8;
-            string normalizedInput = GetNormalizedPathForCache(input);
+            string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(input);
             string effectiveAom = cfg.GetEffectiveAomParams();
 
             string metricMode = cfg.MetricMode ?? "vmaf";

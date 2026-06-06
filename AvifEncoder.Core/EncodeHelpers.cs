@@ -83,18 +83,30 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary>Windows 长路径前缀转换</summary>
+        /// <summary>Windows 长路径前缀转换，处理相对路径和 UNC 路径。</summary>
         public static string EnsureLongPath(string path)
         {
-            if (OperatingSystem.IsWindows() && path.Length >= 260 && !path.StartsWith(@"\\?\"))
-                return @"\\?\" + path;
+            if (OperatingSystem.IsWindows())
+            {
+                if (path.StartsWith(@"\\?\"))
+                    return path;
+                string full = Path.GetFullPath(path);
+                if (full.StartsWith(@"\\") && !full.StartsWith(@"\\?\"))
+                    return @"\\?\UNC" + full.Substring(1);
+                else
+                    return @"\\?\" + full;
+            }
             return path;
         }
 
-        /// <summary>为外部工具参数转义文件名中的特殊字符（双引号）</summary>
+        /// <summary>为外部工具参数转义文件名中的特殊字符（双引号 + 末尾反斜杠）</summary>
         public static string EscapeArg(string path)
         {
-            return path.Replace("\"", "\\\"");
+            string escaped = path.Replace("\"", "\\\"");
+            // 防止末尾反斜杠与闭合引号组合产生歧义（"C:\test\" → 反斜杠转义闭合引号）
+            if (escaped.EndsWith('\\'))
+                escaped += "\\";
+            return escaped;
         }
 
         /// <summary>外部工具不接受 \\?\ 前缀，需要剥离。正确处理 UNC 路径 \\?\UNC\... → \\... </summary>
@@ -104,18 +116,18 @@ namespace AvifEncoder
             {
                 // \\?\UNC\server\share\path → \\server\share\path (UNC)
                 if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-                    return @"\" + path[7..];  // "\\?\UNC\" 是 7 字符，加回前导 \
+                    return @"\" + path[7..];  // "\\?\UNC\" 共 8 字符，path[7..] 从末尾 \ 开始截取
                 // \\?\C:\path → C:\path (普通路径)
                 return path[4..];
             }
             return path;
         }
 
-        /// <summary>CSV 字段转义</summary>
+        /// <summary>CSV 字段转义（处理逗号、引号、换行符、回车符）</summary>
         public static string CsvEscape(string field)
         {
             if (string.IsNullOrEmpty(field)) return "";
-            if (field.Contains(',') || field.Contains('"') || field.Contains('\n'))
+            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
                 return $"\"{field.Replace("\"", "\"\"")}\"";
             return field;
         }

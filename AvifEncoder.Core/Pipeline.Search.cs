@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
@@ -566,7 +566,7 @@ namespace AvifEncoder
         {
             int consecutiveFailures = 0;
             const int failThreshold = 2;
-            string normalizedKey = GetNormalizedPathForCache(input);
+            string normalizedKey = EncodeHelpers.GetNormalizedPathForCache(input);
 
             return async crf =>
             {
@@ -788,17 +788,18 @@ namespace AvifEncoder
                             if (mk == fileName || merged[mk].Contains(fileName))
                             {
                                 var cols = SplitCsvLine(merged[mk]);
-                                if (cols.Length >= 24)
+                                if (cols.Length >= CsvColumnNames.Length)
                                 {
                                     var m = kv.Value;
-                                    if (m.XPSNR_Y.HasValue) cols[16] = FormatDbValue(m.XPSNR_Y.Value);
-                                    if (m.XPSNR_U.HasValue) cols[17] = FormatDbValue(m.XPSNR_U.Value);
-                                    if (m.XPSNR_V.HasValue) cols[18] = FormatDbValue(m.XPSNR_V.Value);
-                                    if (m.W_XPSNR.HasValue) cols[19] = FormatDbValue(m.W_XPSNR.Value);
-                                    if (m.SSIMULACRA2.HasValue) cols[20] = FormatMetric(m.SSIMULACRA2.Value);
-                                    if (m.Butteraugli_Raw.HasValue) cols[21] = FormatMetric(m.Butteraugli_Raw.Value);
-                                    if (m.Butteraugli_3norm.HasValue) cols[22] = FormatMetric(m.Butteraugli_3norm.Value);
-                                    if (m.GMSD.HasValue) cols[23] = FormatMetric(m.GMSD.Value);
+                                    void SetIf(int ci, string? v) { if (ci >= 0 && ci < cols.Length && v != null) cols[ci] = v; }
+                                    SetIf(_colXpsnrY,  FormatDbValue(m.XPSNR_Y));
+                                    SetIf(_colXpsnrU,  FormatDbValue(m.XPSNR_U));
+                                    SetIf(_colXpsnrV,  FormatDbValue(m.XPSNR_V));
+                                    SetIf(_colWXpsnr,  FormatDbValue(m.W_XPSNR));
+                                    SetIf(_colSsimu2,  FormatMetric(m.SSIMULACRA2));
+                                    SetIf(_colButterR, FormatMetric(m.Butteraugli_Raw));
+                                    SetIf(_colButter3, FormatMetric(m.Butteraugli_3norm));
+                                    SetIf(_colGmsd,    FormatMetric(m.GMSD));
                                     merged[mk] = string.Join(",", cols.Select(f => CsvEscape(f)));
                                     patched++;
                                 }
