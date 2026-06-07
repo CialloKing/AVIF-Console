@@ -536,13 +536,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                    $"{stillPic} {framesPart} {animPart} {aomCombined} {customPart} {threadsArg} -y \"{EncodeHelpers.EscapeArg(output)}\"";
         }
 
-        private static string CsvEscape(string field)
-        {
-            if (string.IsNullOrEmpty(field)) return "";
-            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-                return $"\"{field.Replace("\"", "\"\"")}\"";
-            return field;
-        }
+        private static string CsvEscape(string field) => EncodeHelpers.CsvEscape(field);
 
         private async Task<(bool success, string stderrLastLine)> RunFfmpegExAsync(string file, string args, TimeSpan timeout)
         {

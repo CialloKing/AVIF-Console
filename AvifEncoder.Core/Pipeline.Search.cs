@@ -727,7 +727,10 @@ namespace AvifEncoder
             return string.Join(",", values);
         }
 
-        /// <summary> 线程安全追加一行到 CSV。首次写入时自动写表头。 </summary>
+        /// <summary> 线程安全追加一行到 CSV。使用内存缓冲区批量写入，减少磁盘系统调用。 </summary>
+        private readonly StringBuilder _csvBuffer = new();
+        private int _csvBufferCount;
+
         private void AppendCsvRow(EncodeResult r)
         {
             lock (_csvLock)
@@ -743,7 +746,22 @@ namespace AvifEncoder
                     _csvHeaderWritten = true;
                 }
 
-                _fs.AppendAllText(_csvPath, GetCsvRow(r) + "\n");
+                _csvBuffer.AppendLine(GetCsvRow(r));
+                _csvBufferCount++;
+                // ★ 每 50 行批量刷盘，session 结束时 FlushCsvBuffer() 兜底
+                if (_csvBufferCount >= 50)
+                    FlushCsvBuffer();
+            }
+        }
+
+        /// <summary> 将 CSV 缓冲区刷入磁盘 </summary>
+        private void FlushCsvBuffer()
+        {
+            if (_csvBuffer.Length > 0)
+            {
+                _fs.AppendAllText(_csvPath, _csvBuffer.ToString());
+                _csvBuffer.Clear();
+                _csvBufferCount = 0;
             }
         }
 

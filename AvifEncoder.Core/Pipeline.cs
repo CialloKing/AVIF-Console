@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;   // 如果使用 System.Text.Json
 using System.Text.RegularExpressions;
@@ -151,6 +152,7 @@ namespace AvifEncoder
         private static void SafeWriteLine(string msg) { lock (_consoleLock) Console.WriteLine(msg); }
 
         private readonly ConcurrentDictionary<string, bool> _srcAlphaCache = new();
+        private readonly ConcurrentDictionary<string, string> _pngCache = new();  // ★ PNG 转换 LRU：同输入避免重复 ffmpeg
 
         /// <summary>路径 → 内容指纹映射，用于跨会话稳定标识文件（目录重命名/移动后仍可匹配）</summary>
         private readonly ConcurrentDictionary<string, string> _fileIdCache = new(StringComparer.OrdinalIgnoreCase);
@@ -216,6 +218,13 @@ namespace AvifEncoder
         private async Task<string?> ConvertToPngAsync(string inputPath, string tempDir,
             int? frameIndex = null, string? inputStreamSpec = null)
         {
+            // ★ LRU 缓存：同一图像的 PNG 转换结果复用，避免 SSIMULACRA2/Butteraugli/XPSNR 各自 ffmpeg
+            string cacheKey = frameIndex.HasValue
+                ? $"{inputPath}|{frameIndex.Value}|{inputStreamSpec}"
+                : inputPath;
+            if (_pngCache.TryGetValue(cacheKey, out var cachedPath) && _fs.FileExists(cachedPath))
+                return cachedPath;
+
             string tempPng = Path.Combine(tempDir, $"_tool_{Guid.NewGuid():N}.png");
             string cleanInput = NormalizePathForExternalTool(inputPath);
             string cleanOutput = NormalizePathForExternalTool(tempPng);
@@ -225,7 +234,12 @@ namespace AvifEncoder
                 : "";
             string args = $"-y -loglevel error -i \"{cleanInput}\" {streamPart}{vfPart}-pix_fmt rgb24 -frames:v 1 \"{cleanOutput}\"";
             var (ok, _) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(1));
-            return ok && _fs.FileExists(tempPng) ? tempPng : null;
+            if (ok && _fs.FileExists(tempPng))
+            {
+                _pngCache[cacheKey] = tempPng;
+                return tempPng;
+            }
+            return null;
         }
 
 
@@ -409,14 +423,9 @@ namespace AvifEncoder
                     if (isAnimated)
                     {
                         const string distStream = "0:v:2";
-                        double ssimu2Sum = 0; int ssimu2Count = 0;
-                        double butterRawSum = 0; double butter3Sum = 0; int butterCount = 0;
-                        double gmsdSum = 0; int gmsdCount = 0;
-                        double xpsnrYSum = 0, xpsnrUSum = 0, xpsnrVSum = 0; int xpsnrCount = 0;
 
                         // per-frame CSV
                         string csvPath = Path.Combine(outputDir, $"{advName}_perframe.csv");
-                        var csvLines = new List<string> { "Frame,SSIMULACRA2,Butteraugli_3norm,GMSD,XPSNR_Y,XPSNR_U,XPSNR_V,W_XPSNR" };
 
                         // ★ 批量提取：ref 全帧 PNG + dist 全帧 PNG + GMSD 灰度 raw（仅 3 次 ffmpeg 调用）
                         var swBatch = Stopwatch.StartNew();
@@ -452,17 +461,30 @@ namespace AvifEncoder
                             }
                         }
 
-                        // ★ 逐帧处理（外部工具并发、GMSD 内存内计算）
+                        // ★ 并行逐帧处理（SSIMULACRA2/Butteraugli/XPSNR 外部工具和 GMSD 内存切片全并行）
                         var swFrames = Stopwatch.StartNew();
-                        for (int i = 0; i < frameCount && !cancellationToken.IsCancellationRequested; i++)
+                        var csvLines = new string[frameCount + 1];  // 索引写入，无需锁
+                        csvLines[0] = "Frame,SSIMULACRA2,Butteraugli_3norm,GMSD,XPSNR_Y,XPSNR_U,XPSNR_V,W_XPSNR";
+
+                        var bagSsimu2 = new ConcurrentBag<double>();
+                        var bagButterRaw = new ConcurrentBag<double>();
+                        var bagButter3 = new ConcurrentBag<double>();
+                        var bagGmsd = new ConcurrentBag<double>();
+                        var bagXpsnrY = new ConcurrentBag<double>();
+                        var bagXpsnrU = new ConcurrentBag<double>();
+                        var bagXpsnrV = new ConcurrentBag<double>();
+                        var bagXpsnrW = new ConcurrentBag<double>();
+
+                        var frameTasks = Enumerable.Range(0, frameCount).Select(async i =>
                         {
+                            if (cancellationToken.IsCancellationRequested) return;
+
                             string? refPng = refFrames?.ElementAtOrDefault(i);
                             string? distPng = distFrames?.ElementAtOrDefault(i);
 
                             double? frameSsimu2 = null, frameButter3 = null, frameGmsd = null;
                             double? frameXpsnrY = null, frameXpsnrU = null, frameXpsnrV = null;
 
-                            // SSIMULACRA2 + Butteraugli 并发
                             if (refPng != null && distPng != null)
                             {
                                 if (needSsimu2 && needButter)
@@ -470,23 +492,31 @@ namespace AvifEncoder
                                     var tSsimu2 = ComputeSSIMULACRA2Async(refPng, distPng);
                                     var tButter = ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
                                     await Task.WhenAll(tSsimu2, tButter);
-                                    if (tSsimu2.Result.HasValue) { ssimu2Sum += tSsimu2.Result.Value; ssimu2Count++; frameSsimu2 = tSsimu2.Result; }
+                                    if (tSsimu2.Result.HasValue) { bagSsimu2.Add(tSsimu2.Result.Value); frameSsimu2 = tSsimu2.Result; }
                                     var br = tButter.Result;
-                                    if (br.raw.HasValue && br.p3.HasValue) { butterRawSum += br.raw.Value; butter3Sum += br.p3.Value; butterCount++; frameButter3 = br.p3; }
+                                    if (br.raw.HasValue && br.p3.HasValue) { bagButterRaw.Add(br.raw.Value); bagButter3.Add(br.p3.Value); frameButter3 = br.p3; }
                                 }
                                 else if (needSsimu2)
                                 {
                                     var s = await ComputeSSIMULACRA2Async(refPng, distPng);
-                                    if (s.HasValue) { ssimu2Sum += s.Value; ssimu2Count++; frameSsimu2 = s; }
+                                    if (s.HasValue) { bagSsimu2.Add(s.Value); frameSsimu2 = s; }
                                 }
                                 else if (needButter)
                                 {
                                     var (raw, p3) = await ComputeButteraugliAsync(refPng, distPng, advancedTempDir);
-                                    if (raw.HasValue && p3.HasValue) { butterRawSum += raw.Value; butter3Sum += p3.Value; butterCount++; frameButter3 = p3; }
+                                    if (raw.HasValue && p3.HasValue) { bagButterRaw.Add(raw.Value); bagButter3.Add(p3.Value); frameButter3 = p3; }
+                                }
+
+                                var (y, u, v) = await ComputeXPSNRFrameAsync(refPng, distPng, xpsnrPixFmt);
+                                if (y.HasValue && u.HasValue && v.HasValue)
+                                {
+                                    bagXpsnrY.Add(y.Value); bagXpsnrU.Add(u.Value); bagXpsnrV.Add(v.Value);
+                                    double? w = ComputeWXPSNR(y.Value, u.Value, v.Value);
+                                    if (w.HasValue) bagXpsnrW.Add(w.Value);
+                                    frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
                                 }
                             }
 
-                            // GMSD：从批量灰度 raw 数据中切片计算（零 I/O）
                             if (needGmsd && refGrayAll != null && distGrayAll != null)
                             {
                                 int gs = refGrayAll.Value.w * refGrayAll.Value.h;
@@ -494,33 +524,22 @@ namespace AvifEncoder
                                 var distSlice = distGrayAll.Value.data.AsSpan(i * gs, gs);
                                 double g = ComputeGMSD_C(refSlice.ToArray(), refGrayAll.Value.w,
                                     refGrayAll.Value.h, distSlice.ToArray());
-                                if (g >= 0) { gmsdSum += g; gmsdCount++; frameGmsd = g; }
+                                if (g >= 0) { bagGmsd.Add(g); frameGmsd = g; }
                             }
 
-                            // XPSNR：单帧 PNG 对计算（动图全帧平均，避免多帧 ffmpeg crash）
-                            if (refPng != null && distPng != null)
-                            {
-                                var (y, u, v) = await ComputeXPSNRFrameAsync(refPng, distPng, xpsnrPixFmt);
-                                if (y.HasValue && u.HasValue && v.HasValue)
-                                {
-                                    xpsnrYSum += y.Value; xpsnrUSum += u.Value; xpsnrVSum += v.Value;
-                                    xpsnrCount++;
-                                    frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
-                                }
-                            }
-
-                            // 写入逐帧 CSV 行
                             double? frameWXpsnr = frameXpsnrY.HasValue && frameXpsnrU.HasValue && frameXpsnrV.HasValue
                                 ? ComputeWXPSNR(frameXpsnrY, frameXpsnrU, frameXpsnrV) : null;
-                            csvLines.Add($"{i}," +
-                                $"{frameSsimu2?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameButter3?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameGmsd?.ToString("F6", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameXpsnrY?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameXpsnrU?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameXpsnrV?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}," +
-                                $"{frameWXpsnr?.ToString("F4", CultureInfo.InvariantCulture) ?? ""}");
-                        }
+                            csvLines[i + 1] = $"{i}," +  // ← 按帧索引写入，零竞争
+                                $"{(frameSsimu2?.ToString("F6", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameButter3?.ToString("F6", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameGmsd?.ToString("F6", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameXpsnrY?.ToString("F4", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameXpsnrU?.ToString("F4", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameXpsnrV?.ToString("F4", CultureInfo.InvariantCulture) ?? "")}," +
+                                $"{(frameWXpsnr?.ToString("F4", CultureInfo.InvariantCulture) ?? "")}";
+                        });
+
+                        await Task.WhenAll(frameTasks);
                         swFrames.Stop();
                         _logger.LogInfo($"[ADV] 逐帧计算完成: {swFrames.Elapsed.TotalSeconds:F1}s ({frameCount}帧)");
 
@@ -529,18 +548,19 @@ namespace AvifEncoder
                         await _fs.WriteAllBytesAsync(csvPath, System.Text.Encoding.UTF8.GetBytes(csvContent));
                         _logger.LogInfo($"[ADV] 逐帧 CSV 已保存: {csvPath} ({frameCount}行)");
 
-                        if (ssimu2Count > 0) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = ssimu2Sum / ssimu2Count); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={ssimu2Sum / ssimu2Count:F2} ({ssimu2Count}帧)"); }
+                        int ssimu2Count = bagSsimu2.Count, butterCount = bagButter3.Count, gmsdCount = bagGmsd.Count, xpsnrCount = bagXpsnrY.Count;
+                        if (ssimu2Count > 0) { UpdateCachedMetrics(cacheKey, m => m.SSIMULACRA2 = bagSsimu2.Sum() / ssimu2Count); _logger.LogInfo($"[ADV] SSIMU2 DONE {advName} ={bagSsimu2.Sum() / ssimu2Count:F2} ({ssimu2Count}帧)"); }
                         if (butterCount > 0)
                         {
-                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = butterRawSum / butterCount);
-                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = butter3Sum / butterCount);
-                            _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={butter3Sum / butterCount:F4} ({butterCount}帧)");
+                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_Raw = bagButterRaw.Sum() / butterCount);
+                            UpdateCachedMetrics(cacheKey, m => m.Butteraugli_3norm = bagButter3.Sum() / butterCount);
+                            _logger.LogInfo($"[ADV] BUTTER DONE {advName} 3norm={bagButter3.Sum() / butterCount:F4} ({butterCount}帧)");
                         }
-                        if (gmsdCount > 0) { UpdateCachedMetrics(cacheKey, m => m.GMSD = gmsdSum / gmsdCount); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={gmsdSum / gmsdCount:F4} ({gmsdCount}帧)"); }
+                        if (gmsdCount > 0) { UpdateCachedMetrics(cacheKey, m => m.GMSD = bagGmsd.Sum() / gmsdCount); _logger.LogInfo($"[ADV] GMSD DONE {advName} ={bagGmsd.Sum() / gmsdCount:F4} ({gmsdCount}帧)"); }
                         if (xpsnrCount > 0)
                         {
-                            double avgY = xpsnrYSum / xpsnrCount, avgU = xpsnrUSum / xpsnrCount, avgV = xpsnrVSum / xpsnrCount;
-                            double? avgW = ComputeWXPSNR(avgY, avgU, avgV);
+                            double avgY = bagXpsnrY.Sum() / xpsnrCount, avgU = bagXpsnrU.Sum() / xpsnrCount, avgV = bagXpsnrV.Sum() / xpsnrCount;
+                            double? avgW = bagXpsnrW.Count > 0 ? bagXpsnrW.Sum() / bagXpsnrW.Count : null;
                             UpdateCachedMetrics(cacheKey, m =>
                             {
                                 m.XPSNR_Y = avgY; m.XPSNR_U = avgU;
@@ -985,18 +1005,9 @@ namespace AvifEncoder
             }
         }
 
-        /// <summary> 外部工具（ffmpeg 等）不接受 \\?\ 长路径，需要剥离。正确处理 UNC 路径 </summary>
-        private static string NormalizePathForExternalTool(string path)
-        {
-            if (OperatingSystem.IsWindows() && path.StartsWith(@"\\?\"))
-            {
-                // \\?\UNC\server\share\path → \\server\share\path
-                if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-                    return @"\" + path.Substring(7);
-                return path.Substring(4);
-            }
-            return path;
-        }
+        /// <summary> 委托到 EncodeHelpers，消除重复定义 </summary>
+        private static string NormalizePathForExternalTool(string path) =>
+            EncodeHelpers.NormalizePathForExternalTool(path);
 
         /// <summary>
         /// 根据图像宽度计算满足 AV1 tile 宽度 ≤ 4096 限制的最小 tile-columns 值（log2 列数）。
@@ -2825,6 +2836,7 @@ namespace AvifEncoder
                 _logger.LogInfo($"[EXPORT] {r.FileName} XPSNR={xpsnr} SSIMU2={ssimu2} Butter3={butter3} GMSD={gmsd}");
             }
 
+            FlushCsvBuffer();  // ★ 最终刷盘，确保缓冲区数据不丢失
             ExportCsv(allResults, _resumeMetricsForExport);
         }
 
@@ -2840,6 +2852,7 @@ namespace AvifEncoder
         /// <summary> 清理编码缓存及临时文件 </summary>
         private void FinalCleanup()
         {
+            FlushCsvBuffer();  // 兜底：确保 CSV 缓冲区落盘
             // ★ 兜底：强制杀掉所有曾启动的 ffmpeg 子进程（Job Object 失败时保底）
             foreach (var p in _spawnedProcesses)
             {
@@ -2862,6 +2875,9 @@ namespace AvifEncoder
 
             // 清理编码缓存目录
             CleanDirectory(Path.Combine(_outputDir, "_enc_cache"));
+            _pngCache.Clear();  // PNG 转换缓存随 session 结束清空
+            _srcAlphaCache.Clear();   // Alpha 探测缓存随 session 结束清空
+            _srcPixFmtCache.Clear();  // 像素格式缓存随 session 结束清空
 
             // 清理缩放后的临时图片目录
             string scaledDir = Path.Combine(_outputDir, "_scaled");
@@ -2970,18 +2986,16 @@ namespace AvifEncoder
                 return info.HasAlpha;
             }
 
-            // 兜底：单独探测
+            // 兜底：单独探测（不缓存结果，避免临时故障导致错误值永久缓存）
             string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{EncodeHelpers.EscapeArg(filePath)}\"";
             string raw = await RunProbeAsync(_ffprobePath, args);
             string fmt = raw.Trim().ToLower();
-            bool hasAlpha = fmt switch
+            return fmt switch
             {
                 "rgba" or "bgra" or "argb" or "abgr" => true,
                 "rgba64le" or "bgra64le" => true,
                 _ => false
             };
-            _srcAlphaCache[normalizedPath] = hasAlpha;
-            return hasAlpha;
         }
 
 

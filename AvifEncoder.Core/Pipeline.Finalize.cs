@@ -182,7 +182,7 @@ namespace AvifEncoder
             };
         }
 
-        // ---------- 安全模式全扫描 ----------
+        // ---------- 安全模式二分搜索（替代线性扫描） ----------
         private async Task<(bool ok, int crf, string pixFmt, bool safeMode)>
 RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow, int scanHigh)
         {
@@ -191,52 +191,49 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 safeCts.Token, _globalCts?.Token ?? default);
             var safeToken = linkedCts.Token;
 
-            // 使用与主搜索一致的指标原生尺度 margin，并正确处理越小越好指标的方向
             double rawTarget = config.GetEffectiveTarget();
             double margin = GetMetricMargin(config);
             bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(config.MetricMode);
             double target = lowerIsBetter ? rawTarget - margin : rawTarget + margin;
             int bestSafeCRF = -1;
-            // ★ 使用传入的区间，而非全局 MinCRF/MaxCRF
-            int start = scanHigh;
-            int end = scanLow;
-            int totalSteps = start - end + 1;
-            int step = 0;
             int consecutiveFailures = 0;
+            const int maxConsecutive = 5;
 
-            for (int testCrf = start; testCrf >= end; testCrf--)
+            // ★ 二分搜索替代线性扫描：O(n) → O(log n)
+            int lo = scanLow, hi = scanHigh;
+            SafeWriteLine($"  [{name}] [SAFE] 二分搜索区间 [{lo}, {hi}]");
+            while (lo <= hi)
             {
-                step++;
-                if (safeToken.IsCancellationRequested) break;
+                safeToken.ThrowIfCancellationRequested();
+                int mid = (lo + hi) / 2;
+                SafeWriteLine($"  [{name}] [SAFE] 测试 CRF={mid} (区间 {lo}-{hi})");
 
-                if (step == 1 || step == totalSteps || step % 5 == 0)
-                    SafeWriteLine($"  [{name}] 安全扫描 {step}/{totalSteps} (CRF={testCrf})...");
-
-                double curScore = await SafeModeSSIM(inputPath, config, testCrf, safeToken);
+                double curScore = await SafeModeSSIM(inputPath, config, mid, safeToken);
                 bool meetsTarget = lowerIsBetter ? (curScore >= 0 && curScore <= target)
                                                   : (curScore >= target);
                 if (meetsTarget)
                 {
-                    bestSafeCRF = testCrf;
-                    break;
-                }
-
-                if (curScore < 0)
-                {
-                    consecutiveFailures++;
-                    if (consecutiveFailures >= 5)
-                    {
-                        SafeWriteLine($"  [{name}] 安全扫描连续失败 {consecutiveFailures} 次，终止扫描");
-                        break;
-                    }
+                    bestSafeCRF = mid;
+                    lo = mid + 1;  // 尝试更大的 CRF
+                    consecutiveFailures = 0;
                 }
                 else
                 {
-                    consecutiveFailures = 0;
+                    hi = mid - 1;
+                    if (curScore < 0)
+                    {
+                        consecutiveFailures++;
+                        if (consecutiveFailures >= maxConsecutive)
+                        {
+                            SafeWriteLine($"  [{name}] [SAFE] 连续失败 {consecutiveFailures} 次，终止搜索");
+                            break;
+                        }
+                    }
+                    else consecutiveFailures = 0;
                 }
             }
 
-            if (bestSafeCRF >= 0)  // CRF=0 是合法解（Lossless 或极高目标），不应排除
+            if (bestSafeCRF >= 0)
             {
                 SafeWriteLine($"  -> [{name}] 安全模式扫描成功，最佳 CRF = {bestSafeCRF}");
                 return (true, bestSafeCRF, "yuv420p", true);
