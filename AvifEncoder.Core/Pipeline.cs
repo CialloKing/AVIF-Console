@@ -126,8 +126,6 @@ namespace AvifEncoder
 
         private readonly IProgress<int>? _guiProgress;   // ★ 新增字段，不与 _progress 冲突
 
-        private readonly ConcurrentDictionary<string, Task<double>> _ssimTasks = new();
-
         private readonly ICacheManager _cache;
 
 
@@ -750,8 +748,8 @@ namespace AvifEncoder
             // ★ 动图逐帧平均
             double sum = 0;
             int valid = 0;
-            // dist 是编码后的 AVIF，动画流是 stream 2
-            const string distStream = "0:v:2";
+            // dist 是编码后的 AVIF，默认 v:1（非 Alpha 动画）
+            string distStream = "0:v:1";
             for (int i = 0; i < frameCount; i++)
             {
                 var refGray = await DecodeGrayRawAsync(refPath, i);
@@ -1226,7 +1224,7 @@ namespace AvifEncoder
             for (int i = 0; i < diff; i++)
                 _fileWorkers.Add(FileWorkerLoopAsync());
             for (int i = 0; i < -diff; i++)
-                _fileChannel.Writer.TryWrite(default);  // 毒丸，多余 Worker 看到后退出（TryWrite 不阻塞，满了不影响）
+                _ = Task.Run(async () => { try { await _fileChannel.Writer.WriteAsync(default); } catch { } });  // 毒丸：用 WriteAsync 防 Channel 满时丢失
         }
 
         private async Task FileWorkerLoopAsync()
@@ -1300,7 +1298,9 @@ namespace AvifEncoder
             string pixFmt = hasAlpha ? "rgba" : "rgb24";
 
             string filter = $"scale={targetW}:{targetH}:flags=lanczos";
-            string args = $"-loglevel error -hide_banner -i \"{input}\" -vf \"{filter}\" -pix_fmt {pixFmt} \"{output}\"";
+            string escInput = EncodeHelpers.EscapeArg(input);
+            string escOutput = EncodeHelpers.EscapeArg(output);
+            string args = $"-loglevel error -hide_banner -i \"{escInput}\" -vf \"{filter}\" -pix_fmt {pixFmt} \"{escOutput}\"";
 
             (bool ok, string err) = await RunFfmpegExAsync(_ffmpegPath, args, TimeSpan.FromMinutes(2));
             if (!ok)
@@ -1593,7 +1593,10 @@ namespace AvifEncoder
 
                 // 快照已保存，Journal 保留（不删除，Resume 依赖它）
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"[SNAPSHOT] 保存失败: {ex.Message}");
+            }
         }
 
         private (HashSet<string> completed, Dictionary<string, QualityMetrics> metrics,
@@ -2993,7 +2996,7 @@ namespace AvifEncoder
             }
 
             // 兜底：单独探测
-            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"";
+            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{EncodeHelpers.EscapeArg(filePath)}\"";
             string raw = await RunProbeAsync(_ffprobePath, args);
             string fmt = raw.Trim().ToLower();
             bool hasAlpha = fmt switch
@@ -3091,7 +3094,7 @@ namespace AvifEncoder
 
             // ---- 回退到原有单独探测（理论上不应到达，但作为兜底） ----
             string raw = await RunProbeAsync(_ffprobePath,
-                $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{filePath}\"");
+                $"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{EncodeHelpers.EscapeArg(filePath)}\"");
             string fmtFallback = raw.Trim().ToLower();
 
             // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）

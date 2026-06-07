@@ -250,8 +250,8 @@ ffmpeg 命令预览  -> 文本框 txtParamsPreview（选项页，只读）
 
   fast      — CRF 38, SSIM 0.91, 不搜索。速度优先。
   balanced  — CRF 36, SSIM 0.97, 启用搜索。质量与速度平衡。
-  best      — CRF 34, SSIM 0.97, 启用搜索。高质量。
-  extreme   — CRF 35, SSIM 0.99, 启用搜索。极致质量。
+  best      — CRF 34, SSIM 0.985, 启用搜索。高质量。
+  extreme   — CRF 32, SSIM 0.99, 启用搜索。极致质量。
   自定义     — 手动修改任意参数后自动切换为此模式。
 
 ═══════════════════════════════════════

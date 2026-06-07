@@ -130,10 +130,10 @@ namespace AvifEncoder
         // 是否递归遍历输入目录的子文件夹
         public bool RecurseSubdirectories { get; set; } = false;
 
-        /// <summary>用户指定的输入文件扩展名（逗号分隔，如 ".jpg,.png"）。null 时使用全部默认 12 种格式。</summary>
+        /// <summary>用户指定的输入文件扩展名（逗号分隔，如 ".jpg,.png"）。null 时使用默认 5 种格式。</summary>
         public string? InputExtensions { get; set; }
 
-        /// <summary>默认支持的图片扩展名全集（12 种）</summary>
+        /// <summary>默认支持的图片扩展名全集（5 种）</summary>
         public static readonly string[] DefaultInputExtensions =
             { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
 
@@ -174,8 +174,8 @@ namespace AvifEncoder
         public void AdjustTargetForMetricMode()
         {
             if (Lossless || XpsnrTargetValue.HasValue || NativeTargetValue.HasValue) return;
-            // ★ XPSNR/高级指标需要显式 --target-{metric} 指定，无法从 TargetSSIM 自动推导
-            if (IsAdvancedMetricMode(MetricMode)) return;
+            // ★ XPSNR/高级指标无法从 TargetSSIM 自动推导，需显式 --target-{metric}；不加此保护会走向 TargetToRaw 抛异常
+            if (IsAdvancedMetricMode(MetricMode) || (MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)) return;
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":

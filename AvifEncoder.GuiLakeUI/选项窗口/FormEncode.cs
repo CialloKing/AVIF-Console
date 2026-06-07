@@ -937,7 +937,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 _pipeline?.KillTrackedProcesses();
                 // 异步等待 Pipeline 完成后再关闭窗口
                 _ = CloseAfterPipelineAsync();
+                return;
             }
+            // ★ 正常关闭时释放轮询计时器
+            _resumePollTimer?.Stop();
+            _resumePollTimer?.Dispose();
+            _resumePollTimer = null;
         }
 
         private async Task CloseAfterPipelineAsync()
@@ -1473,11 +1478,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != System.Text.Json.JsonValueKind.Null)
                     nativeTarget = ntv.GetDouble();
                 if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "XPSNR"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, xptv.GetDouble())); }
+                { SetComboBoxItem(cmbQualityMode, "XPSNR (W)"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, xptv.GetDouble())); }
                 else if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "SSIMU2"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, s2tv.GetDouble())); }
+                { SetComboBoxItem(cmbQualityMode, "SSIMULACRA2"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, s2tv.GetDouble())); }
                 else if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "Butter3"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, b3tv.GetDouble())); }
+                { SetComboBoxItem(cmbQualityMode, "Butteraugli 3norm"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, b3tv.GetDouble())); }
                 else if (cfg.TryGetProperty("GmsdTargetValue", out var gtv) && gtv.ValueKind != System.Text.Json.JsonValueKind.Null)
                 { SetComboBoxItem(cmbQualityMode, "GMSD"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, gtv.GetDouble())); }
                 else if (nativeTarget.HasValue)
