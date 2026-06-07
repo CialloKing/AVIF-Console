@@ -95,20 +95,6 @@ namespace AvifEncoder
         /// 若启用 --proxy，则保留保守 Proxy 验证流程。
         /// </summary>
         /// <summary>
-        /// 按目标 VMAF 动态返回最优哨兵偏移量（基于 400 张图片统计）
-        /// </summary>
-        private static int GetOptimalSentinelDelta(int targetVmafInt)
-        {
-            return targetVmafInt switch
-            {
-                90 => 4,                                   // 中位数 38 时最优
-                >= 91 and <= 95 => 2,                     // 分布最集中，极小偏移最优
-                96 => 3,                                   // 高离散度目标
-                _ => 3                                     // 安全默认
-            };
-        }
-
-        /// <summary>
         /// 混合搜索：先验中位数 + 动态哨兵探测 + 标准二分
         /// </summary>
         /// <summary>
@@ -216,11 +202,11 @@ namespace AvifEncoder
 
             // ────────── 先验搜索启用 ──────────
             int priorMedian = (userMin + userMax) / 2;
-            if (metricMode == "vmaf")
+            if (VmafPriorHelper.HasTable(metricMode))
             {
-                // target is already in native 0-100 VMAF scale (GetEffectiveTarget + margin)
-                double targetVmaf = target;
-                var (median, _, _) = VmafPriorHelper.GetPriorFromVmaf(targetVmaf);
+                // 传入原生尺度目标值（越小越好指标用取反前的值）
+                double nativeTarget = lowerIsBetter ? -target : target;
+                var (median, _, _) = VmafPriorHelper.GetPrior(metricMode, nativeTarget);
                 priorMedian = Math.Clamp(median, userMin, userMax);
             }
 
@@ -277,9 +263,10 @@ namespace AvifEncoder
             string medianDisplay = metricMode == "vmaf" ? $"VMAF={displayScore(medianScore):F4}" : $"分数={displayScore(medianScore):F4}";
             SafeWriteLine($"  [{name}] [PRIOR] CRF={priorMedian} → {medianDisplay}");
 
-            if (metricMode == "vmaf" && medianScore >= 0)
+            if (VmafPriorHelper.HasTable(metricMode) && medianScore >= 0)
             {
-                int delta = GetOptimalSentinelDelta((int)Math.Round(target));  // target 已是原生 0-100 VMAF 尺度
+                double nativeTarget = lowerIsBetter ? -target : target;
+                int delta = VmafPriorHelper.GetSentinelDelta(metricMode, nativeTarget);  // 基于 400 图标准差的数据驱动 delta
                 if (delta > 0)
                 {
                     if (medianScore >= target)
