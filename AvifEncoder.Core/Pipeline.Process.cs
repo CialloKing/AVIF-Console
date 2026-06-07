@@ -117,6 +117,8 @@ namespace AvifEncoder
                                     ErrorMessage = error,
                                     TotalTime = DateTime.Now - startTime,
                                     PixelFormat = encInfo.ActualPixFmt,
+                                    Encoder = config.Encoder,
+                                    CommandLine = cmd,
                                 };
                                 MarkProcessed(failResult);
                                 results.Add(failResult);
@@ -185,6 +187,7 @@ namespace AvifEncoder
                                 FinalGMSD = metrics?.GMSD,
                                 // FinalCAMBI = metrics?.CAMBI,   // 暂不可用
                                 // FinalADM = metrics?.ADM,       // 暂不可用
+                                Encoder = config.Encoder,
                                 AomParamsUsed = actualAom ?? config.GetEffectiveAomParams(),
                                 AdvancedMetricsCacheKey = sweepCacheKey,
                                 SearchEvaluations = 0,
@@ -1065,6 +1068,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                     : encodeResult.FailReason,
                 PixelFormat = encodeResult.Success ? encodeResult.ActualPixFmt : "",
                 SourcePixelFormat = encInfo.SourcePixFmt,
+                Encoder = _config.Encoder,
                 Mode = _config.AutoSource ? "自适应" : "手动",
                 IsSafeMode = encodeResult.UseSafeMode,
                 AomParamsUsed = encodeResult.ActualAom ?? "",

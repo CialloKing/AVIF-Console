@@ -14,6 +14,8 @@ namespace AvifEncoder
         public int UsedCRF { get; set; }
         public double FinalSSIM { get; set; }
         public double CompressionRatio => OriginalSize == 0 ? 0 : Math.Round(1.0 - (double)OutputSize / OriginalSize, 4);
+        public double BPP => Width > 0 && Height > 0 ? (double)OriginalSize * 8 / (Width * Height) : 0;
+        public string Encoder { get; set; } = "";
         public TimeSpan EncodeTime { get; set; }
         public TimeSpan SearchTime { get; set; }
         public TimeSpan TotalTime { get; set; }

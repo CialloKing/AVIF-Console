@@ -145,10 +145,10 @@ namespace AvifEncoder
         // CSV 列名常量，修改这里即可同步表头和数据行
         private static readonly string[] CsvColumnNames =
 [
-    "文件名", "原始文件名", "原始大小(字节)", "输出大小(字节)", "压缩率",
+    "文件名", "原始文件名", "原始大小(字节)", "输出大小(字节)", "压缩率", "BPP",
     "源文件宽", "源文件长",
     "动图", "帧数", "FPS",
-    "CRF", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
+    "CRF", "编码器", "SSIM", "VMAF", "PSNR-Y", "MS-SSIM", "MixScore",
     "XPSNR-Y", "XPSNR-U", "XPSNR-V", "W-XPSNR",
     "SSIMULACRA2", "Butteraugli_Raw", "Butteraugli_3norm", "GMSD",
     // "CAMBI", "ADM",  // 暂不可用
