@@ -880,7 +880,7 @@ namespace AvifEncoder
         /// 运行 ffmpeg 并将 stdout 输出读入内存字节数组。
         /// </summary>
         private async Task<(bool ok, byte[] data)> RunFfmpegToMemoryAsync(
-            string args, TimeSpan timeout)
+            string args, TimeSpan timeout, int estimatedCapacity = 16 * 1024 * 1024)
         {
             try
             {
@@ -898,7 +898,7 @@ namespace AvifEncoder
                 };
                 process.Start();
 
-                using var ms = new System.IO.MemoryStream();
+                using var ms = new System.IO.MemoryStream(estimatedCapacity);  // ★ 预分配，避免多次扩容
                 var copyTask = process.StandardOutput.BaseStream
                     .CopyToAsync(ms);
                 var stderrTask = process.StandardError

@@ -201,6 +201,8 @@ namespace AvifEncoder
         private int _journalCountSinceSnapshot;
         private DateTime _lastSnapshotTime;
         private long _journalEventCount;   // 累计事件数，用于增量回放定位
+        private bool _saveSnapshotPending; // ★ 快照标记：锁内设true，锁外执行I/O，避免阻塞高并发写入
+        private int _snapshotInProgress;   // ★ CAS 哨兵，防止并发快照写入
         private Dictionary<string, QualityMetrics>? _resumeMetricsForExport;  // Resume 恢复的指标，供 ExportCsv 修补旧行
 
 
@@ -339,7 +341,7 @@ namespace AvifEncoder
                 _spawnedProcesses.Add(process);
                 if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
-                using var ms = new MemoryStream();
+                using var ms = new MemoryStream(w * h * expectedFrames);  // ★ 预分配：灰度 1 字节/像素
                 var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
                 var stderrTask = process.StandardError.ReadToEndAsync();
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -795,6 +797,10 @@ namespace AvifEncoder
                 ? $"-vf \"select='eq(n,{frameIndex.Value})',format=gray\""
                 : "-vf format=gray";
             string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" {streamPart}{vfPart} -frames:v 1 -f rawvideo -pix_fmt gray pipe:1";
+
+            // ★ 预探测分辨率以预分配 MemoryStream 容量
+            var (estW, estH) = await GetResolutionAsync(imagePath);
+            int estimatedSize = estW > 0 && estH > 0 ? estW * estH : 1920 * 1080;  // 兜底: 1080p
             try
             {
                 using var process = new Process
@@ -813,7 +819,7 @@ namespace AvifEncoder
                 _spawnedProcesses.Add(process);
                 if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
-                using var ms = new MemoryStream();
+                using var ms = new MemoryStream(estimatedSize);
                 var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
                 var stderrTask = process.StandardError.ReadToEndAsync();
 
@@ -1383,14 +1389,29 @@ namespace AvifEncoder
                 _journalEventCount++;
                 _journalCountSinceSnapshot++;
 
-                // ★ 周期性快照：全量回放 journal 收集完成列表+指标，写入快照
+                // ★ 快照标记（锁内仅标记，锁外执行 I/O，避免阻塞高并发写入）
                 if (_journalCountSinceSnapshot >= 500)
                 {
-                    var (oldDone, oldMetrics, _, _) = LoadSnapshot();
-                    var (newDone, newMetrics, _, _) = ReplayJournalWithMetrics(0);
-                    SaveSnapshot(oldDone.Union(newDone),
-                        MergeMetrics(oldMetrics, newMetrics));
+                    _journalCountSinceSnapshot = 0;
+                    _saveSnapshotPending = true;
                 }
+            }
+            // 锁外异步执行快照 I/O
+            if (_saveSnapshotPending)
+            {
+                if (Interlocked.CompareExchange(ref _snapshotInProgress, 1, 0) == 0)
+                {
+                    try
+                    {
+                        var (oldDone, oldMetrics, _, _) = LoadSnapshot();
+                        var (newDone, newMetrics, _, _) = ReplayJournalWithMetrics(0);
+                        SaveSnapshot(oldDone.Union(newDone),
+                            MergeMetrics(oldMetrics, newMetrics));
+                    }
+                    catch { }
+                    Interlocked.Exchange(ref _snapshotInProgress, 0);
+                }
+                _saveSnapshotPending = false;
             }
         }
 
@@ -2292,16 +2313,20 @@ namespace AvifEncoder
                     }
                     catch { }
 
-                    // 2. 增量回放 snapshot 之后的 journal 事件
+                    // 2. ★ 优化：一次性读取 journal + 单次遍历分拣所有事件类型（减少 I/O 67%）
+                    var journalLines = Array.Empty<string>();
                     var resumeMetrics = new Dictionary<string, QualityMetrics>(snapshotMetrics, StringComparer.OrdinalIgnoreCase);
                     var deltaDone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var deltaMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
+                    var fileIdToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    var resumeEncodedOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     try
                     {
-                        var lines = File.ReadAllLines(_journalPath);
-                        for (int i = (int)Math.Min(snapshotEventCount, lines.Length); i < lines.Length; i++)
+                        journalLines = File.ReadAllLines(_journalPath);
+                        int startIdx = (int)Math.Min(snapshotEventCount, journalLines.Length);
+                        for (int i = startIdx; i < journalLines.Length; i++)
                         {
-                            string line = lines[i];
+                            string line = journalLines[i];
                             if (string.IsNullOrWhiteSpace(line)) continue;
                             try
                             {
@@ -2312,12 +2337,11 @@ namespace AvifEncoder
                                 {
                                     string evt = evtEl.GetString() ?? "";
                                     string file = fileEl.GetString() ?? "";
-                                    // ★ 只有 "success" 才算完整完成
                                     if (evt == "success") deltaDone.Add(file);
-                                    if (evt == "metrics")
+                                    else if (evt == "encoded") resumeEncodedOnly.Add(file);
+                                    else if (evt == "metrics")
                                     {
                                         var m = new QualityMetrics();
-                                        // ★ Journal key 由 prop.Name.ToLower() 生成，必须用小写读取
                                         if (root.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
                                         if (root.TryGetProperty("butterraw", out var br)) m.Butteraugli_Raw = br.GetDouble();
                                         if (root.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
@@ -2329,44 +2353,11 @@ namespace AvifEncoder
                                         deltaMetrics[file] = m;
                                     }
                                 }
-                            }
-                            catch (JsonException) { break; }
-                        }
-                    }
-                    catch { }
-
-                    // 3. 合并：Snapshot 指标 + 增量指标
-                    foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
-
-                    // 4. 写入内存缓存 + 保存引用供 ExportCsv 修补旧行
-                    _resumeMetricsForExport = resumeMetrics;
-                    _logger.LogInfo($"[RESUME] metrics restored: {resumeMetrics.Count} files");
-                    foreach (var kv in resumeMetrics)
-                    {
-                        string metricsKey = EncodeHelpers.GetNormalizedPathForCache(kv.Key) + "__resume_metrics";
-                        _cache.SetMetrics(metricsKey, kv.Value);
-                        _logger.LogInfo($"[RESUME] metric: {Path.GetFileName(kv.Key)}");
-                    }
-
-                    // 5. 构建 FileId → path 映射（用于跨会话匹配）
-                    var fileIdToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    // 从增量回放中提取 FileId 映射
-                    try
-                    {
-                        var lines = File.ReadAllLines(_journalPath);
-                        for (int i = (int)Math.Min(snapshotEventCount, lines.Length); i < lines.Length; i++)
-                        {
-                            string line = lines[i];
-                            if (string.IsNullOrWhiteSpace(line)) continue;
-                            try
-                            {
-                                using var doc = JsonDocument.Parse(line);
-                                var root = doc.RootElement;
                                 if (root.TryGetProperty("fileId", out var fidEl) &&
-                                    root.TryGetProperty("file", out var fEl))
+                                    root.TryGetProperty("file", out var fEl2))
                                 {
                                     string fid = fidEl.GetString() ?? "";
-                                    string fp = fEl.GetString() ?? "";
+                                    string fp = fEl2.GetString() ?? "";
                                     if (fid.Length > 0 && !fileIdToPath.ContainsKey(fid))
                                         fileIdToPath[fid] = fp;
                                 }
@@ -2376,16 +2367,21 @@ namespace AvifEncoder
                     }
                     catch { }
 
-                    // 收集仅 encoded 的文件（编码完成但指标未完成），保护其 AVIF 不被删除
-                    var resumeEncodedOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    // 3. 合并：Snapshot 指标 + 增量指标
+                    foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
 
-                    // 6. 合并完成列表 + FileId 匹配
+                    // 4. 保存引用供 ExportCsv 修补旧行
+                    _resumeMetricsForExport = resumeMetrics;
+                    _logger.LogInfo($"[RESUME] metrics restored: {resumeMetrics.Count} files");
+                    foreach (var kv in resumeMetrics)
+                        _logger.LogInfo($"[RESUME] metric: {Path.GetFileName(kv.Key)}");
+
+                    // 5. 合并完成列表 + FileId 匹配（略去 FileId 映射的重复读取，已在上方单次遍历中完成）
                     var completed = new HashSet<string>(snapshotDone, StringComparer.OrdinalIgnoreCase);
                     foreach (var f in deltaDone) completed.Add(f);
                     _logger.LogInfo(
                         $"[RESUME] snapshot={snapshotDone.Count} + delta={deltaDone.Count} = completed={completed.Count}, metrics={resumeMetrics.Count}, encodedOnly={resumeEncodedOnly.Count}");
 
-                    // 7. FileId 辅助匹配：当前文件如果能通过 FileId 匹配到已完成文件，也视为完成
                     var completedById = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var (path, _) in files)
                     {
@@ -2399,27 +2395,6 @@ namespace AvifEncoder
                         }
                     }
                     foreach (var f in completedById) completed.Add(f);
-
-                    // 从增量 journal 中提取 encoded 事件
-                    try
-                    {
-                        var lines2 = File.ReadAllLines(_journalPath);
-                        for (int i = (int)Math.Min(snapshotEventCount, lines2.Length); i < lines2.Length; i++)
-                        {
-                            string line = lines2[i];
-                            if (string.IsNullOrWhiteSpace(line)) continue;
-                            try
-                            {
-                                using var doc = JsonDocument.Parse(line);
-                                var root = doc.RootElement;
-                                if (root.TryGetProperty("evt", out var evtEl) && evtEl.GetString() == "encoded"
-                                    && root.TryGetProperty("file", out var fEl))
-                                    resumeEncodedOnly.Add(fEl.GetString() ?? "");
-                            }
-                            catch (JsonException) { break; }
-                        }
-                    }
-                    catch { }
 
                     // 文件系统检查：Journal 标记完成或已编码，但文件被用户误删 → 重新编码
                     foreach (var (path, idx) in files)

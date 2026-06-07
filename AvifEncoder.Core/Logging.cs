@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Text;
 
 namespace AvifEncoder
 {
@@ -37,53 +39,62 @@ namespace AvifEncoder
         void LogSearch(string msg);   // 新增：搜索阶段专用日志
     }
 
-    /// <summary>基于文件的日志实现。使用 AppendAllText 逐次写入，简单可靠。</summary>
-    public class FileLogger : ILogger
+    /// <summary>基于文件的日志实现，使用 StreamWriter 保持文件句柄避免重复打开。</summary>
+    public class FileLogger : ILogger, IDisposable
     {
         private readonly object _lock = new();
         private readonly string _logDir;
-        private readonly PresetConfig.IFileSystem _fs;
+        private readonly ConcurrentDictionary<string, StreamWriter> _writers = new();
 
         public FileLogger(string outputDir, PresetConfig.IFileSystem? fileSystem = null)
         {
-            _fs = fileSystem ?? new PresetConfig.RealFileSystem();
             _logDir = Path.Combine(outputDir, "log");
-            _fs.CreateDirectory(_logDir);
+            Directory.CreateDirectory(_logDir);
 
             // 清理30天前的 run 日志
             try
             {
                 var cutoff = DateTime.Now.AddDays(-30);
-                foreach (var f in _fs.GetFiles(_logDir, "run_*.log"))
+                foreach (var f in Directory.GetFiles(_logDir, "run_*.log"))
                 {
-                    if (_fs.GetCreationTime(f) < cutoff)
-                        _fs.DeleteFile(f);
+                    if (File.GetCreationTime(f) < cutoff)
+                        File.Delete(f);
                 }
             }
             catch { }
 
             LogInfo("===== NEW SESSION START =====");
             LogInfo($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+            // ★ 进程退出时确保释放所有 StreamWriter
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => Dispose();
+        }
+
+        private StreamWriter GetWriter(string fileName)
+        {
+            if (!_writers.TryGetValue(fileName, out var writer))
+            {
+                string path = Path.Combine(_logDir, fileName);
+                writer = new StreamWriter(path, append: true, Encoding.UTF8) { AutoFlush = true };
+                _writers[fileName] = writer;
+            }
+            return writer;
         }
 
         public void LogInfo(string msg)
         {
             lock (_lock)
-                _fs.AppendAllText(
-                    Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
-                    $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                GetWriter($"run_{DateTime.Now:yyyy-MM-dd}.log")
+                    .WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
         }
 
         public void LogError(string msg)
         {
             lock (_lock)
             {
-                _fs.AppendAllText(
-                    Path.Combine(_logDir, $"run_{DateTime.Now:yyyy-MM-dd}.log"),
-                    $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}\n");
-                _fs.AppendAllText(
-                    Path.Combine(_logDir, "error.log"),
-                    $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                string line = $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}";
+                GetWriter($"run_{DateTime.Now:yyyy-MM-dd}.log").WriteLine(line);
+                GetWriter("error.log").WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
             }
         }
 
@@ -96,14 +107,22 @@ namespace AvifEncoder
                 _ => $"metric_{metricName}.log"
             };
             lock (_lock)
-                _fs.AppendAllText(
-                    Path.Combine(_logDir, fileName),
-                    $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                GetWriter(fileName).WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
         }
 
         public void LogSearch(string msg)
         {
             LogMetric("crf", msg);
+        }
+
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                foreach (var w in _writers.Values)
+                    try { w.Dispose(); } catch { }
+                _writers.Clear();
+            }
         }
     }
 
