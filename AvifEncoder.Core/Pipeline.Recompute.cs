@@ -196,7 +196,6 @@ namespace AvifEncoder
                         }
 
                         string name = entry.SourceFile;
-                        int current = Interlocked.Increment(ref completed);
 
                         string tempDir = Path.Combine(_outputDir,
                             $"_recompute_{Guid.NewGuid():N}");
@@ -267,6 +266,7 @@ namespace AvifEncoder
                             updatedFields[entry.RowIndex] = (
                                 ssimu2, butterRaw, butter3, gmsd);
 
+                            int current = Interlocked.Increment(ref completed);
                             string statusStr = ssimu2.HasValue ||
                                 butterRaw.HasValue || gmsd.HasValue ? "OK" : "全部缺失";
                             SafeWriteLine(

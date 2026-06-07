@@ -213,10 +213,15 @@ namespace AvifEncoder
                 }
 
                 // 4. 等待当前文件的所有 CRF 任务完成后，清理临时缩放文件，再处理下一个文件
-                await Task.WhenAll(crfTasks);
-                semaphore.Dispose();
-                if (scaling.TempFilePath != null)
-                    try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
+                try
+                {
+                    await Task.WhenAll(crfTasks);
+                }
+                finally
+                {
+                    if (scaling.TempFilePath != null)
+                        try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
+                }
             }
 
             return results.OrderBy(r => r.Index).ToList();

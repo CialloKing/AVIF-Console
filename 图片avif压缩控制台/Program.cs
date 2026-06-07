@@ -500,6 +500,10 @@ namespace AvifEncoder
                 }
                 config.EncoderCustomParams = encParams;
             }
+            else if (opts.Denoise.HasValue && opts.Denoise.Value > 0 && !string.IsNullOrEmpty(opts.EncoderCustomParams))
+            {
+                Console.Error.WriteLine("[WARN] --denoise 与 --enc-params 同时使用，降噪参数被自定义参数覆盖，请手动将降噪参数合并到 --enc-params 中");
+            }
             if (opts.Resume)
                 config.Resume = true;
             config.DryRun = opts.DryRun;

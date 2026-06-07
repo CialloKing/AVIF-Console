@@ -438,10 +438,12 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string safeFramesPart = isAnimated ? "" : "-frames:v 1";
             string safeAnimPart = isAnimated ? "-vsync vfr" : "";
 
-            return $"-loglevel error -hide_banner -i \"{inputPath}\" " +
+            string escInput = EncodeHelpers.EscapeArg(inputPath);
+            string escOutput = EncodeHelpers.EscapeArg(outputPath);
+            return $"-loglevel error -hide_banner -i \"{escInput}\" " +
                    $"-c:v {config.Encoder} -pix_fmt {safePixFmt} " +
                    $"-crf {crf} -b:v 0 {encArgs} " +
-                   $"-color_range pc {safeStillPic} {safeFramesPart} {safeAnimPart} {aomPart} {threadsArg} -y \"{outputPath}\"";
+                   $"-color_range pc {safeStillPic} {safeFramesPart} {safeAnimPart} {aomPart} {threadsArg} -y \"{escOutput}\"";
         }
 
 

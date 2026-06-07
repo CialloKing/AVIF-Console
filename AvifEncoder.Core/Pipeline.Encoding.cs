@@ -395,7 +395,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 if (actualPixFmt.Contains("12le") || actualPixFmt.Contains("10le") || actualPixFmt.Contains("p010"))
                     actualPixFmt = "p010le";
                 else if (actualPixFmt.Contains("444"))
+                {
                     actualPixFmt = "yuv420p";  // NVENC 不支持 4:4:4，降为 4:2:0
+                    _logger.LogInfo($"[NVENC] 像素格式 4:4:4 已降级为 4:2:0（NVENC 硬件限制）");
+                }
             }
 
             string crfPart = isTrueLossless

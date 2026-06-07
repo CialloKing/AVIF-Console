@@ -516,7 +516,12 @@ namespace AvifEncoder
                     continue;
                 }
 
-                bool pass = proxyScore >= target + passMargin;
+                // ★ ProxyEvaluateAsync 返回原生值（未取反），target 已在 HybridSearchCRFAsync 中取反
+                //    对越小越好指标统一取反 proxyScore，与 target 在同一尺度上比较
+                bool lowerIsBetter = PresetConfig.IsMetricLowerBetter(metricMode);
+                bool pass = lowerIsBetter
+                    ? proxyScore >= 0 && -proxyScore >= target + passMargin
+                    : proxyScore >= target + passMargin;
                 string status = pass ? "明确通过" : "保守失败";
                 string display = metricMode == "vmaf" ? $"VMAF={proxyScore:F4}" : $"分数={proxyScore:F4}";
                 SafeWriteLine($"  [{name}] [PROXY] CRF={crf} → {display} ({status})");
