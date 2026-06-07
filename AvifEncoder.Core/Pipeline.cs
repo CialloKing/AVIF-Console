@@ -69,7 +69,8 @@ namespace AvifEncoder
         public void SetEncode(string key, string cacheFile, TimeSpan encodeTime, string commandLine)
             => _encodeCache[key] = (cacheFile, encodeTime, commandLine);
 
-        public bool TryGetMetrics(string key, out QualityMetrics? metrics)   // 改为 QualityMetrics?
+        /// <summary>获取指标缓存引用。注意：调用方不应修改返回对象，修改请用 UpdateMetrics。</summary>
+        public bool TryGetMetrics(string key, out QualityMetrics? metrics)
             => _metricsCache.TryGetValue(key, out metrics);
 
         public void SetMetrics(string key, QualityMetrics metrics)
@@ -322,9 +323,10 @@ namespace AvifEncoder
             if (w <= 0 || h <= 0) return null;
 
             string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" {streamPart}-vf format=gray -f rawvideo -pix_fmt gray pipe:1";
+            Process? process = null;
             try
             {
-                using var process = new Process
+                process = new Process
                 {
                     StartInfo = new ProcessStartInfo(_ffmpegPath, args)
                     {
@@ -343,7 +345,9 @@ namespace AvifEncoder
                 var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
                 var stderrTask = process.StandardError.ReadToEndAsync();
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(timeoutCts.Token));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
 
                 if (process.ExitCode != 0) return null;
                 byte[] data = ms.ToArray();
@@ -354,10 +358,22 @@ namespace AvifEncoder
                 }
                 return (w, h, data);
             }
+            catch (OperationCanceledException)
+            {
+                if (process != null && !process.HasExited)
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                return null;
+            }
             catch (Exception ex)
             {
+                if (process != null && !process.HasExited)
+                    try { process.Kill(entireProcessTree: true); } catch { }
                 _logger.LogInfo($"[ADV] 批量灰度提取异常: {ex.Message}");
                 return null;
+            }
+            finally
+            {
+                process?.Dispose();
             }
         }
 
@@ -1232,7 +1248,7 @@ namespace AvifEncoder
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogInfo($"Worker 异常: {item.FilePath} - {ex.Message}");
+                        _logger.LogError($"Worker 异常: {item.FilePath} - {ex.Message}");
                         var failResult = new EncodeResult
                         {
                             Index = item.Index,
@@ -1675,8 +1691,11 @@ namespace AvifEncoder
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             try { CloseJournal(); } catch { }
-            try { FinalCleanup(); } catch { }
             try { _globalCts?.Cancel(); } catch { }
+            try { _fileChannel.Writer.Complete(); } catch { }
+            try { _fileWorkerCts.Cancel(); } catch { }
+            try { Task.WaitAll(_fileWorkers.ToArray(), TimeSpan.FromSeconds(10)); } catch { }
+            try { FinalCleanup(); } catch { }
             try { _globalCts?.Dispose(); } catch { }
             _globalCts = null;
             try { _ssimConcurrency?.Dispose(); } catch { }
@@ -1684,8 +1703,6 @@ namespace AvifEncoder
             if (_cancelKeyHandler != null)
                 Console.CancelKeyPress -= _cancelKeyHandler;
             _advancedMetricSemaphore?.Dispose();
-            try { _fileChannel.Writer.Complete(); } catch { }
-            try { _fileWorkerCts.Cancel(); } catch { }
             try { _fileWorkerCts.Dispose(); } catch { }
             _lockStream?.Dispose();
             GC.SuppressFinalize(this);
@@ -1823,7 +1840,7 @@ namespace AvifEncoder
         /// 返回 QualityMetrics，失败返回 null。会自动处理分辨率不一致的情况（缩放至相同尺寸）。
         /// </summary>
         private async Task<QualityMetrics?> ComputeAllMetricsAsync(string refPath, string distPath,
-            bool isAnimated = false)
+            bool isAnimated = false, bool hasAlpha = false)
         {
             if (!EnsureFilesValid(refPath, distPath)) return null;
 
@@ -1844,8 +1861,8 @@ namespace AvifEncoder
                 string filter;
                 if (isAnimated)
                 {
-                    // ★ 动图需要时间轴对齐 + stream 2（AVIF 的动画颜色流，避开封面流 stream 0）
-                    string distStream = "[1:v:2]";
+                    // ★ 默认 v:1（非 Alpha 动图），有 Alpha 时调用方需传入 isAnimated+Alpha 确保正确
+                    string distStream = "[1:v:1]";
                     if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
                     {
                         int w = Math.Min(w1, w2);

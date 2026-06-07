@@ -309,9 +309,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                             return (false, TimeSpan.Zero, _maxRetries, "编码输出文件过小", false, null, null);
                         }
 
-                        // 原子重命名 tmp → final
-                        if (_fs.FileExists(output)) _fs.DeleteFile(output);
-                        File.Move(tmpOutput, output);
+                        // ★ 原子重命名：File.Move 的第三个参数 overwrite:true 是原子操作，无 Delete+Move 崩溃窗口
+                        File.Move(tmpOutput, output, true);
 
                         // 成功，保存缓存（也用原子写入）
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
@@ -369,11 +368,12 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             var probe = await GetProbeInfoAsync(inputPath);
             if (probe == null) return null;
 
-            // 任何核心色彩字段缺失则返回 null
-            if (probe.ColorPrimaries == null || probe.ColorTransfer == null || probe.ColorSpace == null)
+            // ★ 仅需 primaries + transfer 即可继承 HDR 色彩，space 缺失时从 primaries 推导
+            if (probe.ColorPrimaries == null || probe.ColorTransfer == null)
                 return null;
+            string space = probe.ColorSpace ?? (probe.ColorPrimaries == "bt2020" ? "bt2020nc" : "bt709");
 
-            return (probe.ColorPrimaries, probe.ColorTransfer, probe.ColorSpace, probe.ColorRange);
+            return (probe.ColorPrimaries, probe.ColorTransfer, space, probe.ColorRange);
         }
 
 
@@ -491,12 +491,23 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
             // ── 动图 + Alpha：filter_complex 双流映射 ──
             bool hasAlpha = actualPixFmt.Contains('a') || actualPixFmt.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
+            if (_isAnimatedFile.Value && hasAlpha && !encoder.SupportsStillPicture)
+            {
+                _logger.LogInfo($"[WARN] 编码器 {cfg.Encoder} 不支持动图+Alpha 双流映射，Alpha 通道将被忽略");
+            }
             if (_isAnimatedFile.Value && hasAlpha && encoder.SupportsStillPicture)
             {
-                string cleanPixFmt = actualPixFmt.Replace("a", "");
-                string filterComplex = $"-filter_complex \"[0:v]format=yuva444p10le,split=2[c][a];[a]alphaextract[alpha]\"";
-                string colorMap = $"-map \"[c]\" -c:v:0 {cfg.Encoder} -pix_fmt {cleanPixFmt}";
-                string alphaMap = $"-map \"[alpha]\" -c:v:1 {cfg.Encoder} -pix_fmt gray10le";
+                // ★ 动态位深：从格式名末尾提取（yuva444p10le → 10），避免匹配到色度数字
+                var bdMatch = System.Text.RegularExpressions.Regex.Match(actualPixFmt, @"p(\d+)le$");
+                int animBitDepth = bdMatch.Success && int.TryParse(bdMatch.Groups[1].Value, out int bd) ? Math.Min(bd, 12) : 10;
+                string yuvaFmt = $"yuva444p{animBitDepth}le";
+                string yuvCleanFmt = $"yuv444p{animBitDepth}le";
+                string grayFmt = $"gray{animBitDepth}le";
+
+                // ★ [c] 流显式剥离 Alpha → [clean]，避免编码器接收含 Alpha 的帧
+                string filterComplex = $"-filter_complex \"[0:v]format={yuvaFmt},split=2[c][a];[c]format={yuvCleanFmt}[clean];[a]alphaextract[alpha]\"";
+                string colorMap = $"-map \"[clean]\" -c:v:0 {cfg.Encoder} -pix_fmt {yuvCleanFmt}";
+                string alphaMap = $"-map \"[alpha]\" -c:v:1 {cfg.Encoder} -pix_fmt {grayFmt}";
                 return $"{logLevel} -i \"{EncodeHelpers.EscapeArg(input)}\" " +
                        $"{filterComplex} " +
                        $"{colorMap} {rangeArg} {colorMeta} " +

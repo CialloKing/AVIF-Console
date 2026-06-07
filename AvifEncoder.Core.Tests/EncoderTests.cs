@@ -96,10 +96,18 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
-        public void SvtAv1_BuildSpeedArg_InvertsPreset()
+        public void SvtAv1_BuildSpeedArg_PreservesPresetOrder()
         {
-            // cpuUsed=0 (slowest) → preset=13
+            // cpuUsed=0 (slowest/best quality) → preset=0 (slowest)
             string result = Av1EncoderFactory.Get("libsvtav1").BuildSpeedArg(0);
+            Assert.Contains("-preset 0", result);
+        }
+
+        [TestMethod]
+        public void SvtAv1_BuildSpeedArg_FastestMapsToMax()
+        {
+            // cpuUsed=13 (fastest) → preset=13 (fastest)
+            string result = Av1EncoderFactory.Get("libsvtav1").BuildSpeedArg(13);
             Assert.Contains("-preset 13", result);
         }
 

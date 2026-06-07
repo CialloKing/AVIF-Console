@@ -61,7 +61,7 @@ namespace AvifEncoder
                     return -1;
 
                 QualityMetrics? m = await ComputeAllMetricsAsync(input, tmpOutput,
-                    isAnimated: _isAnimatedFile.Value);
+                    isAnimated: _isAnimatedFile.Value, hasAlpha: await SourceHasAlpha(input));
                 if (m == null) return -1;
 
                 return GetSearchScore(m, cfg.MetricMode ?? "vmaf");
@@ -279,7 +279,7 @@ namespace AvifEncoder
 
             if (metricMode == "vmaf" && medianScore >= 0)
             {
-                int delta = GetOptimalSentinelDelta((int)Math.Round(target * 100.0));
+                int delta = GetOptimalSentinelDelta((int)Math.Round(target));  // target 已是原生 0-100 VMAF 尺度
                 if (delta > 0)
                 {
                     if (medianScore >= target)

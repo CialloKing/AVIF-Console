@@ -145,9 +145,8 @@ namespace AvifEncoder
                             opts.DirectTargetValue = double.Parse(GetValue());
                             break;
                         case "target-xpsnr":
-                            if (!opts.MetricMode.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase))
-                                opts.MetricMode = "xpsnr";
-                            opts.QualityTarget = double.Parse(GetValue());
+                            opts.DirectTargetMode = "xpsnr";
+                            opts.DirectTargetValue = double.Parse(GetValue());
                             break;
                         case "crf":
                             string crfVal = GetValue();
@@ -164,7 +163,7 @@ namespace AvifEncoder
                             {
                                 if (int.TryParse(crfVal, out int r) && r >= 0 && r <= 63)
                                 { opts.ManualCrf = r; opts.ForceNoSearch = true; }
-                                else throw new Exception("CRF 应为 1-50 的整数");
+                                else throw new Exception("CRF 应为 0-63 的整数");
                             }
                             break;
                         case "chroma":
@@ -184,7 +183,7 @@ namespace AvifEncoder
                                 {
                                     opts.BitDepth = bd;
                                 }
-                                else throw new Exception("--bit-depth 必须为 8、10 或 auto");
+                                else throw new Exception("--bit-depth 必须为 8、10、12 或 auto");
                             }
                             break;
                         case "lossless": opts.Lossless = true; break;
@@ -331,7 +330,7 @@ namespace AvifEncoder
                                 {
                                     opts.BitDepth = bd2;
                                 }
-                                else throw new Exception("-b 必须为 8、10 或 auto");
+                                else throw new Exception("-b 必须为 8、10、12 或 auto");
                                 break;
                             case "t": opts.OutputTemplate = val.Trim('"', '\''); break;
                             case "e": opts.Encoder = val; break;
@@ -389,8 +388,9 @@ namespace AvifEncoder
                     Encoder = opts.Encoder,
                     BitDepth = 10
                 };
-                return config;
             }
+            else
+            {
             config = PresetConfig.CreateFromPreset(opts.Preset);
             config.Encoder = opts.Encoder;
             if (opts.ForceNoSearch) config.UseCRFSearch = false;
@@ -434,10 +434,10 @@ namespace AvifEncoder
             }
             if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
             if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
-            if (config.MinCRF >= config.MaxCRF)
+            if (config.MinCRF > config.MaxCRF)  // 允许相等（Sweep 模式单 CRF 值合法）
                 throw new Exception(
-                    $"CRF 范围无效：最小值 {config.MinCRF} 必须小于最大值 {config.MaxCRF}。" +
-                    " 示例: --crf 20:40 或 -crf 20:40");
+                    $"CRF 范围无效：最小值 {config.MinCRF} 必须小于或等于最大值 {config.MaxCRF}。" +
+                    " 示例: --crf 20:40 或 --crf 30:30");
             if (opts.Jobs.HasValue) { config.MaxJobs = opts.Jobs.Value; config.UserSpecifiedMaxJobs = true; }
             if (!string.IsNullOrEmpty(opts.OutputTemplate)) config.OutputNameFormat = opts.OutputTemplate;
             if (opts.MaxResolution.HasValue) config.MaxResolution = opts.MaxResolution.Value;
@@ -504,8 +504,16 @@ namespace AvifEncoder
                 config.Resume = true;
             config.DryRun = opts.DryRun;
             config.Verbose = opts.Verbose;
+            } // ★ 结束非 Lossless 分支，Lossless 和普通配置在此汇合进入统一校验
 
-            // ★ 运行时校验配置，提前发现参数组合错误
+            // ★ 运行时校验配置，所有模式（含 Lossless）均在此校验
+            if (opts.Overwrite && opts.NoClobber)
+                throw new Exception("--overwrite 和 --no-clobber 不能同时使用");
+            if (opts.Lossless && opts.SweepMode)
+                throw new Exception("--lossless 和 --sweep 不能同时使用");
+            if (opts.Lossless && (opts.EnableSearch || opts.DirectTargetValue.HasValue))
+                Console.Error.WriteLine("[WARN] --lossless 模式下 CRF 固定为 0，搜索/质量目标参数将被忽略");
+
             var validationErrors = config.Validate();
             if (validationErrors.Count > 0)
             {

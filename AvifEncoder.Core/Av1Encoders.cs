@@ -75,7 +75,8 @@
 
         public string BuildSpeedArg(int cpuUsed)
         {
-            int svtPreset = Math.Clamp(MaxSpeed - cpuUsed, 0, MaxSpeed);
+            // cpuUsed=0 对应最慢/最佳质量（preset 0），cpuUsed=13 对应最快（preset 13）
+            int svtPreset = Math.Clamp(cpuUsed, 0, MaxSpeed);
             return $"-preset {svtPreset}";
         }
 

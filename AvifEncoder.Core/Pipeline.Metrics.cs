@@ -78,7 +78,8 @@ namespace AvifEncoder
             {
                 int w = Math.Min(w1, w2);
                 int h = Math.Min(h1, h2);
-                string scaleFilter = $"[0:v]scale={w}:{h}[ref];[1:v]scale={w}:{h}[dist];[ref][dist]ssim";
+                // ★ 添加 format 对齐：确保两路流在相同像素格式下比较，避免位深/色度不匹配
+                string scaleFilter = $"[0:v]format={alignFmt},scale={w}:{h}[ref];[1:v]format={alignFmt},scale={w}:{h}[dist];[ref][dist]ssim";
                 return $"-loglevel info -hide_banner -i \"{a}\" -i \"{b}\" " +
                        $"-filter_complex \"{scaleFilter}\" -frames:v 1 -f null -";
             }
@@ -289,13 +290,13 @@ namespace AvifEncoder
                         else if (metricMode == "vmaf" || metricMode == "msssim" || metricMode == "mix")
                         {
                             metrics = await ComputeAllMetricsAsync(input, tmp,
-                                isAnimated: _isAnimatedFile.Value);
+                                isAnimated: _isAnimatedFile.Value, hasAlpha: await SourceHasAlpha(input));
                         }
                         else
                         {
                             // XPSNR / 高级指标 等 → 先用 libvmaf 获取基础指标
                             metrics = await ComputeAllMetricsAsync(input, tmp,
-                                isAnimated: _isAnimatedFile.Value);
+                                isAnimated: _isAnimatedFile.Value, hasAlpha: await SourceHasAlpha(input));
                         }
 
                         if (metrics != null)
@@ -489,7 +490,7 @@ namespace AvifEncoder
 
 
             // 根据实际位深选择正确的像素格式（覆盖调用者传入的 pixFmt）
-            string actualPixFmt = bitDepth == 10 ? "yuv444p10le" : "yuv444p";
+            string actualPixFmt = bitDepth == 12 ? "yuv444p12le" : bitDepth == 10 ? "yuv444p10le" : "yuv444p";
 
             // ★ 动图 AVIF：先试 [0:v]，若 Y<20 dB 则提取 stream 2 到临时文件再测
             string? tempDist = null;

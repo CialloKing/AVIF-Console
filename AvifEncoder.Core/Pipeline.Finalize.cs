@@ -236,7 +236,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
             }
 
-            if (bestSafeCRF > 0)
+            if (bestSafeCRF >= 0)  // CRF=0 是合法解（Lossless 或极高目标），不应排除
             {
                 SafeWriteLine($"  -> [{name}] 安全模式扫描成功，最佳 CRF = {bestSafeCRF}");
                 return (true, bestSafeCRF, "yuv420p", true);
@@ -270,7 +270,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     if (!ok || !_fs.FileExists(tmpAvif) || _fs.GetFileLength(tmpAvif) < 100) return -1;
 
                     QualityMetrics? metrics = await ComputeAllMetricsAsync(inputPath, tmpAvif,
-                        isAnimated: _isAnimatedFile.Value);
+                        isAnimated: _isAnimatedFile.Value, hasAlpha: await SourceHasAlpha(inputPath));
                     if (metrics != null)
                     {
                         string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(inputPath);

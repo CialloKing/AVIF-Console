@@ -82,8 +82,10 @@ namespace AvifEncoder
                 SafeWriteLine($"CSV 文件: {csvPath}");
 
                 string csvContent = await _fs.ReadAllTextAsync(csvPath);
+                // ★ 去除 \r 避免 Windows 换行符干扰，保留空行以维持行号对应
+                csvContent = csvContent.Replace("\r", "");
                 var lines = csvContent.Split('\n',
-                    StringSplitOptions.RemoveEmptyEntries);
+                    StringSplitOptions.None);
                 if (lines.Length < 2)
                 {
                     SafeWriteLine("[ERROR] CSV 为空或只有表头");

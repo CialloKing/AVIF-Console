@@ -84,7 +84,7 @@ namespace AvifEncoder
                     int capturedCrf = crf;
                     var task = Task.Run(async () =>
                     {
-                        await semaphore.WaitAsync();
+                        await semaphore.WaitAsync(_globalCts?.Token ?? CancellationToken.None);
                         try
                         {
                             var startTime = DateTime.Now;
@@ -454,6 +454,14 @@ namespace AvifEncoder
             if (config.MaxResolution <= 0)
                 return new PreScalingResult(inputPath, false, null, 0, 0, 0, 0);
 
+            // ★ 动图检测：预缩放会将动图退化为单帧 PNG，必须跳过
+            var probeInfo = await GetProbeInfoAsync(inputPath);
+            if (probeInfo != null && probeInfo.FrameCount > 1)
+            {
+                _logger.LogInfo($"预缩放跳过：{name} 是动图 ({probeInfo.FrameCount} 帧)，缩放会丢失动画帧");
+                return new PreScalingResult(inputPath, false, null, 0, 0, 0, 0);
+            }
+
             var (srcW, srcH) = await GetResolutionAsync(inputPath);
             int longSide = Math.Max(srcW, srcH);
             if (longSide <= config.MaxResolution)
@@ -603,7 +611,7 @@ namespace AvifEncoder
             {
                 // 动图：逐帧计算，libvmaf 自动输出所有帧的平均值
                 metrics = await ComputeAllMetricsAsync(workingInputPath, outputPath,
-                    isAnimated: encInfo.IsAnimated);
+                    isAnimated: encInfo.IsAnimated, hasAlpha: encInfo.HasAlpha);
             }
             catch (Exception ex) { _logger.LogError($"多指标计算异常: {ex.Message}"); }
 
@@ -685,7 +693,7 @@ namespace AvifEncoder
             {
                 string refArgs =
                     $"-v error -i \"{refPath}\" -f rawvideo " +
-                    $"-pix_fmt rgba -";
+                    $"-pix_fmt rgba -frames:v 1 -";
                 var (refOk, refRaw) = await RunFfmpegToMemoryAsync(
                     refArgs, TimeSpan.FromMinutes(2));
                 if (!refOk || refRaw.Length == 0)
@@ -699,7 +707,7 @@ namespace AvifEncoder
 
                 string avifArgs =
                     $"-v error -i \"{avifPath}\" -f rawvideo " +
-                    $"-pix_fmt rgba -";
+                    $"-pix_fmt rgba -frames:v 1 -";
                 var (avifOk, avifRaw) = await RunFfmpegToMemoryAsync(
                     avifArgs, TimeSpan.FromMinutes(2));
                 if (!avifOk || avifRaw.Length == 0)
@@ -891,11 +899,20 @@ namespace AvifEncoder
                 var stderrTask = process.StandardError
                     .ReadToEndAsync();
 
-                using var cts = new CancellationTokenSource(timeout);
-                await Task.WhenAny(
-                    Task.WhenAll(copyTask,
-                        process.WaitForExitAsync(cts.Token)),
-                    Task.Delay(timeout));
+                using var timeoutCts = new CancellationTokenSource(timeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
+                try
+                {
+                    await Task.WhenAll(copyTask, stderrTask,
+                        process.WaitForExitAsync(linkedCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited)
+                        try { process.Kill(entireProcessTree: true); } catch { }
+                    return (false, Array.Empty<byte>());
+                }
 
                 if (!process.HasExited)
                 {
@@ -921,7 +938,7 @@ namespace AvifEncoder
                 // 解码原图为 raw RGBA
                 string refArgs =
                     $"-v error -i \"{refPath}\" -f rawvideo " +
-                    $"-pix_fmt rgba -";
+                    $"-pix_fmt rgba -frames:v 1 -";
                 var (refOk, refRaw) = await RunFfmpegToMemoryAsync(
                     refArgs, TimeSpan.FromMinutes(2));
                 if (!refOk || refRaw.Length == 0)
@@ -932,7 +949,7 @@ namespace AvifEncoder
                 // 解码 AVIF 为 raw RGBA
                 string avifArgs =
                     $"-v error -i \"{avifPath}\" -f rawvideo " +
-                    $"-pix_fmt rgba -";
+                    $"-pix_fmt rgba -frames:v 1 -";
                 var (avifOk, avifRaw) = await RunFfmpegToMemoryAsync(
                     avifArgs, TimeSpan.FromMinutes(2));
                 if (!avifOk || avifRaw.Length == 0)
@@ -1097,8 +1114,7 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
         {
             if (isRetry) return null;
 
-            string fileName = GetOutputFileName(inputPath, index);
-            string outputPath = Path.Combine(_outputDir, fileName);
+            string outputPath = GetOutputPath(inputPath, index);
             if (_fs.FileExists(outputPath))
             {
                 // 覆盖模式：不跳过，继续编码（覆盖旧文件）
@@ -1157,9 +1173,9 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                     if (totalBits == 0) totalBits = components * 8;
                     int perComp = totalBits / components;
                     if (hasAlpha)
-                        actualPixFmt = perComp > 8 ? "gbrap16le" : "gbrap";
+                        actualPixFmt = perComp > 12 ? "gbrap12le" : perComp > 8 ? "gbrap10le" : "gbrap";
                     else
-                        actualPixFmt = perComp > 8 ? "gbrp16le" : "gbrp";
+                        actualPixFmt = perComp > 12 ? "gbrp12le" : perComp > 8 ? "gbrp10le" : "gbrp";
                 }
             }
             else if (!string.IsNullOrEmpty(config.RgbMode) && config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase))

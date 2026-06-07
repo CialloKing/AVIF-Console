@@ -423,7 +423,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 0.1;
                     break;
-                case "XPSNR":
+                case "XPSNR (W)":
                     numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 0.1;
@@ -541,17 +541,15 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             if (mode == null) return;
 
             SetQualityRange(mode);
-            // 根据模式设置默认值（仅当手动切换时使用）
+            // 根据模式设置默认值（使用 MetricRegistry.DisplayName 保持一致）
             numQualityValue.Value = mode switch
             {
                 "VMAF" => 95,
                 "PSNR-Y" => 40,
-                "XPSNR" => 45,
+                "XPSNR (W)" => 45,
                 "SSIMULACRA2" => 90,
                 "Butteraugli 3norm" => 1,
                 "GMSD" => 0.2,
-                // "CAMBI" => 2,    // 暂不可用
-                // "ADM" => 1,      // 暂不可用
                 _ => 0.95,
             };
             // 通过注册表反向查找 → 自动同步搜索度量
@@ -1475,23 +1473,19 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != System.Text.Json.JsonValueKind.Null)
                     nativeTarget = ntv.GetDouble();
                 if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "XPSNR"); numQualityValue.Value = xptv.GetDouble(); }
+                { SetComboBoxItem(cmbQualityMode, "XPSNR"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, xptv.GetDouble())); }
                 else if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "SSIMU2"); numQualityValue.Value = s2tv.GetDouble(); }
+                { SetComboBoxItem(cmbQualityMode, "SSIMU2"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, s2tv.GetDouble())); }
                 else if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "Butter3"); numQualityValue.Value = b3tv.GetDouble(); }
+                { SetComboBoxItem(cmbQualityMode, "Butter3"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, b3tv.GetDouble())); }
                 else if (cfg.TryGetProperty("GmsdTargetValue", out var gtv) && gtv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "GMSD"); numQualityValue.Value = gtv.GetDouble(); }
+                { SetComboBoxItem(cmbQualityMode, "GMSD"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, gtv.GetDouble())); }
                 else if (nativeTarget.HasValue)
                 {
                     string mmStr = cfg.TryGetProperty("MetricMode", out var mm2) ? (mm2.GetString() ?? "vmaf") : "vmaf";
-                    string modeName = mmStr.ToUpper() switch
-                    {
-                        "VMAF" => "VMAF", "PSNR" => "PSNR-Y", "SSIM" => "SSIM",
-                        "MSSSIM" => "MS-SSIM", "MIX" => "Mix", _ => "VMAF"
-                    };
+                    string modeName = MetricRegistry.Get(mmStr)?.DisplayName ?? "VMAF";
                     SetComboBoxItem(cmbQualityMode, modeName);
-                    numQualityValue.Value = nativeTarget.Value;
+                    numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, nativeTarget.Value));
                 }
                 // 恢复 AutoSource 状态：auto 模式下 chroma/bitDepth 显示 "auto"
                 bool autoSource = true;
@@ -1510,7 +1504,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     if (autoSource && !(cfg.TryGetProperty("UserSetBitDepth", out var usb) && usb.GetBoolean()))
                         SetComboBoxItem(cmbBitDepth, "auto");
                     else
-                        SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 10 ? "10" : "8");
+                        SetComboBoxItem(cmbBitDepth, bd.GetInt32() >= 12 ? "12" : bd.GetInt32() >= 10 ? "10" : "8");
                 }
                 if (cfg.TryGetProperty("OutputNameFormat", out var ot)) txtTemplate.Text = ot.GetString()!;
                 if (cfg.TryGetProperty("RecurseSubdirectories", out var rc)) chkRecursive.Checked = rc.GetBoolean();
@@ -1562,6 +1556,16 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                         if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetAnimatedCommand(ac.GetString() ?? "");
                     }
+                }
+                if (cfg.TryGetProperty("FileConflictStrategy", out var fcs))
+                {
+                    string fcsStr = fcs.GetString() ?? "Rename";
+                    cmbConflict.SelectedIndex = fcsStr switch
+                    {
+                        "Overwrite" => 1,
+                        "Skip" => 2,
+                        _ => 0
+                    };
                 }
                 if (cfg.TryGetProperty("SweepMode", out var sw)) chkSweep.Checked = sw.GetBoolean();
                 _isApplyingPreset = false;

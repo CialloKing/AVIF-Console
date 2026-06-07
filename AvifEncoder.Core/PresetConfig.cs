@@ -174,6 +174,8 @@ namespace AvifEncoder
         public void AdjustTargetForMetricMode()
         {
             if (Lossless || XpsnrTargetValue.HasValue || NativeTargetValue.HasValue) return;
+            // ★ XPSNR/高级指标需要显式 --target-{metric} 指定，无法从 TargetSSIM 自动推导
+            if (IsAdvancedMetricMode(MetricMode)) return;
             switch (MetricMode?.ToLower())
             {
                 case "vmaf":
@@ -286,7 +288,7 @@ namespace AvifEncoder
                 "vmaf" => targetSSIM * 100.0,
                 "psnr" => targetSSIM * 20.0 + 30,
                 "ssim" or "msssim" or "mix" => targetSSIM,
-                // 高级指标范围与 SSIM 0-1 尺度不兼容，必须通过 --target-{metric} 显式指定
+                // XPSNR/高级指标不支持从 TargetSSIM 自动换算，需显式指定 --target-{metric}
                 _ => throw new InvalidOperationException(
                     $"指标模式 '{metricMode}' 不支持从预设 TargetSSIM 自动换算。" +
                     $"请使用 --target-{metricMode?.ToLower()} <原生值> 显式指定目标。")
