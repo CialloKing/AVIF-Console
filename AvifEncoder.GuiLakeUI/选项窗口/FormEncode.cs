@@ -246,19 +246,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             rbCrfFix.Checked = true;
             chkSearch.Checked = false;
 
-            cmbMetric.Items.Clear();
-            cmbMetric.ItemToolTips.Clear();
-            foreach (var key in MetricRegistry.AllKeys)
-            {
-                cmbMetric.Items.Add(key);
-                cmbMetric.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(key, _metricTips.GetValueOrDefault(key, key)));
-            }
-            cmbMetric.SelectedIndex = 0;
-
             cmbQualityMode.Items.Clear();
             cmbQualityMode.ItemToolTips.Clear();
-            cmbQualityMode.Items.Add("无");
-            cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("无", "不设质量目标，使用预设默认值\n搜索将使用预设的 SSIM 目标进行 CRF 搜索"));
             foreach (var key in MetricRegistry.AllKeys)
             {
                 var displayName = MetricRegistry.Get(key)?.DisplayName ?? key;
@@ -371,7 +360,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numCrfFix.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             numCrfMin.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             numCrfMax.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
-            cmbMetric.SelectedIndexChanged += MarkCustom;
             cmbQualityMode.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             numQualityValue.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             cmbChroma.SelectedIndexChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
@@ -451,7 +439,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     numQualityValue.Increment = 0.001;
                     break;
             }
-            numQualityValue.Enabled = mode != "无";
+            numQualityValue.Enabled = true;
         }
 
         private void ApplyPresetToUI(CliPreset preset)
@@ -485,12 +473,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 SetComboBoxItem(cmbBitDepth, cfg.BitDepth == 10 ? "10" : (cfg.AutoSource ? "auto" : "8"));
 
                 string metricMode = cfg.MetricMode ?? "vmaf";
-                SetComboBoxItem(cmbMetric, metricMode);
 
                 // --- 质量目标 ---
                 if (!string.IsNullOrEmpty(metricMode))
                 {
-                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "无";
+                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "VMAF";
                     SetComboBoxItem(cmbQualityMode, qMode);
                     // ★ 手动同步范围，防止 combo 事件延迟导致越界
                     SetQualityRange(qMode);
@@ -552,13 +539,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 "GMSD" => 0.2,
                 _ => 0.95,
             };
-            // 通过注册表反向查找 → 自动同步搜索度量
-            var def = MetricRegistry.AllKeys
-                .Select(k => MetricRegistry.Get(k))
-                .FirstOrDefault(d => d != null &&
-                    string.Equals(d.DisplayName, mode, StringComparison.OrdinalIgnoreCase));
-            if (def != null)
-                SetComboBoxItem(cmbMetric, def.Key);
         }
 
         private void ChkLossless_CheckedChanged(object? sender, EventArgs e)
@@ -579,6 +559,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             // 无损模式勾选时自动关闭遍历模式
             if (chkLossless.Checked && chkSweep.Checked)
                 chkSweep.Checked = false;
+            UpdateSearchDependentControls();
             MarkCustom(sender, e);
         }
 
@@ -608,10 +589,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             bool searchOn = chkSearch.Checked && chkSearch.Enabled;
             chkPriorSearch.Enabled = searchOn;
             chkProxy.Enabled = searchOn;
-            cmbMetric.Enabled = searchOn;
             cmbQualityMode.Enabled = searchOn;
-            numQualityValue.Enabled = searchOn && (cmbQualityMode.Items.Count > 0 &&
-                cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString() != "无");
+            numQualityValue.Enabled = searchOn && cmbQualityMode.Items.Count > 0 && cmbQualityMode.SelectedIndex >= 0;
             lblQuality.Enabled = searchOn;
             numSearchCpuUsed.Enabled = searchOn;
             // 搜索关闭且遍历也关闭时，强制切回固定 CRF 并禁用范围模式
@@ -628,6 +607,18 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 rbCrfRange.Enabled = true;
             }
+        }
+
+        /// <summary>从 cmbQualityMode 的显示名反查 MetricRegistry 的 key（如 "VMAF" → "vmaf"）</summary>
+        private string? ResolveMetricKeyFromQualityMode()
+        {
+            string? qMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString();
+            if (string.IsNullOrEmpty(qMode)) return null;
+            var def = MetricRegistry.AllKeys
+                .Select(k => MetricRegistry.Get(k))
+                .FirstOrDefault(d => d != null &&
+                    string.Equals(d.DisplayName, qMode, StringComparison.OrdinalIgnoreCase));
+            return def?.Key;
         }
 
         private void UpdateRgbModeEnabled()
@@ -1103,13 +1094,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 AvifPipeline.ApplyBitDepth(config);
             }
 
-            config.MetricMode = cmbMetric
-                .Items[cmbMetric.SelectedIndex]?.ToString()
-                ?.ToLower() ?? "vmaf";
+            config.MetricMode = ResolveMetricKeyFromQualityMode() ?? "vmaf";
 
             string? qMode = cmbQualityMode
                 .Items[cmbQualityMode.SelectedIndex]?.ToString();
-            if (!string.IsNullOrEmpty(qMode) && qMode != "无")
+            if (!string.IsNullOrEmpty(qMode))
             {
                 double rawValue = (double)numQualityValue.Value;
                 var def = MetricRegistry.AllKeys
@@ -1228,10 +1217,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     rbCrfFix.Checked = true;
                     numCrfFix.Value = cfg.EncodeCrfFix;
                 }
-                if (cfg.EncodeMetric != null)
-                {
-                    SetComboBoxItem(cmbMetric, cfg.EncodeMetric);
-                }
                 if (cfg.EncodeQualityMode != null)
                 {
                     SetComboBoxItem(cmbQualityMode, cfg.EncodeQualityMode);
@@ -1343,21 +1328,25 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             string? RgbMode
         );
 
+        private static string SafeComboItem(ModernComboBox cb, string def) =>
+            cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count
+                ? cb.Items[cb.SelectedIndex]?.ToString() ?? def : def;
+
         /// <summary>返回当前 UI 控件状态，供 ffmpeg 命令预览使用</summary>
         public PreviewContext GetPreviewContext()
         {
             return new PreviewContext
             {
                 Encoder = GetSelectedEncoder(),
-                Chroma = cmbChroma.Items[cmbChroma.SelectedIndex]?.ToString()?.ToLower() ?? "auto",
-                BitDepth = cmbBitDepth.Items[cmbBitDepth.SelectedIndex]?.ToString()?.ToLower() ?? "auto",
+                Chroma = SafeComboItem(cmbChroma, "auto"),
+                BitDepth = SafeComboItem(cmbBitDepth, "auto"),
                 Crf = (int)numCrfFix.Value,
                 CrfMin = (int)numCrfMin.Value,
                 CrfMax = (int)numCrfMax.Value,
                 CrfFixed = rbCrfFix.Checked,
                 FinalCpuUsed = (int)numFinalCpuUsed.Value,
                 SearchCpuUsed = (int)numSearchCpuUsed.Value,
-                QualityMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString()?.ToLower() ?? "vmaf",
+                QualityMode = SafeComboItem(cmbQualityMode, "vmaf"),
                 QualityValue = (double)numQualityValue.Value,
                 Lossless = chkLossless.Checked,
                 EnableSearch = chkSearch.Checked,
@@ -1388,8 +1377,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cfg.EncodeCrfFix = (int)numCrfFix.Value;
             cfg.EncodeCrfMin = (int)numCrfMin.Value;
             cfg.EncodeCrfMax = (int)numCrfMax.Value;
-            cfg.EncodeMetric =
-                cmbMetric.Items[cmbMetric.SelectedIndex]?.ToString();
+            cfg.EncodeMetric = ResolveMetricKeyFromQualityMode();
             cfg.EncodeQualityMode =
                 cmbQualityMode.Items[cmbQualityMode.SelectedIndex]
                     ?.ToString();
@@ -1500,7 +1488,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     if (sr.GetBoolean()) { rbCrfRange.Checked = true; }
                     else { rbCrfFix.Checked = true; }
                 }
-                if (cfg.TryGetProperty("MetricMode", out var mm)) SetComboBoxItem(cmbMetric, mm.GetString()!);
+                if (cfg.TryGetProperty("MetricMode", out var mm)) { /* cmbMetric 已合并到 cmbQualityMode */ }
                 // 恢复质量目标
                 double? nativeTarget = null;
                 if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != System.Text.Json.JsonValueKind.Null)
@@ -1644,7 +1632,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numCrfMax.Enabled = enabled && rbCrfRange.Checked;
             rbCrfFix.Enabled = enabled;
             rbCrfRange.Enabled = enabled;
-            cmbMetric.Enabled = enabled;
             cmbQualityMode.Enabled = enabled;
             numQualityValue.Enabled = enabled;
             cmbChroma.Enabled = enabled;
@@ -1730,29 +1717,22 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// <summary>根据环境检测结果刷新质量指标下拉框</summary>
         public void RefreshMetricsFromDetection()
         {
-            var result = AvifEnvironmentChecker.LastResult;
-            // 质量指标始终显示全部，但外部工具指标标记情况可通过日志了解
-            cmbMetric.Items.Clear();
-            cmbMetric.ItemToolTips.Clear();
-            foreach (var key in MetricRegistry.AllKeys)
+            _isApplyingPreset = true;
+            try
             {
-                cmbMetric.Items.Add(key);
-                cmbMetric.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(key, _metricTips.GetValueOrDefault(key, key)));
+                var result = AvifEnvironmentChecker.LastResult;
+                cmbQualityMode.Items.Clear();
+                cmbQualityMode.ItemToolTips.Clear();
+                foreach (var key in MetricRegistry.AllKeys)
+                {
+                    var displayName = MetricRegistry.Get(key)?.DisplayName ?? key;
+                    cmbQualityMode.Items.Add(displayName);
+                    cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(displayName, _metricTips.GetValueOrDefault(key, key)));
+                }
+                if (cmbQualityMode.Items.Count > 0) cmbQualityMode.SelectedIndex = 0;
+                numQualityValue.Enabled = true;
             }
-            if (cmbMetric.Items.Count > 0) cmbMetric.SelectedIndex = 0;
-
-            cmbQualityMode.Items.Clear();
-            cmbQualityMode.ItemToolTips.Clear();
-            cmbQualityMode.Items.Add("无");
-            cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("无", "不设质量目标，使用预设默认值\n搜索将使用预设的 SSIM 目标进行 CRF 搜索"));
-            foreach (var key in MetricRegistry.AllKeys)
-            {
-                var displayName = MetricRegistry.Get(key)?.DisplayName ?? key;
-                cmbQualityMode.Items.Add(displayName);
-                cmbQualityMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry(displayName, _metricTips.GetValueOrDefault(key, key)));
-            }
-            if (cmbQualityMode.Items.Count > 0) cmbQualityMode.SelectedIndex = 0;
-            numQualityValue.Enabled = false;
+            finally { _isApplyingPreset = false; }
         }
     }
 

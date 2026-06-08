@@ -55,12 +55,7 @@ namespace AvifEncoder.Gui
 
             txtTemplate.Text = "covers-{index}.avif";
 
-            cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
-            cmbMetric.SelectedIndex = 0;
-
             cmbQualityMode.Items.Clear();
-            cmbQualityMode.Items.Add("无");
             cmbQualityMode.Items.AddRange(MetricRegistry.AllKeys
                 .Select(k => MetricRegistry.Get(k)?.DisplayName ?? k)
                 .Where(n => n.Length > 0).ToArray());
@@ -149,10 +144,9 @@ namespace AvifEncoder.Gui
                 cmbBitDepth.SelectedItem = cfg.BitDepth == 10 ? "10" : (cfg.AutoSource ? "auto" : "8");
 
                 string metricMode = cfg.MetricMode ?? "vmaf";
-                cmbMetric.SelectedItem = metricMode;
                 if (!string.IsNullOrEmpty(metricMode))
                 {
-                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "无";
+                    string qMode = MetricRegistry.Get(metricMode)?.DisplayName ?? "VMAF";
                     cmbQualityMode.SelectedItem = qMode;
 
                     // 确保质量数值范围正确，防止越界
@@ -207,7 +201,7 @@ namespace AvifEncoder.Gui
                     numQualityValue.Minimum = 0; numQualityValue.Maximum = 1;
                     numQualityValue.DecimalPlaces = 4; break;
             }
-            numQualityValue.Enabled = mode != "无";
+            numQualityValue.Enabled = true;
         }
 
         private void MarkCustomPreset()
@@ -229,7 +223,6 @@ namespace AvifEncoder.Gui
             chkSearch.CheckedChanged += (s, e) => { UpdateSearchDependentControls(); MarkCustomPreset(); };
             cmbChroma.SelectedIndexChanged += (s, e) => MarkCustomPreset();
             cmbBitDepth.SelectedIndexChanged += (s, e) => MarkCustomPreset();
-            cmbMetric.SelectedIndexChanged += (s, e) => MarkCustomPreset();
             cmbQualityMode.SelectedIndexChanged += (s, e) => MarkCustomPreset();
             numQualityValue.ValueChanged += (s, e) => MarkCustomPreset();
             chkSerialEncode.CheckedChanged += (s, e) => MarkCustomPreset();
@@ -280,10 +273,9 @@ namespace AvifEncoder.Gui
             bool searchOn = chkSearch.Checked && chkSearch.Enabled;
             chkPriorSearch.Enabled = searchOn;
             chkProxy.Enabled = searchOn;
-            cmbMetric.Enabled = searchOn;
             cmbQualityMode.Enabled = searchOn;
-            numQualityValue.Enabled = searchOn && (cmbQualityMode.Items.Count > 0 &&
-                cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString() != "无");
+            numQualityValue.Enabled = searchOn && cmbQualityMode.Items.Count > 0 && cmbQualityMode.SelectedIndex >= 0
+                ;
             numSearchCpuUsed.Enabled = searchOn;
             // 搜索关闭且遍历也关闭时，强制切回固定 CRF 并禁用范围模式
             bool sweepOn = chkSweep.Checked && chkSweep.Enabled;
@@ -299,6 +291,17 @@ namespace AvifEncoder.Gui
             {
                 rbCrfRange.Enabled = true;
             }
+        }
+
+        private string? ResolveMetricKeyFromQualityMode()
+        {
+            string? qMode = cmbQualityMode.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(qMode)) return null;
+            var def = MetricRegistry.AllKeys
+                .Select(k => MetricRegistry.Get(k))
+                .FirstOrDefault(d => d != null &&
+                    string.Equals(d.DisplayName, qMode, StringComparison.OrdinalIgnoreCase));
+            return def?.Key;
         }
 
         private void cmbQualityMode_SelectedIndexChanged(object? sender, EventArgs e)
@@ -322,16 +325,7 @@ namespace AvifEncoder.Gui
                 _ => 0.95m,
             };
 
-            // 联动：搜索度量自动跟随目标类型
-            if (mode != "无")
-            {
-                var def = MetricRegistry.AllKeys
-                    .Select(k => MetricRegistry.Get(k))
-                    .FirstOrDefault(d => d != null &&
-                        string.Equals(d.DisplayName, mode, StringComparison.OrdinalIgnoreCase));
-                if (def != null)
-                    cmbMetric.SelectedItem = def.Key;
-            }
+            // 联动：搜索度量自动跟随目标类型（已合并到 cmbQualityMode）
         }
 
         private void rbCrfFix_CheckedChanged(object? sender, EventArgs e)
@@ -417,10 +411,10 @@ namespace AvifEncoder.Gui
                 AvifPipeline.ApplyBitDepth(config);
             }
 
-            config.MetricMode = cmbMetric.SelectedItem?.ToString()?.ToLower() ?? "vmaf";
+            config.MetricMode = ResolveMetricKeyFromQualityMode() ?? "vmaf";
 
             string? qualityMode = cmbQualityMode.SelectedItem?.ToString();
-            if (!string.IsNullOrEmpty(qualityMode) && qualityMode != "无")
+            if (!string.IsNullOrEmpty(qualityMode))
             {
                 double rawValue = (double)numQualityValue.Value;
                 var def = MetricRegistry.AllKeys
@@ -616,9 +610,7 @@ namespace AvifEncoder.Gui
 
         private void RefreshMetricsFromDetection()
         {
-            cmbMetric.Items.Clear();
-            cmbMetric.Items.AddRange(MetricRegistry.AllKeys.ToArray());
-            if (cmbMetric.Items.Count > 0) cmbMetric.SelectedIndex = 0;
+
         }
     }
 

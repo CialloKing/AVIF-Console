@@ -14,6 +14,7 @@ namespace AvifEncoder.GuiLakeUI
         private const float AspectRatio = 16f / 9f;    // ★ 设定 16:9 比例
         private FormEncode? _encodePage;
         private FormOptions? _optionsPage;
+        private FormCommands? _commandsPage;
         private FormLog? _logPage;
         private FormHelp? _helpPage;
 
@@ -23,9 +24,20 @@ namespace AvifEncoder.GuiLakeUI
         public Form1()
         {
             InitializeComponent();
-            // 可设置一个合理的初始大小
-            this.Size = new Size(1600, 900);             // ← 改为 1600×900
-            this.MinimumSize = new Size(640, 360);     // 最小尺寸（保持比例）
+            // 2560×1600 及以下用固定 1600×900，以上用 70% 屏幕可用区域
+            var wa = Screen.PrimaryScreen!.WorkingArea;
+            int w, h;
+            if (wa.Width <= 2560 || wa.Height <= 1600)
+            {
+                w = 1600; h = 900;
+            }
+            else
+            {
+                w = wa.Width * 70 / 100;
+                h = wa.Height * 70 / 100;
+            }
+            this.Size = new Size(w, h);
+            this.MinimumSize = new Size(640, 360);
         }
 
         // ===== 添加 WM_SIZING 处理 =====
@@ -139,7 +151,7 @@ namespace AvifEncoder.GuiLakeUI
         {
             try { await Form1_LoadCore(); } catch (Exception ex)
             {
-                MessageBox.Show($"启动时发生错误: {ex.Message}", "错误",
+                MessageBox.Show($"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}", "错误",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -151,39 +163,56 @@ namespace AvifEncoder.GuiLakeUI
             _encodePage = new FormEncode();
             _encodePage.SetTopLevelHandle(this.Handle);
             _optionsPage = new FormOptions();
+            _commandsPage = new FormCommands();
             _logPage = new FormLog();
             _otherOptionsPage = new FormOtherOptions();
             _aboutPage = new FormAbout();
 
             MakePanelTransparent(_encodePage.modernPanel1);
             MakePanelTransparent(_optionsPage.modernPanel1);
+            MakePanelTransparent(_commandsPage.modernPanel1);
             MakePanelTransparent(_logPage.modernPanel1);
             MakePanelTransparent(_helpPage.modernPanel1);
-            MakePanelTransparent(_otherOptionsPage.modernPanel1); // ★ 新增透明处理
+            MakePanelTransparent(_otherOptionsPage.modernPanel1);
             MakePanelTransparent(_aboutPage.modernPanel1);
 
-            // 标签页数量改为 6
-            while (modernTabListControl1.Items.Count < 6)
+            // 标签页数量改为 7（确保精确数量）
+            int needed = 7 - modernTabListControl1.Items.Count;
+            for (int i = 0; i < needed; i++)
+                modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
+            if (modernTabListControl1.Items.Count < 7)
                 modernTabListControl1.Items.Add(new ModernTabListControl.ModernTabPage());
 
             modernTabListControl1.Items[0].Text = "编码";
             modernTabListControl1.Items[0].BoundControl = _encodePage;
-            modernTabListControl1.Items[1].Text = "选项";
-            modernTabListControl1.Items[1].BoundControl = _optionsPage;
-            modernTabListControl1.Items[2].Text = "日志";
-            modernTabListControl1.Items[2].BoundControl = _logPage;
-            modernTabListControl1.Items[3].Text = "使用说明";
-            modernTabListControl1.Items[3].BoundControl = _helpPage;
-            modernTabListControl1.Items[4].Text = "其他功能";
-            modernTabListControl1.Items[4].BoundControl = _otherOptionsPage;
-            modernTabListControl1.Items[5].Text = "关于";
-            modernTabListControl1.Items[5].BoundControl = _aboutPage;
+            modernTabListControl1.Items[1].Text = "命令";
+            modernTabListControl1.Items[1].BoundControl = _commandsPage;
+            modernTabListControl1.Items[2].Text = "选项";
+            modernTabListControl1.Items[2].BoundControl = _optionsPage;
+            modernTabListControl1.Items[3].Text = "日志";
+            modernTabListControl1.Items[3].BoundControl = _logPage;
+            modernTabListControl1.Items[4].Text = "使用说明";
+            modernTabListControl1.Items[4].BoundControl = _helpPage;
+            modernTabListControl1.Items[5].Text = "其他功能";
+            modernTabListControl1.Items[5].BoundControl = _otherOptionsPage;
+            modernTabListControl1.Items[6].Text = "关于";
+            modernTabListControl1.Items[6].BoundControl = _aboutPage;
 
-            modernTabListControl1.SelectedIndex = 0;
+            // ★ LakeUI v2.7 布局缓存未构建时 SelectedIndex 会越界，
+            //    用 BeginInvoke 延迟到窗体首次绘制完成后执行
+            this.BeginInvoke(new Action(() =>
+            {
+                if (modernTabListControl1.Items.Count > 0)
+                    modernTabListControl1.SelectedIndex = 0;
+            }));
+
             _encodePage.LogPage = _logPage!;
             _encodePage.OptionsPage = _optionsPage!;
+            _commandsPage.SetEncodePage(_encodePage!);
+            _commandsPage.SetOptionsPage(_optionsPage!);
             _optionsPage.SetEncodePage(_encodePage!);
-            _optionsPage.UpdateEncoderDefaultParams(_encodePage.GetSelectedEncoder());
+            _optionsPage.SetCommandsPage(_commandsPage!);
+            _commandsPage!.UpdateEncoderDefaultParams(_encodePage.GetSelectedEncoder());
             _encodePage.UpdateDenoiseLimit();
 
             await RunStartupCheckAsync();

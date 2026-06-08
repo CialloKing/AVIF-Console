@@ -10,7 +10,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         public FormOptions()
         {
             InitializeComponent();
-            txtExtensions.Text = ".jpg,.jpeg,.png,.webp,.gif";
             numTimeoutEncode!.Maximum = double.MaxValue;
             numTimeoutSearch!.Maximum = double.MaxValue;
             numTimeoutSafe!.Maximum = double.MaxValue;
@@ -29,12 +28,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbRgbMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("gbrap (8位RGBA)", "RGBA 直通，保留 Alpha 透明通道\n适合带透明度的 PNG 图标"));
             cmbRgbMode.ItemToolTips.Add(new LakeUI.ModernComboBox.ToolTipEntry("gbrp16le (16位RGB)", "高位深 RGB 直通\n适合摄影 RAW 导出、HDR 内容"));
 
-            txtEncoderParams.TextChanged += TxtEncoderParams_TextChanged;
-            btnResetEncoderParams!.Click += BtnResetEncoderParams_Click;
-            btnCopyFfmpegCommand!.Click += BtnCopyFfmpegCommand_Click;
-            btnResetExtensions!.Click += BtnResetExtensions_Click;
-            txtAnimatedCommand!.TextChanged += TxtAnimatedCommand_TextChanged;
-            btnAnimatedCommand!.Click += BtnAnimatedCommand_Click;
             numDenoise!.ValueChanged += (s, e) =>
             {
                 UpdateEncoderParamsWithDenoise();
@@ -56,8 +49,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             UpdateAnimatedCommand();  // 初始加载动图命令
         }
 
-        public string GetExtensions() => txtExtensions.Text.Trim();
-        public void SetExtensions(string v) => txtExtensions.Text = v ?? "";
+        public string GetExtensions() => _commandsPage?.GetExtensions() ?? "";
+        public void SetExtensions(string v) => _commandsPage?.SetExtensions(v);
 
         public int EncodeTimeout => (int)numTimeoutEncode.Value;
         public void SetEncodeTimeout(int v) => numTimeoutEncode.Value = v;
@@ -143,29 +136,18 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
         }
 
-        /// <summary>获取用户自定义的编码器参数文本（对应 CLI --enc-params）</summary>
-        public string GetEncoderCustomParams() => txtEncoderParams.Text.Trim();
-
-        /// <summary>设置用户自定义的编码器参数文本</summary>
-        public void SetEncoderCustomParams(string? v)
-        {
-            txtEncoderParams.Text = v ?? "";
-        }
-
-        private ModernButton btnCopyFfmpegCommand;
-        private ModernButton btnResetExtensions;
         private ModernNumericUpDown numDenoise;
         private ModernCheckBox chkArnrMaxFrames;
         private Label label1 = null!;
         private ModernComboBox cmbRgbMode = null!;
         private Label label2 = null!;
-        private ModernTextBox txtAnimatedCommand;
         private string _currentEncoder = "libaom-av1";
-        private ModernButton btnAnimatedCommand;
         private FormEncode? _encodePage;
+        private FormCommands? _commandsPage;
 
         /// <summary>由 Form1 调用，注入编码页引用。</summary>
         public void SetEncodePage(FormEncode encodePage) => _encodePage = encodePage;
+        public void SetCommandsPage(FormCommands p) => _commandsPage = p;
 
         /// <summary>将降噪参数合并到 txtEncoderParams 中</summary>
         private void UpdateEncoderParamsWithDenoise()
@@ -200,24 +182,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 else
                     defaults += $" -svtav1-params \"film-grain={grain}:film-grain-denoise=1\"";
             }
-            txtEncoderParams.Text = defaults;
-        }
-
-        /// <summary>当编码器切换时，自动填入该编码器的默认私有参数</summary>
-        public void UpdateEncoderDefaultParams(string? encoder)
-        {
-            if (string.IsNullOrEmpty(encoder))
-            {
-                return;
-            }
-            _currentEncoder = encoder;
-            string defaults = GetDefaultPrivateParams(encoder);
-            txtEncoderParams.Text = defaults;
-            UpdateParamsPreview();  // 显式刷新预览
+            _commandsPage?.SetEncoderCustomParams(defaults);
         }
 
         /// <summary>返回各编码器的默认私有参数字符串（含 CLI 前缀）</summary>
-        private static string GetDefaultPrivateParams(string encoder)
+        internal static string GetDefaultPrivateParams(string encoder)
         {
             return encoder switch
             {
@@ -233,14 +202,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         public void RefreshFfmpegPreview()
         {
             UpdateParamsPreview();
-            UpdateAnimatedCommand();
+            _commandsPage?.UpdateAnimatedCommand();
         }
 
         /// <summary>获取用户自定义的动图完整命令</summary>
-        public string GetAnimatedCommand() => txtAnimatedCommand?.Text.Trim() ?? "";
+        public string GetAnimatedCommand() => _commandsPage?.GetAnimatedCommand() ?? "";
 
         /// <summary>设置动图命令文本</summary>
-        public void SetAnimatedCommand(string v) { if (txtAnimatedCommand != null) txtAnimatedCommand.Text = v ?? ""; }
+        public void SetAnimatedCommand(string v) => _commandsPage?.SetAnimatedCommand(v);
 
         /// <summary>构建默认动图命令（有 Alpha 路径）</summary>
         internal static string BuildDefaultAnimatedCommand(FormEncode.PreviewContext ctx)
@@ -323,25 +292,22 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// <summary>刷新动图命令文本框（控件变化时重新生成，行为与 txtParamsPreview 一致）</summary>
         private void UpdateAnimatedCommand()
         {
-            if (txtAnimatedCommand == null) return;
+            if (_commandsPage == null) return;
             FormEncode.PreviewContext ctx;
             try { ctx = _encodePage?.GetPreviewContext() ?? CreateDefaultContext(); }
             catch { ctx = CreateDefaultContext(); }
             string cmd = BuildDefaultAnimatedCommand(ctx);
-            if (txtAnimatedCommand.Text != cmd)
-            {
-                txtAnimatedCommand.Text = cmd;
-            }
+            _commandsPage.SetAnimatedCommand(cmd);
         }
 
         /// <summary>外部调用的动图命令重置入口</summary>
         public void ResetAnimatedCommand()
         {
-            if (txtAnimatedCommand == null) return;
+            if (_commandsPage == null) return;
             FormEncode.PreviewContext ctx;
             try { ctx = _encodePage?.GetPreviewContext() ?? CreateDefaultContext(); }
             catch { ctx = CreateDefaultContext(); }
-            txtAnimatedCommand.Text = BuildDefaultAnimatedCommand(ctx);
+            _commandsPage.SetAnimatedCommand(BuildDefaultAnimatedCommand(ctx));
         }
 
         private void TxtAnimatedCommand_TextChanged(object? sender, EventArgs e)
@@ -352,7 +318,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private void BtnAnimatedCommand_Click(object? sender, EventArgs e)
         {
             ResetAnimatedCommand();
-            LakeUI.ExFloatingTipModule.ExFloatingTip(btnAnimatedCommand, "已恢复为默认动图命令");
+            LakeUI.ExFloatingTipModule.ExFloatingTip(_commandsPage?.btnAnimatedCommand, "已恢复为默认动图命令");
         }
 
         /// <summary>实时拼接完整的 ffmpeg 命令行预览</summary>
@@ -361,12 +327,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             FormEncode.PreviewContext ctx;
             try { ctx = _encodePage?.GetPreviewContext() ?? CreateDefaultContext(); }
             catch { ctx = CreateDefaultContext(); }
-            string custom = txtEncoderParams.Text.Trim();
+            string custom = _commandsPage?.GetEncoderCustomParams() ?? "";
             string preview = BuildFullFfmpegPreview(ctx, custom);
-            if (txtParamsPreview.Text != preview)
+            if (_commandsPage?.txtParamsPreview.Text != preview)
             {
-                txtParamsPreview.Text = preview;
-                txtParamsPreview.Refresh();
+                if (_commandsPage != null) { _commandsPage.txtParamsPreview.Text = preview; _commandsPage.txtParamsPreview.Refresh(); }
             }
         }
 
@@ -527,25 +492,17 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
-            btnAnimatedCommand = new ModernButton();
-            txtAnimatedCommand = new ModernTextBox();
             label2 = new Label();
             cmbRgbMode = new ModernComboBox();
             label1 = new Label();
             chkArnrMaxFrames = new ModernCheckBox();
             numDenoise = new ModernNumericUpDown();
-            btnResetExtensions = new ModernButton();
-            btnCopyFfmpegCommand = new ModernButton();
-            btnResetEncoderParams = new ModernButton();
-            txtParamsPreview = new ModernTextBox();
-            txtEncoderParams = new ModernTextBox();
             chkDryRun = new ModernCheckBox();
             chkVerbose = new ModernCheckBox();
             numTimeoutSsim = new ModernNumericUpDown();
             numTimeoutSafe = new ModernNumericUpDown();
             numTimeoutSearch = new ModernNumericUpDown();
             numTimeoutEncode = new ModernNumericUpDown();
-            txtExtensions = new ModernTextBox();
             lblTimeout = new Label();
             lblTimeoutEncode = new Label();
             lblTimeoutSearch = new Label();
@@ -559,25 +516,17 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Transparent;
             modernPanel1.BorderColor = Color.Transparent;
-            modernPanel1.Controls.Add(btnAnimatedCommand);
-            modernPanel1.Controls.Add(txtAnimatedCommand);
             modernPanel1.Controls.Add(label2);
             modernPanel1.Controls.Add(cmbRgbMode);
             modernPanel1.Controls.Add(label1);
             modernPanel1.Controls.Add(chkArnrMaxFrames);
             modernPanel1.Controls.Add(numDenoise);
-            modernPanel1.Controls.Add(btnResetExtensions);
-            modernPanel1.Controls.Add(btnCopyFfmpegCommand);
-            modernPanel1.Controls.Add(btnResetEncoderParams);
-            modernPanel1.Controls.Add(txtParamsPreview);
-            modernPanel1.Controls.Add(txtEncoderParams);
             modernPanel1.Controls.Add(chkDryRun);
             modernPanel1.Controls.Add(chkVerbose);
             modernPanel1.Controls.Add(numTimeoutSsim);
             modernPanel1.Controls.Add(numTimeoutSafe);
             modernPanel1.Controls.Add(numTimeoutSearch);
             modernPanel1.Controls.Add(numTimeoutEncode);
-            modernPanel1.Controls.Add(txtExtensions);
             modernPanel1.Controls.Add(lblTimeout);
             modernPanel1.Controls.Add(lblTimeoutEncode);
             modernPanel1.Controls.Add(lblTimeoutSearch);
@@ -587,45 +536,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             modernPanel1.ForeColor = Color.Transparent;
             modernPanel1.Location = new Point(0, 0);
             modernPanel1.Name = "modernPanel1";
-            modernPanel1.Size = new Size(1099, 763);
+            modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
-            // 
-            // btnAnimatedCommand
-            // 
-            btnAnimatedCommand.AnimationFPS = 0;
-            btnAnimatedCommand.BackColor1 = Color.Transparent;
-            btnAnimatedCommand.BorderColor = Color.Gainsboro;
-            btnAnimatedCommand.BorderRadius = 10;
-            btnAnimatedCommand.ForeColor = Color.WhiteSmoke;
-            btnAnimatedCommand.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnAnimatedCommand.Location = new Point(16, 299);
-            btnAnimatedCommand.Margin = new Padding(2);
-            btnAnimatedCommand.Name = "btnAnimatedCommand";
-            btnAnimatedCommand.PressedBackColor1 = Color.White;
-            btnAnimatedCommand.Size = new Size(282, 40);
-            btnAnimatedCommand.TabIndex = 79;
-            btnAnimatedCommand.Text = "动图编码完整命令，可直接编辑";
-            btnAnimatedCommand.TextAlign = ModernButton.TextAlignEnum.Left;
-            // 
-            // txtAnimatedCommand
-            // 
-            txtAnimatedCommand.AllowDrop = true;
-            txtAnimatedCommand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txtAnimatedCommand.AnimationFPS = 0;
-            txtAnimatedCommand.BackColor1 = Color.Transparent;
-            txtAnimatedCommand.BorderColorFocus = Color.White;
-            txtAnimatedCommand.ForeColor = Color.WhiteSmoke;
-            txtAnimatedCommand.Location = new Point(16, 343);
-            txtAnimatedCommand.Margin = new Padding(2);
-            txtAnimatedCommand.Name = "txtAnimatedCommand";
-            txtAnimatedCommand.SelectionColor = Color.FromArgb(180, 128, 128, 128);
-            txtAnimatedCommand.Size = new Size(1036, 32);
-            txtAnimatedCommand.TabIndex = 78;
             // 
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(217, 410);
+            label2.Location = new Point(269, 57);
             label2.Name = "label2";
             label2.Size = new Size(81, 17);
             label2.TabIndex = 77;
@@ -651,7 +568,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             cmbRgbMode.DropDownSelectedForeColor = Color.White;
             cmbRgbMode.ForeColor = Color.WhiteSmoke;
             cmbRgbMode.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            cmbRgbMode.Location = new Point(217, 440);
+            cmbRgbMode.Location = new Point(269, 80);
             cmbRgbMode.Margin = new Padding(2, 2, 2, 2);
             cmbRgbMode.Name = "cmbRgbMode";
             cmbRgbMode.Padding = new Padding(6, 0, 0, 0);
@@ -665,7 +582,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(16, 390);
+            label1.Location = new Point(30, 30);
             label1.Name = "label1";
             label1.Size = new Size(120, 17);
             label1.TabIndex = 75;
@@ -677,7 +594,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkArnrMaxFrames.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkArnrMaxFrames.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkArnrMaxFrames.ForeColor = Color.WhiteSmoke;
-            chkArnrMaxFrames.Location = new Point(16, 410);
+            chkArnrMaxFrames.Location = new Point(30, 50);
             chkArnrMaxFrames.Name = "chkArnrMaxFrames";
             chkArnrMaxFrames.Size = new Size(150, 24);
             chkArnrMaxFrames.TabIndex = 74;
@@ -694,93 +611,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numDenoise.ForeColor = Color.White;
             numDenoise.HoverArrowColor = Color.Gray;
             numDenoise.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numDenoise.Location = new Point(16, 440);
+            numDenoise.Location = new Point(30, 80);
             numDenoise.Name = "numDenoise";
             numDenoise.Padding = new Padding(6, 0, 0, 0);
             numDenoise.Size = new Size(160, 32);
             numDenoise.TabIndex = 72;
-            // 
-            // btnResetExtensions
-            // 
-            btnResetExtensions.AnimationFPS = 0;
-            btnResetExtensions.BackColor1 = Color.Transparent;
-            btnResetExtensions.BorderColor = Color.Gainsboro;
-            btnResetExtensions.BorderRadius = 10;
-            btnResetExtensions.ForeColor = Color.WhiteSmoke;
-            btnResetExtensions.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnResetExtensions.Location = new Point(16, 23);
-            btnResetExtensions.Margin = new Padding(2);
-            btnResetExtensions.Name = "btnResetExtensions";
-            btnResetExtensions.PressedBackColor1 = Color.White;
-            btnResetExtensions.Size = new Size(611, 40);
-            btnResetExtensions.TabIndex = 71;
-            btnResetExtensions.Text = "图片后缀名，使用英文逗号分隔，默认为.jpg,.jpeg,.png,.webp,.gif这5种，可按需添加";
-            btnResetExtensions.TextAlign = ModernButton.TextAlignEnum.Left;
-            // 
-            // btnCopyFfmpegCommand
-            // 
-            btnCopyFfmpegCommand.AnimationFPS = 0;
-            btnCopyFfmpegCommand.BackColor1 = Color.Transparent;
-            btnCopyFfmpegCommand.BorderColor = Color.Gainsboro;
-            btnCopyFfmpegCommand.BorderRadius = 10;
-            btnCopyFfmpegCommand.ForeColor = Color.WhiteSmoke;
-            btnCopyFfmpegCommand.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnCopyFfmpegCommand.Location = new Point(16, 201);
-            btnCopyFfmpegCommand.Margin = new Padding(2);
-            btnCopyFfmpegCommand.Name = "btnCopyFfmpegCommand";
-            btnCopyFfmpegCommand.PressedBackColor1 = Color.White;
-            btnCopyFfmpegCommand.Size = new Size(282, 40);
-            btnCopyFfmpegCommand.TabIndex = 70;
-            btnCopyFfmpegCommand.Text = "实际使用ffmpeg完整命令只读展示";
-            btnCopyFfmpegCommand.TextAlign = ModernButton.TextAlignEnum.Left;
-            // 
-            // btnResetEncoderParams
-            // 
-            btnResetEncoderParams.AnimationFPS = 0;
-            btnResetEncoderParams.BackColor1 = Color.Transparent;
-            btnResetEncoderParams.BorderColor = Color.Gainsboro;
-            btnResetEncoderParams.BorderRadius = 10;
-            btnResetEncoderParams.ForeColor = Color.WhiteSmoke;
-            btnResetEncoderParams.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnResetEncoderParams.Location = new Point(16, 114);
-            btnResetEncoderParams.Margin = new Padding(2);
-            btnResetEncoderParams.Name = "btnResetEncoderParams";
-            btnResetEncoderParams.PressedBackColor1 = Color.White;
-            btnResetEncoderParams.Size = new Size(282, 40);
-            btnResetEncoderParams.TabIndex = 69;
-            btnResetEncoderParams.Text = "自定义ffmpeg命令行高级参数，可直接编辑";
-            btnResetEncoderParams.TextAlign = ModernButton.TextAlignEnum.Left;
-            // 
-            // txtParamsPreview
-            // 
-            txtParamsPreview.AllowDrop = true;
-            txtParamsPreview.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txtParamsPreview.AnimationFPS = 0;
-            txtParamsPreview.BackColor1 = Color.Transparent;
-            txtParamsPreview.BorderColor = Color.White;
-            txtParamsPreview.BorderColorFocus = Color.White;
-            txtParamsPreview.ForeColor = Color.WhiteSmoke;
-            txtParamsPreview.Location = new Point(16, 245);
-            txtParamsPreview.Margin = new Padding(2);
-            txtParamsPreview.Name = "txtParamsPreview";
-            txtParamsPreview.ReadOnly = true;
-            txtParamsPreview.SelectionColor = Color.FromArgb(180, 128, 128, 128);
-            txtParamsPreview.Size = new Size(1036, 32);
-            txtParamsPreview.TabIndex = 67;
-            // 
-            // txtEncoderParams
-            // 
-            txtEncoderParams.AllowDrop = true;
-            txtEncoderParams.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txtEncoderParams.BackColor1 = Color.Transparent;
-            txtEncoderParams.BorderColorFocus = Color.White;
-            txtEncoderParams.ForeColor = Color.WhiteSmoke;
-            txtEncoderParams.Location = new Point(16, 158);
-            txtEncoderParams.Margin = new Padding(2);
-            txtEncoderParams.Name = "txtEncoderParams";
-            txtEncoderParams.SelectionColor = Color.FromArgb(180, 128, 128, 128);
-            txtEncoderParams.Size = new Size(1036, 32);
-            txtEncoderParams.TabIndex = 65;
             // 
             // chkDryRun
             // 
@@ -788,7 +623,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkDryRun.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkDryRun.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkDryRun.ForeColor = Color.WhiteSmoke;
-            chkDryRun.Location = new Point(731, 727);
+            chkDryRun.Location = new Point(456, 202);
             chkDryRun.Name = "chkDryRun";
             chkDryRun.Size = new Size(150, 24);
             chkDryRun.TabIndex = 64;
@@ -800,7 +635,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkVerbose.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkVerbose.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkVerbose.ForeColor = Color.WhiteSmoke;
-            chkVerbose.Location = new Point(731, 697);
+            chkVerbose.Location = new Point(456, 171);
             chkVerbose.Name = "chkVerbose";
             chkVerbose.Size = new Size(150, 24);
             chkVerbose.TabIndex = 63;
@@ -817,7 +652,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSsim.ForeColor = Color.White;
             numTimeoutSsim.HoverArrowColor = Color.Gray;
             numTimeoutSsim.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numTimeoutSsim.Location = new Point(8, 719);
+            numTimeoutSsim.Location = new Point(30, 377);
             numTimeoutSsim.Name = "numTimeoutSsim";
             numTimeoutSsim.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSsim.Size = new Size(160, 32);
@@ -835,7 +670,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSafe.ForeColor = Color.White;
             numTimeoutSafe.HoverArrowColor = Color.Gray;
             numTimeoutSafe.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numTimeoutSafe.Location = new Point(8, 661);
+            numTimeoutSafe.Location = new Point(30, 316);
             numTimeoutSafe.Name = "numTimeoutSafe";
             numTimeoutSafe.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSafe.Size = new Size(160, 32);
@@ -852,7 +687,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutSearch.ForeColor = Color.White;
             numTimeoutSearch.HoverArrowColor = Color.Gray;
             numTimeoutSearch.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numTimeoutSearch.Location = new Point(8, 603);
+            numTimeoutSearch.Location = new Point(30, 255);
             numTimeoutSearch.Name = "numTimeoutSearch";
             numTimeoutSearch.Padding = new Padding(6, 0, 0, 0);
             numTimeoutSearch.Size = new Size(160, 32);
@@ -869,32 +704,18 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             numTimeoutEncode.ForeColor = Color.White;
             numTimeoutEncode.HoverArrowColor = Color.Gray;
             numTimeoutEncode.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numTimeoutEncode.Location = new Point(8, 545);
+            numTimeoutEncode.Location = new Point(30, 194);
             numTimeoutEncode.Name = "numTimeoutEncode";
             numTimeoutEncode.Padding = new Padding(6, 0, 0, 0);
             numTimeoutEncode.Size = new Size(160, 32);
             numTimeoutEncode.TabIndex = 59;
-            // 
-            // txtExtensions
-            // 
-            txtExtensions.AllowDrop = true;
-            txtExtensions.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txtExtensions.BackColor1 = Color.Transparent;
-            txtExtensions.BorderColorFocus = Color.White;
-            txtExtensions.ForeColor = Color.WhiteSmoke;
-            txtExtensions.Location = new Point(16, 67);
-            txtExtensions.Margin = new Padding(2);
-            txtExtensions.Name = "txtExtensions";
-            txtExtensions.SelectionColor = Color.FromArgb(180, 128, 128, 128);
-            txtExtensions.Size = new Size(1036, 32);
-            txtExtensions.TabIndex = 14;
             // 
             // lblTimeout
             // 
             lblTimeout.AutoSize = true;
             lblTimeout.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold, GraphicsUnit.Point, 134);
             lblTimeout.ForeColor = Color.WhiteSmoke;
-            lblTimeout.Location = new Point(8, 496);
+            lblTimeout.Location = new Point(30, 129);
             lblTimeout.Name = "lblTimeout";
             lblTimeout.Size = new Size(88, 26);
             lblTimeout.TabIndex = 3;
@@ -905,7 +726,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             lblTimeoutEncode.AutoSize = true;
             lblTimeoutEncode.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             lblTimeoutEncode.ForeColor = Color.WhiteSmoke;
-            lblTimeoutEncode.Location = new Point(8, 522);
+            lblTimeoutEncode.Location = new Point(30, 171);
             lblTimeoutEncode.Name = "lblTimeoutEncode";
             lblTimeoutEncode.Size = new Size(156, 20);
             lblTimeoutEncode.TabIndex = 4;
@@ -916,7 +737,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             lblTimeoutSearch.AutoSize = true;
             lblTimeoutSearch.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             lblTimeoutSearch.ForeColor = Color.WhiteSmoke;
-            lblTimeoutSearch.Location = new Point(8, 580);
+            lblTimeoutSearch.Location = new Point(30, 232);
             lblTimeoutSearch.Name = "lblTimeoutSearch";
             lblTimeoutSearch.Size = new Size(96, 20);
             lblTimeoutSearch.TabIndex = 6;
@@ -927,7 +748,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             lblTimeoutSafe.AutoSize = true;
             lblTimeoutSafe.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             lblTimeoutSafe.ForeColor = Color.WhiteSmoke;
-            lblTimeoutSafe.Location = new Point(8, 638);
+            lblTimeoutSafe.Location = new Point(30, 293);
             lblTimeoutSafe.Name = "lblTimeoutSafe";
             lblTimeoutSafe.Size = new Size(96, 20);
             lblTimeoutSafe.TabIndex = 8;
@@ -938,7 +759,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             lblTimeoutSsim.AutoSize = true;
             lblTimeoutSsim.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             lblTimeoutSsim.ForeColor = Color.WhiteSmoke;
-            lblTimeoutSsim.Location = new Point(8, 697);
+            lblTimeoutSsim.Location = new Point(30, 354);
             lblTimeoutSsim.Name = "lblTimeoutSsim";
             lblTimeoutSsim.Size = new Size(106, 20);
             lblTimeoutSsim.TabIndex = 10;
@@ -949,7 +770,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.Black;
-            ClientSize = new Size(1099, 763);
+            ClientSize = new Size(1114, 681);
             Controls.Add(modernPanel1);
             Name = "FormOptions";
             Text = "FormOptions";
@@ -963,44 +784,28 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private Label lblTimeoutSearch = null!;
         private Label lblTimeoutSafe = null!;
         private Label lblTimeoutSsim = null!;
-        private ModernTextBox txtExtensions = null!;
         private ModernNumericUpDown numTimeoutEncode = null!;
         private ModernNumericUpDown numTimeoutSearch = null!;
         private ModernNumericUpDown numTimeoutSafe = null!;
         private ModernNumericUpDown numTimeoutSsim = null!;
         private Label lblTimeout = null!;
         private ModernCheckBox chkDryRun = null!;
-        private ModernTextBox txtEncoderParams = null!;
-        private ModernTextBox txtParamsPreview = null!;
-        private ModernButton btnResetEncoderParams;
         private ModernCheckBox chkVerbose = null!;
-
-        private void BtnResetEncoderParams_Click(object? sender, EventArgs e)
-        {
-            txtEncoderParams.Text = GetDefaultPrivateParams(_currentEncoder);
-            LakeUI.ExFloatingTipModule.ExFloatingTip(btnResetEncoderParams, "已恢复为默认参数");
-        }
-
-        private void BtnCopyFfmpegCommand_Click(object? sender, EventArgs e)
-        {
-            string cmd = txtParamsPreview.Text;
-            if (!string.IsNullOrEmpty(cmd))
-            {
-                Clipboard.SetText(cmd);
-                LakeUI.ExFloatingTipModule.ExFloatingTip(btnCopyFfmpegCommand, "ffmpeg 命令已复制到剪贴板");
-            }
-        }
-
-        private void BtnResetExtensions_Click(object? sender, EventArgs e)
-        {
-            txtExtensions.Text = ".jpg,.jpeg,.png,.webp,.gif";
-            LakeUI.ExFloatingTipModule.ExFloatingTip(btnResetExtensions, "已恢复为默认后缀名");
-        }
 
         private void numTimeoutSsim_ValueChanged(object? sender, EventArgs e)
         {
 
         }
+
+        // 供 FormCommands 同步读取
+        public string GetParamsPreviewText() => _commandsPage?.txtParamsPreview?.Text ?? "";
+        public string GetAnimatedCommandText() => _commandsPage?.txtAnimatedCommand?.Text ?? "";
+
+        // 转发到 FormCommands（保持旧 API 兼容）
+        public string GetEncoderCustomParams() => _commandsPage?.GetEncoderCustomParams() ?? "";
+        public void SetEncoderCustomParams(string v) => _commandsPage?.SetEncoderCustomParams(v);
+        public void UpdateEncoderDefaultParams(string? encoder) => _commandsPage?.UpdateEncoderDefaultParams(encoder ?? "");
+        public void SchedulePreviewRefresh() { }  // FormCommands 已自行刷新，此方法仅用于兼容
 
     }
 }

@@ -29,6 +29,10 @@
         private void InitializeComponent()
         {
             modernPanel1 = new LakeUI.ModernPanel();
+            cmbBitDepth = new LakeUI.ModernComboBox();
+            label8 = new Label();
+            label9 = new Label();
+            cmbChroma = new LakeUI.ModernComboBox();
             btnUpdateJobs = new LakeUI.ModernButton();
             btnAbandon = new LakeUI.ModernButton();
             btnResume = new LakeUI.ModernButton();
@@ -36,8 +40,6 @@
             cmbPreset = new LakeUI.ModernComboBox();
             cmbEncoder = new LakeUI.ModernComboBox();
             cmbConflict = new LakeUI.ModernComboBox();
-            cmbChroma = new LakeUI.ModernComboBox();
-            cmbBitDepth = new LakeUI.ModernComboBox();
             cmbQualityMode = new LakeUI.ModernComboBox();
             numSearchCpuUsed = new LakeUI.ModernNumericUpDown();
             numFinalCpuUsed = new LakeUI.ModernNumericUpDown();
@@ -53,11 +55,7 @@
             label10 = new Label();
             chkRecursive = new LakeUI.ModernCheckBox();
             chkLossless = new LakeUI.ModernCheckBox();
-            label9 = new Label();
-            label8 = new Label();
             label7 = new Label();
-            label6 = new Label();
-            cmbMetric = new LakeUI.ModernComboBox();
             grpCrfMode = new GroupBox();
             numCrfMax = new LakeUI.ModernNumericUpDown();
             numCrfMin = new LakeUI.ModernNumericUpDown();
@@ -91,6 +89,10 @@
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Black;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(cmbBitDepth);
+            modernPanel1.Controls.Add(label8);
+            modernPanel1.Controls.Add(label9);
+            modernPanel1.Controls.Add(cmbChroma);
             modernPanel1.Controls.Add(btnUpdateJobs);
             modernPanel1.Controls.Add(btnAbandon);
             modernPanel1.Controls.Add(btnResume);
@@ -98,8 +100,6 @@
             modernPanel1.Controls.Add(cmbPreset);
             modernPanel1.Controls.Add(cmbEncoder);
             modernPanel1.Controls.Add(cmbConflict);
-            modernPanel1.Controls.Add(cmbChroma);
-            modernPanel1.Controls.Add(cmbBitDepth);
             modernPanel1.Controls.Add(cmbQualityMode);
             modernPanel1.Controls.Add(numSearchCpuUsed);
             modernPanel1.Controls.Add(numFinalCpuUsed);
@@ -115,11 +115,7 @@
             modernPanel1.Controls.Add(label10);
             modernPanel1.Controls.Add(chkRecursive);
             modernPanel1.Controls.Add(chkLossless);
-            modernPanel1.Controls.Add(label9);
-            modernPanel1.Controls.Add(label8);
             modernPanel1.Controls.Add(label7);
-            modernPanel1.Controls.Add(label6);
-            modernPanel1.Controls.Add(cmbMetric);
             modernPanel1.Controls.Add(grpCrfMode);
             modernPanel1.Controls.Add(txtTemplate);
             modernPanel1.Controls.Add(label3);
@@ -143,6 +139,82 @@
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
             // 
+            // cmbBitDepth
+            // 
+            cmbBitDepth.BackColor1 = Color.FromArgb(50, 30, 30, 30);
+            cmbBitDepth.BorderColor = Color.Gainsboro;
+            cmbBitDepth.BorderColorFocus = Color.White;
+            cmbBitDepth.DropDownAnimationFPS = 0;
+            cmbBitDepth.DropDownBackColor = Color.Transparent;
+            cmbBitDepth.DropDownBackdropBlurPasses = 2;
+            cmbBitDepth.DropDownBackdropBlurRadius = 5;
+            cmbBitDepth.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbBitDepth.DropDownBorderColor = Color.White;
+            cmbBitDepth.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
+            cmbBitDepth.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbBitDepth.DropDownPadding = new Padding(3, 0, 0, 0);
+            cmbBitDepth.DropDownSelectedColor = Color.Transparent;
+            cmbBitDepth.DropDownSelectedForeColor = Color.White;
+            cmbBitDepth.ForeColor = Color.WhiteSmoke;
+            cmbBitDepth.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            cmbBitDepth.Location = new Point(37, 438);
+            cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
+            cmbBitDepth.Name = "cmbBitDepth";
+            cmbBitDepth.Padding = new Padding(6, 0, 0, 0);
+            cmbBitDepth.SelectionColor = Color.Transparent;
+            cmbBitDepth.Size = new Size(160, 32);
+            cmbBitDepth.TabIndex = 60;
+            cmbBitDepth.Text = "选择色深";
+            cmbBitDepth.ToolTipBackColor = Color.DimGray;
+            // 
+            // label8
+            // 
+            label8.AutoSize = true;
+            label8.ForeColor = Color.WhiteSmoke;
+            label8.Location = new Point(40, 361);
+            label8.Name = "label8";
+            label8.Size = new Size(56, 17);
+            label8.TabIndex = 39;
+            label8.Text = "色度采样";
+            // 
+            // label9
+            // 
+            label9.AutoSize = true;
+            label9.ForeColor = Color.WhiteSmoke;
+            label9.Location = new Point(40, 419);
+            label9.Name = "label9";
+            label9.Size = new Size(32, 17);
+            label9.TabIndex = 41;
+            label9.Text = "色深";
+            // 
+            // cmbChroma
+            // 
+            cmbChroma.BackColor1 = Color.FromArgb(50, 30, 30, 30);
+            cmbChroma.BorderColor = Color.Gainsboro;
+            cmbChroma.BorderColorFocus = Color.White;
+            cmbChroma.DropDownAnimationFPS = 0;
+            cmbChroma.DropDownBackColor = Color.Transparent;
+            cmbChroma.DropDownBackdropBlurPasses = 2;
+            cmbChroma.DropDownBackdropBlurRadius = 5;
+            cmbChroma.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
+            cmbChroma.DropDownBorderColor = Color.White;
+            cmbChroma.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
+            cmbChroma.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
+            cmbChroma.DropDownPadding = new Padding(3, 0, 0, 0);
+            cmbChroma.DropDownSelectedColor = Color.Transparent;
+            cmbChroma.DropDownSelectedForeColor = Color.White;
+            cmbChroma.ForeColor = Color.WhiteSmoke;
+            cmbChroma.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
+            cmbChroma.Location = new Point(37, 380);
+            cmbChroma.Margin = new Padding(2, 2, 2, 2);
+            cmbChroma.Name = "cmbChroma";
+            cmbChroma.Padding = new Padding(6, 0, 0, 0);
+            cmbChroma.SelectionColor = Color.Transparent;
+            cmbChroma.Size = new Size(160, 32);
+            cmbChroma.TabIndex = 61;
+            cmbChroma.Text = "选择色度采样";
+            cmbChroma.ToolTipBackColor = Color.DimGray;
+            // 
             // btnUpdateJobs
             // 
             btnUpdateJobs.AnimationFPS = 0;
@@ -150,7 +222,7 @@
             btnUpdateJobs.BorderColor = Color.White;
             btnUpdateJobs.ForeColor = Color.WhiteSmoke;
             btnUpdateJobs.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            btnUpdateJobs.Location = new Point(523, 377);
+            btnUpdateJobs.Location = new Point(319, 435);
             btnUpdateJobs.Margin = new Padding(2);
             btnUpdateJobs.Name = "btnUpdateJobs";
             btnUpdateJobs.PressedBackColor1 = Color.White;
@@ -309,62 +381,6 @@
             cmbConflict.Text = "冲突策略";
             cmbConflict.ToolTipBackColor = Color.DimGray;
             // 
-            // cmbChroma
-            // 
-            cmbChroma.BackColor1 = Color.FromArgb(50, 30, 30, 30);
-            cmbChroma.BorderColor = Color.Gainsboro;
-            cmbChroma.BorderColorFocus = Color.White;
-            cmbChroma.DropDownAnimationFPS = 0;
-            cmbChroma.DropDownBackColor = Color.Transparent;
-            cmbChroma.DropDownBackdropBlurPasses = 2;
-            cmbChroma.DropDownBackdropBlurRadius = 5;
-            cmbChroma.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
-            cmbChroma.DropDownBorderColor = Color.White;
-            cmbChroma.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
-            cmbChroma.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
-            cmbChroma.DropDownPadding = new Padding(3, 0, 0, 0);
-            cmbChroma.DropDownSelectedColor = Color.Transparent;
-            cmbChroma.DropDownSelectedForeColor = Color.White;
-            cmbChroma.ForeColor = Color.WhiteSmoke;
-            cmbChroma.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            cmbChroma.Location = new Point(37, 380);
-            cmbChroma.Margin = new Padding(2, 2, 2, 2);
-            cmbChroma.Name = "cmbChroma";
-            cmbChroma.Padding = new Padding(6, 0, 0, 0);
-            cmbChroma.SelectionColor = Color.Transparent;
-            cmbChroma.Size = new Size(160, 32);
-            cmbChroma.TabIndex = 61;
-            cmbChroma.Text = "选择色度采样";
-            cmbChroma.ToolTipBackColor = Color.DimGray;
-            // 
-            // cmbBitDepth
-            // 
-            cmbBitDepth.BackColor1 = Color.FromArgb(50, 30, 30, 30);
-            cmbBitDepth.BorderColor = Color.Gainsboro;
-            cmbBitDepth.BorderColorFocus = Color.White;
-            cmbBitDepth.DropDownAnimationFPS = 0;
-            cmbBitDepth.DropDownBackColor = Color.Transparent;
-            cmbBitDepth.DropDownBackdropBlurPasses = 2;
-            cmbBitDepth.DropDownBackdropBlurRadius = 5;
-            cmbBitDepth.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
-            cmbBitDepth.DropDownBorderColor = Color.White;
-            cmbBitDepth.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
-            cmbBitDepth.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
-            cmbBitDepth.DropDownPadding = new Padding(3, 0, 0, 0);
-            cmbBitDepth.DropDownSelectedColor = Color.Transparent;
-            cmbBitDepth.DropDownSelectedForeColor = Color.White;
-            cmbBitDepth.ForeColor = Color.WhiteSmoke;
-            cmbBitDepth.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            cmbBitDepth.Location = new Point(37, 438);
-            cmbBitDepth.Margin = new Padding(2, 2, 2, 2);
-            cmbBitDepth.Name = "cmbBitDepth";
-            cmbBitDepth.Padding = new Padding(6, 0, 0, 0);
-            cmbBitDepth.SelectionColor = Color.Transparent;
-            cmbBitDepth.Size = new Size(160, 32);
-            cmbBitDepth.TabIndex = 60;
-            cmbBitDepth.Text = "选择色深";
-            cmbBitDepth.ToolTipBackColor = Color.DimGray;
-            // 
             // cmbQualityMode
             // 
             cmbQualityMode.BackColor1 = Color.FromArgb(50, 30, 30, 30);
@@ -385,12 +401,12 @@
             cmbQualityMode.DropDownSelectedForeColor = Color.White;
             cmbQualityMode.ForeColor = Color.WhiteSmoke;
             cmbQualityMode.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            cmbQualityMode.Location = new Point(230, 438);
+            cmbQualityMode.Location = new Point(432, 187);
             cmbQualityMode.Margin = new Padding(2, 2, 2, 2);
             cmbQualityMode.Name = "cmbQualityMode";
             cmbQualityMode.Padding = new Padding(7, 0, 0, 0);
             cmbQualityMode.SelectionColor = Color.Transparent;
-            cmbQualityMode.Size = new Size(285, 32);
+            cmbQualityMode.Size = new Size(160, 32);
             cmbQualityMode.TabIndex = 59;
             cmbQualityMode.Text = "质量指标";
             cmbQualityMode.ToolTipBackColor = Color.DimGray;
@@ -406,7 +422,7 @@
             numSearchCpuUsed.ForeColor = Color.White;
             numSearchCpuUsed.HoverArrowColor = Color.Gray;
             numSearchCpuUsed.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numSearchCpuUsed.Location = new Point(432, 187);
+            numSearchCpuUsed.Location = new Point(432, 309);
             numSearchCpuUsed.Name = "numSearchCpuUsed";
             numSearchCpuUsed.Padding = new Padding(6, 0, 0, 0);
             numSearchCpuUsed.Size = new Size(160, 32);
@@ -422,7 +438,7 @@
             numFinalCpuUsed.ForeColor = Color.White;
             numFinalCpuUsed.HoverArrowColor = Color.Gray;
             numFinalCpuUsed.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numFinalCpuUsed.Location = new Point(432, 247);
+            numFinalCpuUsed.Location = new Point(432, 380);
             numFinalCpuUsed.Name = "numFinalCpuUsed";
             numFinalCpuUsed.Padding = new Padding(6, 0, 0, 0);
             numFinalCpuUsed.Size = new Size(160, 32);
@@ -440,7 +456,7 @@
             numMaxRes.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numMaxRes.Increment = 100D;
             numMaxRes.LargeChange = 1000D;
-            numMaxRes.Location = new Point(432, 309);
+            numMaxRes.Location = new Point(230, 380);
             numMaxRes.Name = "numMaxRes";
             numMaxRes.Padding = new Padding(6, 0, 0, 0);
             numMaxRes.Size = new Size(160, 32);
@@ -457,7 +473,7 @@
             numJobs.ForeColor = Color.White;
             numJobs.HoverArrowColor = Color.Gray;
             numJobs.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
-            numJobs.Location = new Point(432, 380);
+            numJobs.Location = new Point(230, 438);
             numJobs.Name = "numJobs";
             numJobs.Padding = new Padding(6, 0, 0, 0);
             numJobs.Size = new Size(86, 32);
@@ -475,10 +491,10 @@
             numQualityValue.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numQualityValue.Increment = 0.1D;
             numQualityValue.LargeChange = 1D;
-            numQualityValue.Location = new Point(523, 438);
+            numQualityValue.Location = new Point(432, 247);
             numQualityValue.Name = "numQualityValue";
             numQualityValue.Padding = new Padding(6, 0, 0, 0);
-            numQualityValue.Size = new Size(236, 32);
+            numQualityValue.Size = new Size(160, 32);
             numQualityValue.SmallChange = 0.1D;
             numQualityValue.TabIndex = 54;
             // 
@@ -488,7 +504,7 @@
             chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSweep.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkSweep.ForeColor = Color.WhiteSmoke;
-            chkSweep.Location = new Point(639, 290);
+            chkSweep.Location = new Point(639, 309);
             chkSweep.Name = "chkSweep";
             chkSweep.Size = new Size(176, 21);
             chkSweep.TabIndex = 52;
@@ -524,7 +540,7 @@
             chkSerialEncode.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSerialEncode.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkSerialEncode.ForeColor = Color.WhiteSmoke;
-            chkSerialEncode.Location = new Point(639, 374);
+            chkSerialEncode.Location = new Point(639, 394);
             chkSerialEncode.Name = "chkSerialEncode";
             chkSerialEncode.Size = new Size(150, 25);
             chkSerialEncode.TabIndex = 49;
@@ -546,7 +562,7 @@
             chkOutputFullRes.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkOutputFullRes.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkOutputFullRes.ForeColor = Color.WhiteSmoke;
-            chkOutputFullRes.Location = new Point(639, 347);
+            chkOutputFullRes.Location = new Point(639, 367);
             chkOutputFullRes.Name = "chkOutputFullRes";
             chkOutputFullRes.Size = new Size(150, 21);
             chkOutputFullRes.TabIndex = 46;
@@ -556,7 +572,7 @@
             // 
             label10.AutoSize = true;
             label10.ForeColor = Color.WhiteSmoke;
-            label10.Location = new Point(435, 290);
+            label10.Location = new Point(230, 361);
             label10.Name = "label10";
             label10.Size = new Size(168, 17);
             label10.TabIndex = 45;
@@ -568,7 +584,7 @@
             chkRecursive.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkRecursive.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkRecursive.ForeColor = Color.WhiteSmoke;
-            chkRecursive.Location = new Point(639, 316);
+            chkRecursive.Location = new Point(639, 336);
             chkRecursive.Name = "chkRecursive";
             chkRecursive.Size = new Size(150, 25);
             chkRecursive.TabIndex = 43;
@@ -580,82 +596,21 @@
             chkLossless.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkLossless.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkLossless.ForeColor = Color.WhiteSmoke;
-            chkLossless.Location = new Point(639, 405);
+            chkLossless.Location = new Point(639, 425);
             chkLossless.Name = "chkLossless";
             chkLossless.Size = new Size(150, 21);
             chkLossless.TabIndex = 42;
             chkLossless.Text = "无损(目前有bug)";
             // 
-            // label9
-            // 
-            label9.AutoSize = true;
-            label9.ForeColor = Color.WhiteSmoke;
-            label9.Location = new Point(40, 419);
-            label9.Name = "label9";
-            label9.Size = new Size(32, 17);
-            label9.TabIndex = 41;
-            label9.Text = "色深";
-            // 
-            // label8
-            // 
-            label8.AutoSize = true;
-            label8.ForeColor = Color.WhiteSmoke;
-            label8.Location = new Point(40, 359);
-            label8.Name = "label8";
-            label8.Size = new Size(56, 17);
-            label8.TabIndex = 39;
-            label8.Text = "色度采样";
-            // 
             // label7
             // 
             label7.AutoSize = true;
             label7.ForeColor = Color.WhiteSmoke;
-            label7.Location = new Point(233, 419);
+            label7.Location = new Point(436, 168);
             label7.Name = "label7";
             label7.Size = new Size(56, 17);
             label7.TabIndex = 36;
             label7.Text = "质量指标";
-            // 
-            // label6
-            // 
-            label6.AutoSize = true;
-            label6.ForeColor = Color.WhiteSmoke;
-            label6.Location = new Point(232, 361);
-            label6.Name = "label6";
-            label6.Size = new Size(56, 17);
-            label6.TabIndex = 34;
-            label6.Text = "搜索度量";
-            // 
-            // cmbMetric
-            // 
-            cmbMetric.BackColor1 = Color.FromArgb(50, 30, 30, 30);
-            cmbMetric.BorderColor = Color.Gainsboro;
-            cmbMetric.BorderColorFocus = Color.White;
-            cmbMetric.DropDownAnimationFPS = 0;
-            cmbMetric.DropDownBackColor = Color.Transparent;
-            cmbMetric.DropDownBackdropBlurPasses = 2;
-            cmbMetric.DropDownBackdropBlurRadius = 5;
-            cmbMetric.DropDownBackdropMode = LakeUI.PopupBackdropMode.Auto;
-            cmbMetric.DropDownBorderColor = Color.White;
-            cmbMetric.DropDownHoverColor = Color.FromArgb(128, 255, 255, 255);
-            cmbMetric.DropDownMode = LakeUI.ModernComboBox.DropDownDisplayMode.Overlay;
-            cmbMetric.DropDownPadding = new Padding(3, 0, 0, 0);
-            cmbMetric.DropDownScrollBarColor = Color.Gainsboro;
-            cmbMetric.DropDownScrollBarHoverColor = Color.White;
-            cmbMetric.DropDownSelectedColor = Color.Transparent;
-            cmbMetric.DropDownSelectedForeColor = Color.White;
-            cmbMetric.ForeColor = Color.WhiteSmoke;
-            cmbMetric.HoverBackColor1 = Color.FromArgb(128, 255, 255, 255);
-            cmbMetric.Location = new Point(230, 380);
-            cmbMetric.Margin = new Padding(2, 2, 2, 2);
-            cmbMetric.Name = "cmbMetric";
-            cmbMetric.Padding = new Padding(7, 0, 0, 0);
-            cmbMetric.SelectionColor = Color.Transparent;
-            cmbMetric.Size = new Size(160, 32);
-            cmbMetric.TabIndex = 33;
-            cmbMetric.Text = "搜索度量";
-            cmbMetric.ToolTipBackColor = Color.DimGray;
-            cmbMetric.ToolTipForeColor = Color.White;
             // 
             // grpCrfMode
             // 
@@ -778,8 +733,8 @@
             // label3
             // 
             label3.AutoSize = true;
-            label3.ForeColor = Color.Gainsboro;
-            label3.Location = new Point(435, 228);
+            label3.ForeColor = Color.White;
+            label3.Location = new Point(436, 361);
             label3.Name = "label3";
             label3.Size = new Size(80, 17);
             label3.TabIndex = 21;
@@ -789,7 +744,7 @@
             // 
             label2.AutoSize = true;
             label2.ForeColor = Color.WhiteSmoke;
-            label2.Location = new Point(436, 166);
+            label2.Location = new Point(432, 290);
             label2.Name = "label2";
             label2.Size = new Size(56, 17);
             label2.TabIndex = 19;
@@ -799,7 +754,7 @@
             // 
             label1.AutoSize = true;
             label1.ForeColor = Color.WhiteSmoke;
-            label1.Location = new Point(435, 358);
+            label1.Location = new Point(230, 419);
             label1.Name = "label1";
             label1.Size = new Size(110, 17);
             label1.TabIndex = 17;
@@ -838,7 +793,7 @@
             // 
             lblQuality.AutoSize = true;
             lblQuality.ForeColor = Color.WhiteSmoke;
-            lblQuality.Location = new Point(523, 419);
+            lblQuality.Location = new Point(432, 228);
             lblQuality.Name = "lblQuality";
             lblQuality.Size = new Size(80, 17);
             lblQuality.TabIndex = 12;
@@ -858,7 +813,7 @@
             // 
             lblPreset.AutoSize = true;
             lblPreset.ForeColor = Color.WhiteSmoke;
-            lblPreset.Location = new Point(40, 166);
+            lblPreset.Location = new Point(40, 168);
             lblPreset.Name = "lblPreset";
             lblPreset.Size = new Size(56, 17);
             lblPreset.TabIndex = 8;
@@ -1002,11 +957,7 @@
         private Label label4;
         private Label label5;
         private GroupBox grpCrfMode;
-        private LakeUI.ModernComboBox cmbMetric;
-        private Label label6;
         private Label label7;
-        private Label label8;
-        private Label label9;
         private LakeUI.ModernCheckBox chkLossless;
         private LakeUI.ModernCheckBox chkRecursive;
         private Label label10;
@@ -1025,8 +976,6 @@
         private LakeUI.ModernNumericUpDown numFinalCpuUsed;
         private LakeUI.ModernNumericUpDown numSearchCpuUsed;
         private LakeUI.ModernComboBox cmbQualityMode;
-        private LakeUI.ModernComboBox cmbBitDepth;
-        private LakeUI.ModernComboBox cmbChroma;
         private LakeUI.ModernComboBox cmbConflict;
         private LakeUI.ModernComboBox cmbEncoder;
         private LakeUI.ModernComboBox cmbPreset;
@@ -1034,5 +983,9 @@
         private LakeUI.ModernButton btnResume;
         private LakeUI.ModernButton btnAbandon;
         private LakeUI.ModernButton btnUpdateJobs;
+        private Label label8;
+        private LakeUI.ModernComboBox cmbBitDepth;
+        private Label label9;
+        private LakeUI.ModernComboBox cmbChroma;
     }
 }

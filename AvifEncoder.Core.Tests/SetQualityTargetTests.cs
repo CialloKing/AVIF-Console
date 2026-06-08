@@ -62,9 +62,9 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Balanced);
             cfg.MetricMode = "vmaf";
-            // NativeTargetValue 未设置 → 从 TargetSSIM=0.97 反算 VMAF=97
+            // NativeTargetValue 未设置 → 从 TargetSSIM=0.93 反算 VMAF=93
             Assert.IsNull(cfg.NativeTargetValue);
-            Assert.AreEqual(97, cfg.GetEffectiveTarget(), 0.01);
+            Assert.AreEqual(93, cfg.GetEffectiveTarget(), 0.01);
         }
 
         [TestMethod]

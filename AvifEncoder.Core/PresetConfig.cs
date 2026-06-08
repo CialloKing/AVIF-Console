@@ -373,10 +373,10 @@ namespace AvifEncoder
         {
             return preset switch
             {
-                CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91, UseCRFSearch = false },
-                CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.97, UseCRFSearch = true },
-                CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.985, UseCRFSearch = true },
-                CliPreset.Extreme => new PresetConfig { BaseCRF = 32, TargetSSIM = 0.99, UseCRFSearch = true },
+                CliPreset.Fast => new PresetConfig { BaseCRF = 38, TargetSSIM = 0.91, MetricMode = "vmaf", UseCRFSearch = false },
+                CliPreset.Balanced => new PresetConfig { BaseCRF = 36, TargetSSIM = 0.93, MetricMode = "vmaf", UseCRFSearch = true },
+                CliPreset.Best => new PresetConfig { BaseCRF = 34, TargetSSIM = 0.95, MetricMode = "vmaf", UseCRFSearch = true },
+                CliPreset.Extreme => new PresetConfig { BaseCRF = 32, TargetSSIM = 0.97, MetricMode = "vmaf", UseCRFSearch = true },
                 _ => throw new ArgumentOutOfRangeException(nameof(preset))
             };
         }

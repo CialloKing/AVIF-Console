@@ -19,7 +19,7 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Balanced);
             Assert.AreEqual(36, cfg.BaseCRF);
-            Assert.AreEqual(0.97, cfg.TargetSSIM, 0.001);
+            Assert.AreEqual(0.93, cfg.TargetSSIM, 0.001);
             Assert.IsTrue(cfg.UseCRFSearch);
         }
 
@@ -28,7 +28,7 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Best);
             Assert.AreEqual(34, cfg.BaseCRF);
-            Assert.AreEqual(0.985, cfg.TargetSSIM, 0.001);
+            Assert.AreEqual(0.95, cfg.TargetSSIM, 0.001);
         }
 
         [TestMethod]
@@ -36,7 +36,7 @@ namespace AvifEncoder.Core.Tests
         {
             var cfg = PresetConfig.CreateFromPreset(CliPreset.Extreme);
             Assert.AreEqual(32, cfg.BaseCRF);
-            Assert.AreEqual(0.99, cfg.TargetSSIM, 0.001);
+            Assert.AreEqual(0.97, cfg.TargetSSIM, 0.001);
         }
 
         [TestMethod]
