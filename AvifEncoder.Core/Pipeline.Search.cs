@@ -460,7 +460,14 @@ namespace AvifEncoder
                 string midDisplay = FormatScore(displayMid, cfg.MetricMode);
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
-                if (score >= target)
+                // ★ NaN（评估失败）既不 >= target 也不 < target，必须跳过该点。
+                //    IEEE 754 中 NaN >= x 和 NaN < x 均为 false，旧代码将 NaN 当"不达标"
+                //    向左搜索（降低 CRF），方向错误。应跳过保持区间不变。
+                if (double.IsNaN(score))
+                {
+                    l++;  // 跳过 NaN 点，不缩小搜索区间
+                }
+                else if (score >= target)
                 {
                     bestCrf = mid;
                     l = mid + 1;

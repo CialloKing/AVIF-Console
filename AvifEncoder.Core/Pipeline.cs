@@ -1522,8 +1522,10 @@ namespace AvifEncoder
                     }
                     catch (JsonException)
                     {
-                        _logger?.LogInfo($"[JOURNAL] 行 {i + 1} JSON 损坏，跳过后续事件");
-                        break;
+                        // ★ 单行 JSON 损坏不应丢弃后续有效事件（崩溃时部分写入可能导致一行损坏）。
+                        //    break 会让所有后续事件丢失 → 已完成的文件被重新编码。改为 continue。
+                        _logger?.LogInfo($"[JOURNAL] 行 {i + 1} JSON 损坏，跳过该行");
+                        continue;
                     }
                 }
             }

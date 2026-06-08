@@ -86,6 +86,7 @@ namespace AvifEncoder
                         }
                     }
                 }
+                catch (OperationCanceledException) { throw; }  // 用户取消：不吞掉，向上传播
                 catch (Exception ex)
                 {
                     // 若最小CRF为0，异常时也尝试使用0编码（目标无法达成，但0是质量上限）

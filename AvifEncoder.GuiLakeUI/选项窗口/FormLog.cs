@@ -16,15 +16,15 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         public void AppendLog(string message)
         {
+            if (txtLog.IsDisposed || !txtLog.IsHandleCreated) return;
             string line = $"{DateTime.Now:HH:mm:ss} {message}";
             if (txtLog.InvokeRequired)
             {
-                txtLog.BeginInvoke(new Action(() => AppendLog(message)));
+                try { txtLog.BeginInvoke(new Action(() => AppendLog(message))); } catch { }
             }
             else
             {
                 txtLog.AppendLine(line);
-                // 滚动到文本末尾，保持最新日志可见
                 txtLog.ScrollToBottom();
             }
         }
