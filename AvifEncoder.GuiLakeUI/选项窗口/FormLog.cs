@@ -16,7 +16,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         public void AppendLog(string message)
         {
-            if (txtLog.IsDisposed || !txtLog.IsHandleCreated) return;
+            if (txtLog.IsDisposed) return;  // 仅检查 IsDisposed，IsHandleCreated 在启动时为 false 会导致日志全部丢失
             string line = $"{DateTime.Now:HH:mm:ss} {message}";
             if (txtLog.InvokeRequired)
             {

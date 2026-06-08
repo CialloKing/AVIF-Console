@@ -103,8 +103,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             InitializeAllControls();
             ApplyPresetToUI(CliPreset.Balanced);
-            SetComboBoxItem(cmbPreset, "balanced");
             AttachAllEvents();
+            // ★ 事件绑定后重设预设，确保 AttachAllEvents→RefreshMetricsFromDetection 等后续调用
+            //    不会因 ValueChanged 触发 MarkCustom 而将预设误切为"自定义"
+            _isApplyingPreset = true;
+            SetComboBoxItem(cmbPreset, "balanced");
+            _isApplyingPreset = false;
 
             SetupDragDrop();   // ← 新增此行
             this.FormClosing += FormEncode_FormClosing;
