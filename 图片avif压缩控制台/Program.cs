@@ -382,7 +382,7 @@ namespace AvifEncoder
                     SearchCpuUsed = 0,
                     UseCRFSearch = false,
                     Lossless = true,
-                    PixelFormat = null,
+                    PixelFormat = "yuv444p",
                     AomParams = "aq-mode=0:deltaq-mode=0:enable-chroma-deltaq=0",
                     MaxJobs = opts.Jobs ?? Math.Max(2, (int)Math.Sqrt(Environment.ProcessorCount)),
                     Encoder = opts.Encoder,
@@ -391,53 +391,55 @@ namespace AvifEncoder
             }
             else
             {
-            config = PresetConfig.CreateFromPreset(opts.Preset);
-            config.Encoder = opts.Encoder;
-            if (opts.ForceNoSearch) config.UseCRFSearch = false;
-            else if (opts.EnableSearch) config.UseCRFSearch = true;
-            if (opts.BitDepth.HasValue)
-            {
-                config.BitDepth = opts.BitDepth.Value;
-                config.UserSetBitDepth = true;
-                config.AutoSource = false;
-            }
-            if (opts.Chroma != "auto")
-            {
-                config.AutoSource = false;
-                config.UserSetChroma = true;
-                config.PixelFormat = opts.Chroma switch
+                config = PresetConfig.CreateFromPreset(opts.Preset);
+                config.Encoder = opts.Encoder;
+                if (opts.ForceNoSearch) config.UseCRFSearch = false;
+                else if (opts.EnableSearch) config.UseCRFSearch = true;
+                if (opts.BitDepth.HasValue)
                 {
-                    "420" => "yuv420p",
-                    "422" => "yuv422p",
-                    "444" => "yuv444p",
-                    _ => "yuv420p"
-                };
+                    config.BitDepth = opts.BitDepth.Value;
+                    config.UserSetBitDepth = true;
+                    config.AutoSource = false;
+                }
+                if (opts.Chroma != "auto")
+                {
+                    config.AutoSource = false;
+                    config.UserSetChroma = true;
+                    config.PixelFormat = opts.Chroma switch
+                    {
+                        "420" => "yuv420p",
+                        "422" => "yuv422p",
+                        "444" => "yuv444p",
+                        _ => "yuv420p"
+                    };
+                }
+                AvifPipeline.ApplyBitDepth(config);
+                if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
+                {
+                    opts.MetricMode = opts.DirectTargetMode;
+                    opts.QualityTarget = opts.DirectTargetValue;
+                }
+                if (opts.QualityTarget.HasValue)
+                {
+                    string effectiveMetric = opts.AdvancedMetricMode ?? opts.MetricMode ?? config.MetricMode ?? "vmaf";
+                    config.MetricMode = effectiveMetric;
+                    config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
+                }
+                else config.AdjustTargetForMetricMode();
+                if (!string.IsNullOrEmpty(opts.MetricMode)) config.MetricMode = opts.MetricMode;
+                if (opts.ManualCrf.HasValue)
+                {
+                    config.BaseCRF = opts.ManualCrf.Value;
+                    config.UseCRFSearch = false;
+                }
+                if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
+                if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
+                if (config.MinCRF > config.MaxCRF)
+                    throw new Exception(
+                        $"CRF 范围无效：最小值 {config.MinCRF} 必须小于或等于最大值 {config.MaxCRF}。");
             }
-            AvifPipeline.ApplyBitDepth(config);
-            if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
-            {
-                opts.MetricMode = opts.DirectTargetMode;
-                opts.QualityTarget = opts.DirectTargetValue;
-            }
-            if (opts.QualityTarget.HasValue)
-            {
-                string effectiveMetric = opts.AdvancedMetricMode ?? opts.MetricMode ?? config.MetricMode ?? "vmaf";
-                config.MetricMode = effectiveMetric;
-                config.SetQualityTarget(opts.QualityTarget.Value, effectiveMetric);
-            }
-            else config.AdjustTargetForMetricMode();
-            if (!string.IsNullOrEmpty(opts.MetricMode)) config.MetricMode = opts.MetricMode;
-            if (opts.ManualCrf.HasValue)
-            {
-                config.BaseCRF = opts.ManualCrf.Value;
-                config.UseCRFSearch = false;   // 固定 CRF 强制关闭搜索
-            }
-            if (opts.CrfMin.HasValue) config.MinCRF = opts.CrfMin.Value;
-            if (opts.CrfMax.HasValue) config.MaxCRF = opts.CrfMax.Value;
-            if (config.MinCRF > config.MaxCRF)  // 允许相等（Sweep 模式单 CRF 值合法）
-                throw new Exception(
-                    $"CRF 范围无效：最小值 {config.MinCRF} 必须小于或等于最大值 {config.MaxCRF}。" +
-                    " 示例: --crf 20:40 或 --crf 30:30");
+
+            // ★ 以下选项 Lossless 和非 Lossless 均需处理（从 else 块提升到统一位置）
             if (opts.Jobs.HasValue) { config.MaxJobs = opts.Jobs.Value; config.UserSpecifiedMaxJobs = true; }
             if (!string.IsNullOrEmpty(opts.OutputTemplate)) config.OutputNameFormat = opts.OutputTemplate;
             if (opts.MaxResolution.HasValue) config.MaxResolution = opts.MaxResolution.Value;
@@ -456,7 +458,6 @@ namespace AvifEncoder
             if (opts.FinalCpuUsed.HasValue) config.FinalCpuUsed = opts.FinalCpuUsed.Value;
             if (opts.Overwrite) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Overwrite;
             else if (opts.NoClobber) config.FileConflictStrategy = PresetConfig.ConflictStrategy.Skip;
-            // 遍历模式：强制关闭搜索，使用 MinCRF/MaxCRF
             if (opts.SweepMode)
             {
                 config.SweepMode = true;
@@ -469,8 +470,7 @@ namespace AvifEncoder
             if (opts.Denoise.HasValue)
                 config.Denoise = opts.Denoise.Value;
             config.ArNrUseMaxFrames = opts.ArNrUseMaxFrames;
-            config.RgbMode = opts.RgbMode;  // ""=关闭(默认), null=auto, "gbrp"等=强制
-            // 降噪参数通过 EncoderCustomParams 拼接，值为 0 时不参与
+            config.RgbMode = opts.RgbMode;
             if (opts.Denoise.HasValue && opts.Denoise.Value > 0 && string.IsNullOrEmpty(opts.EncoderCustomParams))
             {
                 string encParams = config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase)
@@ -502,13 +502,11 @@ namespace AvifEncoder
             }
             else if (opts.Denoise.HasValue && opts.Denoise.Value > 0 && !string.IsNullOrEmpty(opts.EncoderCustomParams))
             {
-                Console.Error.WriteLine("[WARN] --denoise 与 --enc-params 同时使用，降噪参数被自定义参数覆盖，请手动将降噪参数合并到 --enc-params 中");
+                Console.Error.WriteLine("[WARN] --denoise 与 --enc-params 同时使用，降噪参数被自定义参数覆盖");
             }
-            if (opts.Resume)
-                config.Resume = true;
+            if (opts.Resume) config.Resume = true;
             config.DryRun = opts.DryRun;
             config.Verbose = opts.Verbose;
-            } // ★ 结束非 Lossless 分支，Lossless 和普通配置在此汇合进入统一校验
 
             // ★ 运行时校验配置，所有模式（含 Lossless）均在此校验
             if (opts.Overwrite && opts.NoClobber)

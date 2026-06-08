@@ -1759,13 +1759,19 @@ namespace AvifEncoder
         private Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             string key = EncodeHelpers.GetNormalizedPathForCache(filePath);
-            return _probeCache.GetOrAdd(key, _ => ProbeFileCoreAsync(filePath));
+            // ★ GetOrAdd 会缓存 null 结果（ffprobe 超时/IO错误时），后续请求永久返回 null。
+            //    改用 TryGetValue + TryAdd：只在成功时缓存，失败可重试。
+            if (_probeCache.TryGetValue(key, out var cached))
+                return cached;
+            var task = ProbeFileCoreAsync(filePath);
+            _probeCache.TryAdd(key, task);
+            return task;
         }
 
         private async Task<ProbeInfo?> ProbeFileCoreAsync(string filePath)
         {
             // 一次性 ffprobe 获取所有信息（含动图帧数，用 duration×fps 估算，无需 -count_frames）
-            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,nb_frames,color_primaries,color_transfer,color_space,color_range,duration,r_frame_rate -of json \"{filePath}\"";
+            string args = $"-v error -select_streams v:0 -show_entries stream=pix_fmt,width,height,nb_frames,color_primaries,color_transfer,color_space,color_range,duration,r_frame_rate -of json {EncodeHelpers.EscapeArg(filePath)}";
             string json = await RunProbeAsync(_ffprobePath, args);
             if (string.IsNullOrEmpty(json)) return null;
 
