@@ -172,6 +172,9 @@ namespace AvifEncoder
 
                 var tasks = entries.Select(async entry =>
                 {
+                    // ★ WaitAsync 被取消时抛异常但信号量未获取，finally 中无条件 Release()
+                    //    会导致计数超过上限（SemaphoreSlim 构造函数以初始值同时设上限）。
+                    //    用 acquired 标志跟踪是否真正获取，仅在获取后释放。
                     bool acquired = false;
                     try { await semaphore.WaitAsync(_globalCts.Token); acquired = true; } catch { }
                     if (!acquired) return;

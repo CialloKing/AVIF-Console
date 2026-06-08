@@ -142,8 +142,10 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 获取像素格式降级顺序列表 </summary>
         private static string[] GetPixelFormatFallbackList(string pixFmt, bool isTrueLossless)
         {
-            // 提取 Alpha 标记和位深后缀
-            bool hasAlpha = pixFmt.Contains('a');
+            // ★ Alpha 检测必须精确匹配子串，不能用 pixFmt.Contains('a')：
+            //    "gray"/"gray10le"/"gray12le" 含字母 'a' 但无 Alpha 通道，
+            //    误判会导致构建无效格式名传入 ffmpeg。
+            bool hasAlpha = pixFmt.Contains("yuva") || pixFmt.Contains("rgba") || pixFmt.Contains("bgra") || pixFmt.Contains("gbra");
             string depthSuffix = pixFmt.EndsWith("12le") ? "12le" : pixFmt.EndsWith("10le") ? "10le" : "";
 
             // 去掉后缀，得到纯净的基础格式（如 yuv444p 或 yuva444p）
@@ -413,10 +415,21 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 : "";
             // still-picture 单帧模式下 enable-keyframe-filtering 和 lag-in-frames 无意义，
             // 且 lag-in-frames 在 libaom 3.14+ 中会被拒绝导致编码失败
-            string aomCombined = string.IsNullOrEmpty(param.aomParams)
-                ? ""
-                : $"-aom-params {param.aomParams}";
+            // ★ encoderSpecific 中含 tune 值（如 "tune=ssim"），但命令行末尾已有 aomCombined
+            //    （如 "-aom-params aq-mode=3:..."）。若两者各自包装为独立的 -aom-params 段，
+            //    ffmpeg 命令行出现两个 -aom-params，后者覆盖前者，tune 参数静默丢失。
+            //    解法：将 tune 值从 encoderSpecific 中剥离，合并到 aomCombined 的冒号列表中。
             string encoderSpecific = EncodeHelpers.BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
+            string tuneVal = cfg.Lossless ? "" : Av1EncoderFactory.Get(cfg.Encoder).BuildFullTuneArg(cfg.MetricMode);
+            if (!string.IsNullOrEmpty(tuneVal))
+                encoderSpecific = encoderSpecific.Replace(tuneVal, "").Replace("  ", " ").Trim();
+            string aomCombined;
+            if (string.IsNullOrEmpty(param.aomParams))
+                aomCombined = tuneVal.Length > 0 ? $"-aom-params {tuneVal}" : "";
+            else
+                aomCombined = tuneVal.Length > 0
+                    ? $"-aom-params {param.aomParams}:{tuneVal}"  // tune 追加到已有参数末尾
+                    : $"-aom-params {param.aomParams}";
             string threadsArg = cfg.SerialEncode ? "-threads 1" : "";
 
             // ---------- 默认 SDR sRGB（全范围），根据像素格式选择矩阵 ----------
@@ -493,7 +506,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             }
 
             // ── 动图 + Alpha：filter_complex 双流映射 ──
-            bool hasAlpha = actualPixFmt.Contains('a') || actualPixFmt.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
+            bool hasAlpha = actualPixFmt.Contains("yuva") || actualPixFmt.Contains("rgba") || actualPixFmt.Contains("bgra") || actualPixFmt.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
             if (_isAnimatedFile.Value && hasAlpha && !encoder.SupportsStillPicture)
             {
                 _logger.LogInfo($"[WARN] 编码器 {cfg.Encoder} 不支持动图+Alpha 双流映射，Alpha 通道将被忽略");

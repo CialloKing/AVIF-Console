@@ -57,8 +57,7 @@
 
         public string BuildFullTuneArg(string? metricMode)
         {
-            string tune = BuildTuneArg(metricMode);
-            return tune.Length > 0 ? $"-aom-params {tune}" : "";
+            return BuildTuneArg(metricMode);
         }
     }
 

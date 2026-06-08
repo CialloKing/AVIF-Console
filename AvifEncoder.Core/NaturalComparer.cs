@@ -55,7 +55,17 @@ namespace AvifEncoder
                     if (xOverflow || yOverflow)
                     {
                         if (nx != ny) return nx.CompareTo(ny);
-                        // 位数相同：溢出前已积累的值作为近似比较
+                        // 位数相同且双方溢出：逐字符比较溢出的数字段
+                        if (xOverflow && yOverflow)
+                        {
+                            int xStart = xi - nx, yStart = yi - ny;
+                            for (int d = 0; d < nx; d++)
+                            {
+                                int cmp = x[xStart + d].CompareTo(y[yStart + d]);
+                                if (cmp != 0) return cmp;
+                            }
+                            return 0;
+                        }
                     }
                     if (xn != yn)
                     {

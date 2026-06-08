@@ -1666,14 +1666,14 @@ namespace AvifEncoder
                     foreach (var kv in metricsEl.EnumerateObject())
                     {
                         var m = new QualityMetrics();
-                        if (kv.Value.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
-                        if (kv.Value.TryGetProperty("butterRaw", out var br)) m.Butteraugli_Raw = br.GetDouble();
-                        if (kv.Value.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
-                        if (kv.Value.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
-                        if (kv.Value.TryGetProperty("xpsnrY", out var xy)) m.XPSNR_Y = xy.GetDouble();
-                        if (kv.Value.TryGetProperty("xpsnrU", out var xu)) m.XPSNR_U = xu.GetDouble();
-                        if (kv.Value.TryGetProperty("xpsnrV", out var xv)) m.XPSNR_V = xv.GetDouble();
-                        if (kv.Value.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                        if (kv.Value.TryGetProperty("ssimu2", out var s2) && s2.ValueKind == JsonValueKind.Number) m.SSIMULACRA2 = s2.GetDouble();
+                        if (kv.Value.TryGetProperty("butterRaw", out var br) && br.ValueKind == JsonValueKind.Number) m.Butteraugli_Raw = br.GetDouble();
+                        if (kv.Value.TryGetProperty("butter3", out var b3) && b3.ValueKind == JsonValueKind.Number) m.Butteraugli_3norm = b3.GetDouble();
+                        if (kv.Value.TryGetProperty("gmsd", out var gm) && gm.ValueKind == JsonValueKind.Number) m.GMSD = gm.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrY", out var xy) && xy.ValueKind == JsonValueKind.Number) m.XPSNR_Y = xy.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrU", out var xu) && xu.ValueKind == JsonValueKind.Number) m.XPSNR_U = xu.GetDouble();
+                        if (kv.Value.TryGetProperty("xpsnrV", out var xv) && xv.ValueKind == JsonValueKind.Number) m.XPSNR_V = xv.GetDouble();
+                        if (kv.Value.TryGetProperty("wxpsnr", out var wx) && wx.ValueKind == JsonValueKind.Number) m.W_XPSNR = wx.GetDouble();
                         metrics[kv.Name] = m;
                     }
                 }
@@ -1900,8 +1900,12 @@ namespace AvifEncoder
                 string filter;
                 if (isAnimated)
                 {
-                    // ★ 默认 v:1（非 Alpha 动图），有 Alpha 时调用方需传入 isAnimated+Alpha 确保正确
-                    string distStream = "[1:v:1]";
+                    // ★ 动图 AVIF 流布局因编码模式而异：
+                    //    - 非 Alpha 动图：v:0=封面(1fps), v:1=动画帧(全帧率) → 指标应测 v:1
+                    //    - Alpha 动图(filter_complex 双流)：v:0=色彩封面, v:1=Alpha封面, v:2=色彩动画, v:3=Alpha动画
+                    //      指标应测 v:2（色彩动画帧），v:1 是 Alpha 封面只有 1 帧
+                    //    使用错误流会导致 VMAF/SSIM 只计算封面帧，而非全部动画帧。
+                    string distStream = hasAlpha ? "[1:v:2]" : "[1:v:1]";
                     if (w1 > 0 && h1 > 0 && w2 > 0 && h2 > 0 && (w1 != w2 || h1 != h2))
                     {
                         int w = Math.Min(w1, w2);
@@ -2088,13 +2092,20 @@ namespace AvifEncoder
                 using var doc = JsonDocument.Parse(json);
                 var pooled = doc.RootElement.GetProperty("pooled_metrics");
 
-                double ssim = pooled.TryGetProperty("float_ssim", out var e) ? e.GetProperty("mean").GetDouble() : 0;
-                double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) ? e.GetProperty("mean").GetDouble() : 0;
-                // VMAF 字段缺失时设为 NaN，避免 -1 或 0 被误判为有效分数
-                double vmaf = pooled.TryGetProperty("vmaf", out e)
-                                ? e.GetProperty("mean").GetDouble()
-                                : double.NaN;
-                double psnr_y = pooled.TryGetProperty("psnr_y", out e) ? e.GetProperty("mean").GetDouble() : 0;
+                // ★ 解析 VMAF JSON 时必须检查 ValueKind：动图/流不匹配时 libvmaf 可能输出 null，
+                //    TryGetProperty 对 null 值返回 true，直接 GetDouble() 会抛 InvalidOperationException。
+                //    未检查 ValueKind 将导致整个指标计算崩溃，高级指标（SSIMULACRA2/Butter3 等）全部跳过。
+                double ssim = pooled.TryGetProperty("float_ssim", out var e) && e.ValueKind == JsonValueKind.Object ? e.GetProperty("mean").GetDouble() : 0;
+                double ms_ssim = pooled.TryGetProperty("float_ms_ssim", out e) && e.ValueKind == JsonValueKind.Object ? e.GetProperty("mean").GetDouble() : 0;
+                // VMAF 单独处理：Object 包含 Number 型的 mean 才是有效值，null/Object/其他均视为不可用
+                double vmaf = double.NaN;
+                if (pooled.TryGetProperty("vmaf", out e) && e.ValueKind == JsonValueKind.Object)
+                {
+                    var meanEl = e.GetProperty("mean");
+                    if (meanEl.ValueKind == JsonValueKind.Number)
+                        vmaf = meanEl.GetDouble();
+                }
+                double psnr_y = pooled.TryGetProperty("psnr_y", out e) && e.ValueKind == JsonValueKind.Object ? e.GetProperty("mean").GetDouble() : 0;
                 // CAMBI/ADM 暂不可用，择机恢复
                 // double cambi = TryGetPooledDouble(pooled, "cambi", "cambi");
                 // if (double.IsNaN(cambi)) cambi = TryGetPooledDouble(pooled, "cambi", "score");

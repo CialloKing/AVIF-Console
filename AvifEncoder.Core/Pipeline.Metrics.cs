@@ -502,7 +502,7 @@ namespace AvifEncoder
                     // 第一次尝试：[0:v]（封面流/单流）
                     var (y1, u1, v1) = await TryXpsnrAsync(safeDist, safeRef, "[0:v]", actualPixFmt, isAnimated: true);
                     if (y1.HasValue && y1.Value > 20)
-                        return (y1, u1, v1, ComputeWXPSNR(y1, u1, v1));
+                        return (y1, u1, v1, ComputeWXPSNR(y1, u1, v1, bitDepth));
 
                     _logger.LogInfo($"XPSNR [0:v] Y={(y1?.ToString("F2") ?? "null")}，提取动画流重试...");
 
@@ -523,7 +523,7 @@ namespace AvifEncoder
                 }
 
                 var (y, u, v) = await TryXpsnrAsync(actualDist, safeRef, "[0:v]", actualPixFmt, isAnimated: isAnimated);
-                double? w = ComputeWXPSNR(y, u, v);
+                double? w = ComputeWXPSNR(y, u, v, bitDepth);
                 return (y, u, v, w);
             }
             finally
@@ -637,9 +637,11 @@ namespace AvifEncoder
         }
 
         /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
+        /// <param name="bitDepth">8/10/12，maxVal = (2^bitDepth - 1)，影响 MSE 反算精度。默认 8 仅用于非 XPSNR 路径兼容。</param>
         private static double? ComputeWXPSNR(double? y, double? u, double? v, int bitDepth = 8)
         {
             if (!y.HasValue || !u.HasValue || !v.HasValue) return null;
+            // PSNR→MSE 反算依赖峰值：8bit=255, 10bit=1023, 12bit=4095。旧代码硬编码 255 导致 10/12bit W-XPSNR 偏差。
             double maxVal = bitDepth == 12 ? 4095.0 : bitDepth == 10 ? 1023.0 : 255.0;
             double mseY = maxVal * maxVal * Math.Pow(10, -y.Value / 10);
             double mseU = maxVal * maxVal * Math.Pow(10, -u.Value / 10);

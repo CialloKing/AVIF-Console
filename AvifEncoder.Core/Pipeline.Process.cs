@@ -284,6 +284,7 @@ namespace AvifEncoder
             var fileStartTime = DateTime.Now;
 
             // ---- 无损模式强约束：禁止缩放、固定 tile=0 ----
+            int savedMaxResolution = config.MaxResolution;
             if (config.Lossless)
             {
                 config.MaxResolution = 0;
