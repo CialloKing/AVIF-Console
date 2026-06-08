@@ -226,7 +226,7 @@ namespace AvifEncoder.Gui
             numCrfFix.ValueChanged += (s, e) => MarkCustomPreset();
             numCrfMin.ValueChanged += (s, e) => MarkCustomPreset();
             numCrfMax.ValueChanged += (s, e) => MarkCustomPreset();
-            chkSearch.CheckedChanged += (s, e) => MarkCustomPreset();
+            chkSearch.CheckedChanged += (s, e) => { UpdateSearchDependentControls(); MarkCustomPreset(); };
             cmbChroma.SelectedIndexChanged += (s, e) => MarkCustomPreset();
             cmbBitDepth.SelectedIndexChanged += (s, e) => MarkCustomPreset();
             cmbMetric.SelectedIndexChanged += (s, e) => MarkCustomPreset();
@@ -271,7 +271,34 @@ namespace AvifEncoder.Gui
                 }
             }
             finally { _isApplyingPreset = false; }
+            UpdateSearchDependentControls();
             MarkCustomPreset();
+        }
+
+        private void UpdateSearchDependentControls()
+        {
+            bool searchOn = chkSearch.Checked && chkSearch.Enabled;
+            chkPriorSearch.Enabled = searchOn;
+            chkProxy.Enabled = searchOn;
+            cmbMetric.Enabled = searchOn;
+            cmbQualityMode.Enabled = searchOn;
+            numQualityValue.Enabled = searchOn && (cmbQualityMode.Items.Count > 0 &&
+                cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString() != "无");
+            numSearchCpuUsed.Enabled = searchOn;
+            // 搜索关闭且遍历也关闭时，强制切回固定 CRF 并禁用范围模式
+            bool sweepOn = chkSweep.Checked && chkSweep.Enabled;
+            if (!searchOn && !sweepOn)
+            {
+                rbCrfRange.Enabled = false;
+                if (rbCrfRange.Checked)
+                {
+                    rbCrfFix.Checked = true;
+                }
+            }
+            else
+            {
+                rbCrfRange.Enabled = true;
+            }
         }
 
         private void cmbQualityMode_SelectedIndexChanged(object? sender, EventArgs e)

@@ -48,27 +48,27 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private static readonly Dictionary<string, string> _encoderTips = new()
         {
             ["libaom-av1"] = "AOMedia 官方参考编码器\n• 压缩率最高，同画质下文件最小\n• 支持完整的 -aom-params 高级参数调优\n• 支持无损模式、still-picture、tile 多线程\n• 速度范围：cpu-used 0(最慢/最高质量)~8(最快)\n• 推荐用于最终归档编码",
-            ["libsvtav1"]  = "Intel 主导的 SVT-AV1 编码器\n• 编码速度显著快于 libaom（3~10倍）\n• 多线程效率高，适合批量处理\n• 速度范围：preset 0(最慢/最高质量)~13(最快)\n• 不支持 -aom-params 高级参数\n• 推荐用于高频日常编码",
-            ["librav1e"]   = "Rust 编写的 AV1 编码器（由 Xiph.Org 维护）\n• 质量与速度均衡，心理视觉调优出色\n• 速度范围：speed 0(最慢)~10(最快)\n• 不支持 tile 分片并行\n• 推荐用于对心理视觉质量有要求的场景",
-            ["av1_nvenc"]  = "NVIDIA GPU 硬件加速 (RTX 30 系列及以上)\n• 编码速度极快（实时），CPU 占用极低\n• 画质略低于软件编码（同等码率下）\n• 仅支持 4:2:0 色度采样\n• 推荐用于快速预览或低延迟需求",
-            ["av1_qsv"]    = "Intel 核显硬件加速 (Quick Sync Video)\n• 第 11 代酷睿及以上支持 AV1 硬件编码\n• 编码速度快，CPU 占用低\n• 画质和参数可控性低于软件编码\n• 推荐用于笔记本低功耗场景",
-            ["av1_amf"]    = "AMD GPU 硬件加速 (Advanced Media Framework)\n• RX 7000 系列及以上支持 AV1 硬件编码\n• 编码速度快，适合游戏录屏/直播\n• 画质和参数可控性低于软件编码\n• 推荐用于 AMD 显卡用户快速转码",
-            ["av1_vaapi"]  = "Linux 通用硬件加速接口 (VA-API)\n• 统一的 Linux 显卡加速框架\n• 支持 Intel/AMD 核显和独显\n• 编码速度取决于具体硬件\n• 推荐用于 Linux 桌面/服务器环境",
+            ["libsvtav1"] = "Intel 主导的 SVT-AV1 编码器\n• 编码速度显著快于 libaom（3~10倍）\n• 多线程效率高，适合批量处理\n• 速度范围：preset 0(最慢/最高质量)~13(最快)\n• 不支持 -aom-params 高级参数\n• 推荐用于高频日常编码",
+            ["librav1e"] = "Rust 编写的 AV1 编码器（由 Xiph.Org 维护）\n• 质量与速度均衡，心理视觉调优出色\n• 速度范围：speed 0(最慢)~10(最快)\n• 不支持 tile 分片并行\n• 推荐用于对心理视觉质量有要求的场景",
+            ["av1_nvenc"] = "NVIDIA GPU 硬件加速 (RTX 30 系列及以上)\n• 编码速度极快（实时），CPU 占用极低\n• 画质略低于软件编码（同等码率下）\n• 仅支持 4:2:0 色度采样\n• 推荐用于快速预览或低延迟需求",
+            ["av1_qsv"] = "Intel 核显硬件加速 (Quick Sync Video)\n• 第 11 代酷睿及以上支持 AV1 硬件编码\n• 编码速度快，CPU 占用低\n• 画质和参数可控性低于软件编码\n• 推荐用于笔记本低功耗场景",
+            ["av1_amf"] = "AMD GPU 硬件加速 (Advanced Media Framework)\n• RX 7000 系列及以上支持 AV1 硬件编码\n• 编码速度快，适合游戏录屏/直播\n• 画质和参数可控性低于软件编码\n• 推荐用于 AMD 显卡用户快速转码",
+            ["av1_vaapi"] = "Linux 通用硬件加速接口 (VA-API)\n• 统一的 Linux 显卡加速框架\n• 支持 Intel/AMD 核显和独显\n• 编码速度取决于具体硬件\n• 推荐用于 Linux 桌面/服务器环境",
         };
         private static readonly string[] _chromaNames = ["auto", "420", "422", "444"];
         private static readonly string[] _bitDepthNames = ["auto", "8", "10", "12"];
         private static readonly string[] _conflictNames = ["自动重命名", "覆盖已存在文件", "跳过已存在文件"];
         private static readonly Dictionary<string, string> _metricTips = new()
         {
-            ["vmaf"]   = "Netflix 感知视频质量评估\n• 合法范围 0~100，越高越好\n• 基于机器学习模型，最接近人眼感知\n• 计算开销较大，但准确性最高\n• 推荐作为默认搜索/质量指标",
+            ["vmaf"] = "Netflix 感知视频质量评估\n• 合法范围 0~100，越高越好\n• 基于机器学习模型，最接近人眼感知\n• 计算开销较大，但准确性最高\n• 推荐作为默认搜索/质量指标",
 
-            ["ssim"]   = "结构相似性指数 (Structural SIMilarity)\n• 合法范围 0~1，越高越好\n• 完全一致的图像 = 1.0\n• 经典图像质量指标，计算快速\n• 关注亮度、对比度和结构三个维度\n• 适合快速评估和对比",
+            ["ssim"] = "结构相似性指数 (Structural SIMilarity)\n• 合法范围 0~1，越高越好\n• 完全一致的图像 = 1.0\n• 经典图像质量指标，计算快速\n• 关注亮度、对比度和结构三个维度\n• 适合快速评估和对比",
 
-            ["psnr"]   = "峰值信噪比 Y 通道 (Peak Signal-to-Noise Ratio)\n• 合法范围 0 ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• ≥ 60 dB 时程序会自动用独立滤镜重算（libvmaf 有 60dB 上限）\n• 最传统、计算最快的指标\n• 与人眼感知一致性较差，不推荐作为唯一标准\n• 适合技术对比和基准测试",
+            ["psnr"] = "峰值信噪比 Y 通道 (Peak Signal-to-Noise Ratio)\n• 合法范围 0 ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• ≥ 60 dB 时程序会自动用独立滤镜重算（libvmaf 有 60dB 上限）\n• 最传统、计算最快的指标\n• 与人眼感知一致性较差，不推荐作为唯一标准\n• 适合技术对比和基准测试",
 
             ["msssim"] = "多尺度结构相似性 (Multi-Scale SSIM)\n• 合法范围 0~1，越高越好\n• SSIM 的改进版，在多个分辨率下评估\n• 比单尺度 SSIM 更准确地反映感知质量\n• 计算开销略高于 SSIM",
 
-            ["xpsnr"]  = "加权 XPSNR (Weighted eXtended PSNR)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• 专为 HDR 内容设计的感知质量指标\n• 权重 Y:U:V = 6:1:1\n• 需要 ffmpeg 4.4+ 内置支持\n• 推荐用于 HDR 图像评估",
+            ["xpsnr"] = "加权 XPSNR (Weighted eXtended PSNR)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 完全一致的图像 = +∞ (正无穷)\n• 专为 HDR 内容设计的感知质量指标\n• 权重 Y:U:V = 6:1:1\n• 需要 ffmpeg 4.4+ 内置支持\n• 推荐用于 HDR 图像评估",
 
             ["xpsnr_y"] = "XPSNR 亮度通道 (Y)\n• 合法范围 -∞ ~ +∞ dB，越高越好\n• 仅评估亮度（明暗）分量\n• 适合黑白图像或亮度对比场景",
 
@@ -82,9 +82,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             ["butter3"] = "Butteraugli 3-norm\n• 合法范围 0 ~ +∞，越小越好\n• 完全一致的图像 = 0\n• 需要外部工具 butteraugli_main.exe\n• Google 开发的感知差异度量\n• 对 JPEG/AVIF 压缩伪影高度敏感\n• 高质量编码典型值 0.5~3.0\n• 极差质量可达数十甚至数百",
 
-            ["gmsd"]   = "梯度幅值相似度偏差 (Gradient Magnitude Similarity Deviation)\n• 合法范围 0~1（可能略超 1），越小越好\n• 完全一致的图像 = 0\n• 内置实现，无需外部工具\n• 基于图像梯度的感知质量评估\n• 对模糊和边缘失真敏感\n• 计算基于 ffmpeg 解码灰度原始数据",
+            ["gmsd"] = "梯度幅值相似度偏差 (Gradient Magnitude Similarity Deviation)\n• 合法范围 0~1（可能略超 1），越小越好\n• 完全一致的图像 = 0\n• 内置实现，无需外部工具\n• 基于图像梯度的感知质量评估\n• 对模糊和边缘失真敏感\n• 计算基于 ffmpeg 解码灰度原始数据",
 
-            ["mix"]    = "综合加权评分 (MixScore)\n• 合法范围 0~1，越高越好\n• 融合 VMAF + SSIM + MS-SSIM + PSNR-Y (+ XPSNR)\n• 无 XPSNR 时：VMAF 80% + MS-SSIM 10% + SSIM 5% + PSNR 5%\n• 有 XPSNR 时：VMAF 50% + XPSNR 32% + MS-SSIM 8% + SSIM 5% + PSNR 5%\n• 推荐用于多维度综合评估和自动决策",
+            ["mix"] = "综合加权评分 (MixScore)\n• 合法范围 0~1，越高越好\n• 融合 VMAF + SSIM + MS-SSIM + PSNR-Y (+ XPSNR)\n• 无 XPSNR 时：VMAF 80% + MS-SSIM 10% + SSIM 5% + PSNR 5%\n• 有 XPSNR 时：VMAF 50% + XPSNR 32% + MS-SSIM 8% + SSIM 5% + PSNR 5%\n• 推荐用于多维度综合评估和自动决策",
         };
 
         public FormEncode()
@@ -365,7 +365,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (!found && cmbTemplate.SelectedIndex != cmbTemplate.Items.Count - 1)
                     cmbTemplate.SelectedIndex = cmbTemplate.Items.Count - 1;
             };
-            chkSearch.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
+            chkSearch.CheckedChanged += (s, e) => { UpdateSearchDependentControls(); MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             rbCrfFix.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             rbCrfRange.CheckedChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
             numCrfFix.ValueChanged += (s, e) => { MarkCustom(s, e); OptionsPage?.RefreshFfmpegPreview(); };
@@ -599,6 +599,34 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     numCrfMax.Value = numCrfFix.Value;
                     rbCrfRange.Checked = true;
                 }
+            }
+            UpdateSearchDependentControls();
+        }
+
+        private void UpdateSearchDependentControls()
+        {
+            bool searchOn = chkSearch.Checked && chkSearch.Enabled;
+            chkPriorSearch.Enabled = searchOn;
+            chkProxy.Enabled = searchOn;
+            cmbMetric.Enabled = searchOn;
+            cmbQualityMode.Enabled = searchOn;
+            numQualityValue.Enabled = searchOn && (cmbQualityMode.Items.Count > 0 &&
+                cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString() != "无");
+            lblQuality.Enabled = searchOn;
+            numSearchCpuUsed.Enabled = searchOn;
+            // 搜索关闭且遍历也关闭时，强制切回固定 CRF 并禁用范围模式
+            bool sweepOn = chkSweep.Checked && chkSweep.Enabled;
+            if (!searchOn && !sweepOn)
+            {
+                rbCrfRange.Enabled = false;
+                if (rbCrfRange.Checked)
+                {
+                    rbCrfFix.Checked = true;
+                }
+            }
+            else
+            {
+                rbCrfRange.Enabled = true;
             }
         }
 
@@ -1726,7 +1754,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             if (cmbQualityMode.Items.Count > 0) cmbQualityMode.SelectedIndex = 0;
             numQualityValue.Enabled = false;
         }
-
     }
 
     // ========== 日志适配器 ==========

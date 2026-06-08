@@ -192,7 +192,7 @@
             // 
             // cmbTemplate
             // 
-            cmbTemplate.BackColor1 = Color.Transparent;
+            cmbTemplate.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbTemplate.BorderColor = Color.Gainsboro;
             cmbTemplate.BorderColorFocus = Color.White;
             cmbTemplate.DropDownAnimationFPS = 0;
@@ -223,7 +223,7 @@
             // 
             // cmbPreset
             // 
-            cmbPreset.BackColor1 = Color.Transparent;
+            cmbPreset.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbPreset.BorderColor = Color.Gainsboro;
             cmbPreset.BorderColorFocus = Color.White;
             cmbPreset.DropDownAnimationFPS = 0;
@@ -251,7 +251,7 @@
             // 
             // cmbEncoder
             // 
-            cmbEncoder.BackColor1 = Color.Transparent;
+            cmbEncoder.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbEncoder.BorderColor = Color.Gainsboro;
             cmbEncoder.BorderColorFocus = Color.White;
             cmbEncoder.DropDownAnimationFPS = 0;
@@ -283,7 +283,7 @@
             // 
             // cmbConflict
             // 
-            cmbConflict.BackColor1 = Color.Transparent;
+            cmbConflict.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbConflict.BorderColor = Color.Gainsboro;
             cmbConflict.BorderColorFocus = Color.White;
             cmbConflict.DropDownAnimationFPS = 0;
@@ -311,7 +311,7 @@
             // 
             // cmbChroma
             // 
-            cmbChroma.BackColor1 = Color.Transparent;
+            cmbChroma.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbChroma.BorderColor = Color.Gainsboro;
             cmbChroma.BorderColorFocus = Color.White;
             cmbChroma.DropDownAnimationFPS = 0;
@@ -339,7 +339,7 @@
             // 
             // cmbBitDepth
             // 
-            cmbBitDepth.BackColor1 = Color.Transparent;
+            cmbBitDepth.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbBitDepth.BorderColor = Color.Gainsboro;
             cmbBitDepth.BorderColorFocus = Color.White;
             cmbBitDepth.DropDownAnimationFPS = 0;
@@ -367,7 +367,7 @@
             // 
             // cmbQualityMode
             // 
-            cmbQualityMode.BackColor1 = Color.Transparent;
+            cmbQualityMode.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbQualityMode.BorderColor = Color.Gainsboro;
             cmbQualityMode.BorderColorFocus = Color.White;
             cmbQualityMode.DropDownAnimationFPS = 0;
@@ -390,7 +390,7 @@
             cmbQualityMode.Name = "cmbQualityMode";
             cmbQualityMode.Padding = new Padding(7, 0, 0, 0);
             cmbQualityMode.SelectionColor = Color.Transparent;
-            cmbQualityMode.Size = new Size(160, 32);
+            cmbQualityMode.Size = new Size(285, 32);
             cmbQualityMode.TabIndex = 59;
             cmbQualityMode.Text = "质量指标";
             cmbQualityMode.ToolTipBackColor = Color.DimGray;
@@ -399,7 +399,7 @@
             // numSearchCpuUsed
             // 
             numSearchCpuUsed.AllowDrop = true;
-            numSearchCpuUsed.BackColor1 = Color.Transparent;
+            numSearchCpuUsed.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numSearchCpuUsed.BorderColorFocus = Color.White;
             numSearchCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
             numSearchCpuUsed.DecimalPlaces = 15;
@@ -415,7 +415,7 @@
             // numFinalCpuUsed
             // 
             numFinalCpuUsed.AllowDrop = true;
-            numFinalCpuUsed.BackColor1 = Color.Transparent;
+            numFinalCpuUsed.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numFinalCpuUsed.BorderColorFocus = Color.White;
             numFinalCpuUsed.CaretColor = Color.FromArgb(220, 220, 220);
             numFinalCpuUsed.DecimalPlaces = 15;
@@ -431,7 +431,7 @@
             // numMaxRes
             // 
             numMaxRes.AllowDrop = true;
-            numMaxRes.BackColor1 = Color.Transparent;
+            numMaxRes.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numMaxRes.BorderColorFocus = Color.White;
             numMaxRes.CaretColor = Color.FromArgb(220, 220, 220);
             numMaxRes.DecimalPlaces = 15;
@@ -450,7 +450,7 @@
             // numJobs
             // 
             numJobs.AllowDrop = true;
-            numJobs.BackColor1 = Color.Transparent;
+            numJobs.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numJobs.BorderColorFocus = Color.White;
             numJobs.CaretColor = Color.FromArgb(220, 220, 220);
             numJobs.DecimalPlaces = 15;
@@ -466,7 +466,7 @@
             // numQualityValue
             // 
             numQualityValue.AllowDrop = true;
-            numQualityValue.BackColor1 = Color.Transparent;
+            numQualityValue.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numQualityValue.BorderColorFocus = Color.White;
             numQualityValue.CaretColor = Color.FromArgb(220, 220, 220);
             numQualityValue.DecimalPlaces = 15;
@@ -475,10 +475,10 @@
             numQualityValue.HoverButtonBackColor1 = Color.FromArgb(200, 255, 255, 255);
             numQualityValue.Increment = 0.1D;
             numQualityValue.LargeChange = 1D;
-            numQualityValue.Location = new Point(432, 438);
+            numQualityValue.Location = new Point(523, 438);
             numQualityValue.Name = "numQualityValue";
             numQualityValue.Padding = new Padding(6, 0, 0, 0);
-            numQualityValue.Size = new Size(160, 32);
+            numQualityValue.Size = new Size(236, 32);
             numQualityValue.SmallChange = 0.1D;
             numQualityValue.TabIndex = 54;
             // 
@@ -488,7 +488,7 @@
             chkSweep.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSweep.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkSweep.ForeColor = Color.WhiteSmoke;
-            chkSweep.Location = new Point(639, 301);
+            chkSweep.Location = new Point(639, 290);
             chkSweep.Name = "chkSweep";
             chkSweep.Size = new Size(176, 21);
             chkSweep.TabIndex = 52;
@@ -524,7 +524,7 @@
             chkSerialEncode.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkSerialEncode.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkSerialEncode.ForeColor = Color.WhiteSmoke;
-            chkSerialEncode.Location = new Point(639, 386);
+            chkSerialEncode.Location = new Point(639, 374);
             chkSerialEncode.Name = "chkSerialEncode";
             chkSerialEncode.Size = new Size(150, 25);
             chkSerialEncode.TabIndex = 49;
@@ -546,7 +546,7 @@
             chkOutputFullRes.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkOutputFullRes.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkOutputFullRes.ForeColor = Color.WhiteSmoke;
-            chkOutputFullRes.Location = new Point(639, 359);
+            chkOutputFullRes.Location = new Point(639, 347);
             chkOutputFullRes.Name = "chkOutputFullRes";
             chkOutputFullRes.Size = new Size(150, 21);
             chkOutputFullRes.TabIndex = 46;
@@ -568,7 +568,7 @@
             chkRecursive.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkRecursive.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkRecursive.ForeColor = Color.WhiteSmoke;
-            chkRecursive.Location = new Point(639, 328);
+            chkRecursive.Location = new Point(639, 316);
             chkRecursive.Name = "chkRecursive";
             chkRecursive.Size = new Size(150, 25);
             chkRecursive.TabIndex = 43;
@@ -580,7 +580,7 @@
             chkLossless.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkLossless.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkLossless.ForeColor = Color.WhiteSmoke;
-            chkLossless.Location = new Point(639, 415);
+            chkLossless.Location = new Point(639, 405);
             chkLossless.Name = "chkLossless";
             chkLossless.Size = new Size(150, 21);
             chkLossless.TabIndex = 42;
@@ -628,7 +628,7 @@
             // 
             // cmbMetric
             // 
-            cmbMetric.BackColor1 = Color.Transparent;
+            cmbMetric.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             cmbMetric.BorderColor = Color.Gainsboro;
             cmbMetric.BorderColorFocus = Color.White;
             cmbMetric.DropDownAnimationFPS = 0;
@@ -676,7 +676,7 @@
             // 
             // numCrfMax
             // 
-            numCrfMax.BackColor1 = Color.Transparent;
+            numCrfMax.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numCrfMax.BorderColorFocus = Color.White;
             numCrfMax.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfMax.ForeColor = Color.White;
@@ -690,7 +690,7 @@
             // 
             // numCrfMin
             // 
-            numCrfMin.BackColor1 = Color.Transparent;
+            numCrfMin.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numCrfMin.BorderColorFocus = Color.White;
             numCrfMin.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfMin.ForeColor = Color.White;
@@ -705,7 +705,7 @@
             // numCrfFix
             // 
             numCrfFix.AllowDrop = true;
-            numCrfFix.BackColor1 = Color.Transparent;
+            numCrfFix.BackColor1 = Color.FromArgb(50, 30, 30, 30);
             numCrfFix.BorderColorFocus = Color.White;
             numCrfFix.CaretColor = Color.FromArgb(220, 220, 220);
             numCrfFix.ForeColor = Color.White;
@@ -838,7 +838,7 @@
             // 
             lblQuality.AutoSize = true;
             lblQuality.ForeColor = Color.WhiteSmoke;
-            lblQuality.Location = new Point(435, 419);
+            lblQuality.Location = new Point(523, 419);
             lblQuality.Name = "lblQuality";
             lblQuality.Size = new Size(80, 17);
             lblQuality.TabIndex = 12;
