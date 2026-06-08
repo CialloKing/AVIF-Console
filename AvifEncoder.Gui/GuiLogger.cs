@@ -13,6 +13,8 @@ namespace AvifEncoder.Gui
         private readonly RichTextBox _rtb;
         public GuiLogger(RichTextBox rtb) => _rtb = rtb;
 
+        // ★ 窗口关闭后 _rtb 被 Dispose，后台编码线程仍可能通过 ILogger 接口调用 Append。
+        //    BeginInvoke 在已释放控件上会抛 ObjectDisposedException，必须检查 IsDisposed。
         private void Append(string msg)
         {
             if (_rtb.IsDisposed) return;

@@ -448,7 +448,8 @@ namespace AvifEncoder
             }
             finally
             {
-                _isAnimatedFile.Value = false;  // 重置
+                config.MaxResolution = savedMaxResolution;  // 恢复无损模式修改的缩放上限
+                _isAnimatedFile.Value = false;
                 if (scaling.TempFilePath != null)
                     try { _fs.DeleteFile(scaling.TempFilePath); } catch { }
             }
@@ -1041,6 +1042,8 @@ FinalEncodeResult encodeResult, CRFSearchResult searchResult,
 EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime, string? advancedCacheKey = null)
         {
             // ★ 检测是否是“搜索已失败且最终被迫使用 CRF=0（MinCRF=0）”的情景
+            // ★ crf0Unreachable 必须加 UseCRFSearch 前置条件：
+            //    直接编码模式下 BaseCRF=0 是用户显式选择，不应误判为搜索失败。
             bool crf0Unreachable = _config.UseCRFSearch
                                    && encodeResult.Success
                                    && !searchResult.SearchBasedCRF

@@ -248,6 +248,8 @@ namespace AvifEncoder
             {
                 hiInt = medianInt + 1;
             }
+            // ★ medianInt 已钳制到 [0,63]，但 loInt=median-1 可能产生 -1，
+            //    hiInt=median+1 可能产生 64。再次 ClampCrf 确保不越界。
             loInt = EncodeHelpers.ClampCrf(loInt);
             hiInt = EncodeHelpers.ClampCrf(hiInt);
 

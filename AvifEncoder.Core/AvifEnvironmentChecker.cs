@@ -221,6 +221,8 @@ namespace AvifEncoder
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    // ★ 必须同时重定向 stdout 和 stderr：只重定向 stderr 时，ffmpeg 写满 stdout
+                    //    管道缓冲区（4-64KB）会阻塞，父进程等待子进程退出 → 形成死锁。
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };

@@ -51,11 +51,12 @@ namespace AvifEncoder
                         ny++;
                         yi++;
                     }
-                    // 溢出时退化为按位数比较（长数字 > 短数字）
+                    // ★ long 最多存 18 位数字（9,223,372,036,854,775,807），超出后 xn/yn 均为截断值。
+                    //    位数不同 → 长数字 > 短数字（如 20 位 > 19 位）。
+                    //    位数相同且双方溢出 → 必须逐字符比较，不能用截断的 long 值。
                     if (xOverflow || yOverflow)
                     {
                         if (nx != ny) return nx.CompareTo(ny);
-                        // 位数相同且双方溢出：逐字符比较溢出的数字段
                         if (xOverflow && yOverflow)
                         {
                             int xStart = xi - nx, yStart = yi - ny;

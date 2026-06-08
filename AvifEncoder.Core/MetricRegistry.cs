@@ -61,7 +61,8 @@ namespace AvifEncoder
             Register(new MetricDef("xpsnr_y", "XPSNR-Y",           false, false, m => m.XPSNR_Y ?? double.NaN));
             Register(new MetricDef("xpsnr_u", "XPSNR-U",           false, false, m => m.XPSNR_U ?? double.NaN));
             Register(new MetricDef("xpsnr_v", "XPSNR-V",           false, false, m => m.XPSNR_V ?? double.NaN));
-            Register(new MetricDef("xpsnr_w", "XPSNR (W)",         false, false, m => m.W_XPSNR ?? double.NaN));
+            // xpsnr_w 与 xpsnr 计算相同（均为 W-XPSNR），不重复注册避免下拉框出现两个相同选项
+            // Register(new MetricDef("xpsnr_w", "XPSNR (W)",         false, false, m => m.W_XPSNR ?? double.NaN));
             // 末尾 — 综合评分，依赖多项基础指标，放在最后
             Register(new MetricDef("mix",    "MixScore",          false, false, m => double.IsNaN(m.VMAF) ? double.NaN : ComputeMixScore(m)));
         }

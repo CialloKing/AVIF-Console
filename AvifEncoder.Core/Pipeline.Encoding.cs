@@ -415,12 +415,14 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 : "";
             // still-picture 单帧模式下 enable-keyframe-filtering 和 lag-in-frames 无意义，
             // 且 lag-in-frames 在 libaom 3.14+ 中会被拒绝导致编码失败
-            // ★ encoderSpecific 中含 tune 值（如 "tune=ssim"），但命令行末尾已有 aomCombined
-            //    （如 "-aom-params aq-mode=3:..."）。若两者各自包装为独立的 -aom-params 段，
-            //    ffmpeg 命令行出现两个 -aom-params，后者覆盖前者，tune 参数静默丢失。
-            //    解法：将 tune 值从 encoderSpecific 中剥离，合并到 aomCombined 的冒号列表中。
+            // ★ 仅 libaom 存在 -aom-params 重复问题：encoderSpecific 中含 "tune=ssim"，
+            //    命令行末尾又有 "-aom-params aq-mode=3:..."，两个 -aom-params 后者覆盖前者。
+            //    解法：从 encoderSpecific 剥离 tune 纯值，合并到 aomCombined 冒号列表末尾。
+            //    SVT-AV1/Rav1e/Hardware 的 BuildFullTuneArg 返回完整 CLI 段（各自有独立前缀），
+            //    不能剥离也不能塞入 -aom-params，必须保持原样。
             string encoderSpecific = EncodeHelpers.BuildEncoderSpecificArgs(cfg, param.actualCpu, param.tilePart, param.rowMt);
-            string tuneVal = cfg.Lossless ? "" : Av1EncoderFactory.Get(cfg.Encoder).BuildFullTuneArg(cfg.MetricMode);
+            bool isLibAom = cfg.Encoder == "libaom-av1" || cfg.Encoder == "libaom";
+            string tuneVal = (cfg.Lossless || !isLibAom) ? "" : Av1EncoderFactory.Get(cfg.Encoder).BuildFullTuneArg(cfg.MetricMode);
             if (!string.IsNullOrEmpty(tuneVal))
                 encoderSpecific = encoderSpecific.Replace(tuneVal, "").Replace("  ", " ").Trim();
             string aomCombined;
