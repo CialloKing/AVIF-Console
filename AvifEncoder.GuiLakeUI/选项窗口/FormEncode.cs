@@ -905,17 +905,20 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
             finally
             {
-                _isEncoding = false;
-                _isResumeDetected = false;
-                _resumePollTimer?.Start();
-                btnStart.Enabled = true;
-                btnStop.Enabled = false;
-                btnUpdateJobs.Enabled = false;
-                _pipeline = null;
-                _cts = null;  // using 块已自动 Dispose，此处仅清空引用
-                if (_topLevelHandle != IntPtr.Zero)
-                    SysTaskBarProgress.Clear(_topLevelHandle);
-                _stopping = false;
+                if (!IsDisposed && IsHandleCreated)
+                {
+                    _isEncoding = false;
+                    _isResumeDetected = false;
+                    _resumePollTimer?.Start();
+                    btnStart.Enabled = true;
+                    btnStop.Enabled = false;
+                    btnUpdateJobs.Enabled = false;
+                    _pipeline = null;
+                    _cts = null;  // using 块已自动 Dispose，此处仅清空引用
+                    if (_topLevelHandle != IntPtr.Zero)
+                        SysTaskBarProgress.Clear(_topLevelHandle);
+                    _stopping = false;
+                }
             }
 
             // 用户停止时检测中断续传

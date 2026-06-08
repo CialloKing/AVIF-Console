@@ -172,7 +172,9 @@ namespace AvifEncoder
 
                 var tasks = entries.Select(async entry =>
                 {
-                    await semaphore.WaitAsync(_globalCts.Token);
+                    bool acquired = false;
+                    try { await semaphore.WaitAsync(_globalCts.Token); acquired = true; } catch { }
+                    if (!acquired) return;
                     try
                     {
                         if (!srcIndex.TryGetValue(entry.SourceFile,
@@ -296,7 +298,7 @@ namespace AvifEncoder
                     }
                     finally
                     {
-                        semaphore.Release();
+                        if (acquired) semaphore.Release();
                     }
                 });
 

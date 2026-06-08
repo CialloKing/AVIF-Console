@@ -150,9 +150,10 @@ namespace AvifEncoder
         private static async Task<List<string>> GetAvailableEncodersAsync()
         {
             var list = new List<string>();
+            Process? p = null;
             try
             {
-                using var p = new Process
+                p = new Process
                 {
                     StartInfo = new ProcessStartInfo("ffmpeg", "-encoders")
                     {
@@ -185,7 +186,14 @@ namespace AvifEncoder
                     }
                 }
             }
-            catch { }
+            catch
+            {
+                try { p?.Kill(entireProcessTree: true); } catch { }
+            }
+            finally
+            {
+                p?.Dispose();
+            }
             return list;
         }
 

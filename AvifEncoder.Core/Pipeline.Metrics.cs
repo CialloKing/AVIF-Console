@@ -637,10 +637,10 @@ namespace AvifEncoder
         }
 
         /// <summary>计算加权 XPSNR，权重 Y:U:V = 6:1:1</summary>
-        private static double? ComputeWXPSNR(double? y, double? u, double? v)
+        private static double? ComputeWXPSNR(double? y, double? u, double? v, int bitDepth = 8)
         {
             if (!y.HasValue || !u.HasValue || !v.HasValue) return null;
-            const double maxVal = 255.0;
+            double maxVal = bitDepth == 12 ? 4095.0 : bitDepth == 10 ? 1023.0 : 255.0;
             double mseY = maxVal * maxVal * Math.Pow(10, -y.Value / 10);
             double mseU = maxVal * maxVal * Math.Pow(10, -u.Value / 10);
             double mseV = maxVal * maxVal * Math.Pow(10, -v.Value / 10);

@@ -1508,14 +1508,14 @@ namespace AvifEncoder
                             {
                                 var m = new QualityMetrics();
                                 // ★ AppendJournal 用 prop.Name.ToLower() 写入，必须用小写 key 读取
-                                if (root.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
-                                if (root.TryGetProperty("butterraw", out var br)) m.Butteraugli_Raw = br.GetDouble();
-                                if (root.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
-                                if (root.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
-                                if (root.TryGetProperty("xpsnry", out var xy)) m.XPSNR_Y = xy.GetDouble();
-                                if (root.TryGetProperty("xpsnru", out var xu)) m.XPSNR_U = xu.GetDouble();
-                                if (root.TryGetProperty("xpsnrv", out var xv)) m.XPSNR_V = xv.GetDouble();
-                                if (root.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                                if (root.TryGetProperty("ssimu2", out var s2) && s2.ValueKind == JsonValueKind.Number) m.SSIMULACRA2 = s2.GetDouble();
+                                if (root.TryGetProperty("butterraw", out var br) && br.ValueKind == JsonValueKind.Number) m.Butteraugli_Raw = br.GetDouble();
+                                if (root.TryGetProperty("butter3", out var b3) && b3.ValueKind == JsonValueKind.Number) m.Butteraugli_3norm = b3.GetDouble();
+                                if (root.TryGetProperty("gmsd", out var gm) && gm.ValueKind == JsonValueKind.Number) m.GMSD = gm.GetDouble();
+                                if (root.TryGetProperty("xpsnry", out var xy) && xy.ValueKind == JsonValueKind.Number) m.XPSNR_Y = xy.GetDouble();
+                                if (root.TryGetProperty("xpsnru", out var xu) && xu.ValueKind == JsonValueKind.Number) m.XPSNR_U = xu.GetDouble();
+                                if (root.TryGetProperty("xpsnrv", out var xv) && xv.ValueKind == JsonValueKind.Number) m.XPSNR_V = xv.GetDouble();
+                                if (root.TryGetProperty("wxpsnr", out var wx) && wx.ValueKind == JsonValueKind.Number) m.W_XPSNR = wx.GetDouble();
                                 metricsOut[file] = m;
                             }
                         }
@@ -2357,14 +2357,14 @@ namespace AvifEncoder
                                     else if (evt == "metrics")
                                     {
                                         var m = new QualityMetrics();
-                                        if (root.TryGetProperty("ssimu2", out var s2)) m.SSIMULACRA2 = s2.GetDouble();
-                                        if (root.TryGetProperty("butterraw", out var br)) m.Butteraugli_Raw = br.GetDouble();
-                                        if (root.TryGetProperty("butter3", out var b3)) m.Butteraugli_3norm = b3.GetDouble();
-                                        if (root.TryGetProperty("gmsd", out var gm)) m.GMSD = gm.GetDouble();
-                                        if (root.TryGetProperty("xpsnry", out var xy)) m.XPSNR_Y = xy.GetDouble();
-                                        if (root.TryGetProperty("xpsnru", out var xu)) m.XPSNR_U = xu.GetDouble();
-                                        if (root.TryGetProperty("xpsnrv", out var xv)) m.XPSNR_V = xv.GetDouble();
-                                        if (root.TryGetProperty("wxpsnr", out var wx)) m.W_XPSNR = wx.GetDouble();
+                                        if (root.TryGetProperty("ssimu2", out var s2) && s2.ValueKind == JsonValueKind.Number) m.SSIMULACRA2 = s2.GetDouble();
+                                        if (root.TryGetProperty("butterraw", out var br) && br.ValueKind == JsonValueKind.Number) m.Butteraugli_Raw = br.GetDouble();
+                                        if (root.TryGetProperty("butter3", out var b3) && b3.ValueKind == JsonValueKind.Number) m.Butteraugli_3norm = b3.GetDouble();
+                                        if (root.TryGetProperty("gmsd", out var gm) && gm.ValueKind == JsonValueKind.Number) m.GMSD = gm.GetDouble();
+                                        if (root.TryGetProperty("xpsnry", out var xy) && xy.ValueKind == JsonValueKind.Number) m.XPSNR_Y = xy.GetDouble();
+                                        if (root.TryGetProperty("xpsnru", out var xu) && xu.ValueKind == JsonValueKind.Number) m.XPSNR_U = xu.GetDouble();
+                                        if (root.TryGetProperty("xpsnrv", out var xv) && xv.ValueKind == JsonValueKind.Number) m.XPSNR_V = xv.GetDouble();
+                                        if (root.TryGetProperty("wxpsnr", out var wx) && wx.ValueKind == JsonValueKind.Number) m.W_XPSNR = wx.GetDouble();
                                         deltaMetrics[file] = m;
                                     }
                                 }

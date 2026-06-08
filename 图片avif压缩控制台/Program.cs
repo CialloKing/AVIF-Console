@@ -115,7 +115,7 @@ namespace AvifEncoder
                             break;
                         case "search": opts.EnableSearch = true; opts.ForceNoSearch = false; break;
                         case "no-search": opts.ForceNoSearch = true; opts.EnableSearch = false; break;
-                        case "quality": opts.QualityTarget = double.Parse(GetValue()); break;
+                        case "quality": opts.QualityTarget = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
                         case "metric":
                             {
                                 string raw = GetValue().ToLower();
@@ -124,29 +124,29 @@ namespace AvifEncoder
                                     opts.AdvancedMetricMode = raw;
                             }
                             break;
-                        case "target-vmaf": opts.DirectTargetMode = "vmaf"; opts.DirectTargetValue = double.Parse(GetValue()); break;
-                        case "target-ssim": opts.DirectTargetMode = "ssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
-                        case "target-psnr": opts.DirectTargetMode = "psnr"; opts.DirectTargetValue = double.Parse(GetValue()); break;
-                        case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue()); break;
-                        case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue()); break;
+                        case "target-vmaf": opts.DirectTargetMode = "vmaf"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
+                        case "target-ssim": opts.DirectTargetMode = "ssim"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
+                        case "target-psnr": opts.DirectTargetMode = "psnr"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
+                        case "target-msssim": opts.DirectTargetMode = "msssim"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
+                        case "target-mix": opts.DirectTargetMode = "mix"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
                         case "target-ssimu2":
                             opts.DirectTargetMode = "ssimu2";
                             opts.AdvancedMetricMode = "ssimu2";
-                            opts.DirectTargetValue = double.Parse(GetValue());
+                            opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture);
                             break;
                         case "target-butter3":
                             opts.DirectTargetMode = "butter3";
                             opts.AdvancedMetricMode = "butter3";
-                            opts.DirectTargetValue = double.Parse(GetValue());
+                            opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture);
                             break;
                         case "target-gmsd":
                             opts.DirectTargetMode = "gmsd";
                             opts.AdvancedMetricMode = "gmsd";
-                            opts.DirectTargetValue = double.Parse(GetValue());
+                            opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture);
                             break;
                         case "target-xpsnr":
                             opts.DirectTargetMode = "xpsnr";
-                            opts.DirectTargetValue = double.Parse(GetValue());
+                            opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture);
                             break;
                         case "crf":
                             string crfVal = GetValue();

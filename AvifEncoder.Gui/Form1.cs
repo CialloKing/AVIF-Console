@@ -105,12 +105,13 @@ namespace AvifEncoder.Gui
             chkSweep.Checked = false;
 
             // 启动时异步检测编码器和外部工具，将结果输出到日志
-            this.Load += async (s, e) => await PerformStartupCheckAsync();
+            this.Load += async (s, e) => { try { await PerformStartupCheckAsync(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"启动检测异常: {ex.Message}"); } };
             // 绑定窗口关闭事件
             this.FormClosing += Form1_FormClosing;   // ← 新增绑定
         }
         private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
         {
+            try { _globalCts?.Cancel(); } catch { }
             _pipeline?.Dispose();
         }
         private void ApplyPresetToUI(CliPreset preset)
