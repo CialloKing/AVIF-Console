@@ -213,22 +213,31 @@ namespace AvifEncoder
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
                 using var p = Process.Start(psi);
                 if (p == null) return new EncoderStatus { Name = enc, Available = false, Note = "无法启动 ffmpeg" };
-                using var testCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                string stderr = await p.StandardError.ReadToEndAsync();
-                await p.WaitForExitAsync(testCts.Token);
+                try
+                {
+                    using var testCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    string stderr = await p.StandardError.ReadToEndAsync();
+                    await p.WaitForExitAsync(testCts.Token);
 
-                if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
-                {
-                    ok = true;
-                    note = "可用";
+                    if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
+                    {
+                        ok = true;
+                        note = "可用";
+                    }
+                    else
+                    {
+                        note = ParseError(stderr);
+                    }
                 }
-                else
+                catch
                 {
-                    note = ParseError(stderr);
+                    try { p.Kill(entireProcessTree: true); } catch { }
+                    note = "超时";
                 }
                 if (File.Exists(outFile)) File.Delete(outFile);
             }

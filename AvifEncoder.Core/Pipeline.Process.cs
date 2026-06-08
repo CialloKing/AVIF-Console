@@ -862,10 +862,10 @@ namespace AvifEncoder
                     AMismatches = aCount,
                     // JSON 扩展字段
                     MismatchRatio = totalPx > 0 ? mismatchCount / totalPx : 0,
-                    RPct = totalPx > 0 ? rCount * 100.0 / mismatchCount : 0,
-                    GPct = totalPx > 0 ? gCount * 100.0 / mismatchCount : 0,
-                    BPct = totalPx > 0 ? bCount * 100.0 / mismatchCount : 0,
-                    APct = totalPx > 0 ? aCount * 100.0 / mismatchCount : 0,
+                    RPct = mismatchCount > 0 ? rCount * 100.0 / mismatchCount : 0,
+                    GPct = mismatchCount > 0 ? gCount * 100.0 / mismatchCount : 0,
+                    BPct = mismatchCount > 0 ? bCount * 100.0 / mismatchCount : 0,
+                    APct = mismatchCount > 0 ? aCount * 100.0 / mismatchCount : 0,
                     MismatchSamples = samples,
                 };
             }
@@ -1040,7 +1040,8 @@ FinalEncodeResult encodeResult, CRFSearchResult searchResult,
 EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime, string? advancedCacheKey = null)
         {
             // ★ 检测是否是“搜索已失败且最终被迫使用 CRF=0（MinCRF=0）”的情景
-            bool crf0Unreachable = encodeResult.Success
+            bool crf0Unreachable = _config.UseCRFSearch
+                                   && encodeResult.Success
                                    && !searchResult.SearchBasedCRF
                                    && searchResult.Crf == 0
                                    && _config.MinCRF == 0;

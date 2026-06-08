@@ -15,17 +15,22 @@ namespace AvifEncoder.Gui
 
         private void Append(string msg)
         {
+            if (_rtb.IsDisposed) return;
             if (_rtb.InvokeRequired)
-                _rtb.BeginInvoke(new Action(() =>
-                {
-                    _rtb.AppendText($"{msg}{Environment.NewLine}");
-                    _rtb.ScrollToCaret();
-                }));
+            {
+                try { _rtb.BeginInvoke(new Action(() => AppendCore(msg))); } catch { }
+            }
             else
             {
-                _rtb.AppendText($"{msg}{Environment.NewLine}");
-                _rtb.ScrollToCaret();
+                AppendCore(msg);
             }
+        }
+
+        private void AppendCore(string msg)
+        {
+            if (_rtb.IsDisposed) return;
+            _rtb.AppendText($"{msg}{Environment.NewLine}");
+            _rtb.ScrollToCaret();
         }
 
         public void LogInfo(string msg) => Append($"[INFO] {msg}");

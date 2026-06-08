@@ -623,7 +623,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkDryRun.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkDryRun.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkDryRun.ForeColor = Color.WhiteSmoke;
-            chkDryRun.Location = new Point(456, 202);
+            chkDryRun.Location = new Point(269, 202);
             chkDryRun.Name = "chkDryRun";
             chkDryRun.Size = new Size(150, 24);
             chkDryRun.TabIndex = 64;
@@ -635,7 +635,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkVerbose.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkVerbose.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkVerbose.ForeColor = Color.WhiteSmoke;
-            chkVerbose.Location = new Point(456, 171);
+            chkVerbose.Location = new Point(269, 171);
             chkVerbose.Name = "chkVerbose";
             chkVerbose.Size = new Size(150, 24);
             chkVerbose.TabIndex = 63;

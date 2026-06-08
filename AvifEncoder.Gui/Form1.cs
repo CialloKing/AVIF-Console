@@ -157,6 +157,8 @@ namespace AvifEncoder.Gui
                         "psnr" => cfg.TargetSSIM * 20 + 30,
                         _ => cfg.TargetSSIM
                     };
+                    if ((decimal)rawValue > numQualityValue.Maximum) numQualityValue.Maximum = (decimal)rawValue;
+                    if ((decimal)rawValue < numQualityValue.Minimum) numQualityValue.Minimum = (decimal)rawValue;
                     numQualityValue.Value = (decimal)rawValue;
                 }
 

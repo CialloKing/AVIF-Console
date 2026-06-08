@@ -346,10 +346,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     }
                 }
 
-                if (level == startChroma)
-                    AddByDepth();
-                else
-                    AddByDepth();
+                AddByDepth();
             }
 
             return [.. attempts.Distinct()];

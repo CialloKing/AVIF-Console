@@ -248,6 +248,8 @@ namespace AvifEncoder
             {
                 hiInt = medianInt + 1;
             }
+            loInt = EncodeHelpers.ClampCrf(loInt);
+            hiInt = EncodeHelpers.ClampCrf(hiInt);
 
             return (medianInt, loInt, hiInt);
         }

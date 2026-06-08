@@ -98,16 +98,24 @@ namespace AvifEncoder
                 config, new JsonSerializerOptions { WriteIndented = true });
             // 先写入临时文件再原子替换，防止断电/崩溃导致配置文件损坏
             string tmpPath = path + ".tmp";
-            File.WriteAllText(tmpPath, json);
             try
             {
-                File.Move(tmpPath, path, overwrite: true);
+                File.WriteAllText(tmpPath, json);
+                try
+                {
+                    File.Move(tmpPath, path, overwrite: true);
+                }
+                catch (IOException)
+                {
+                    // 跨卷移动失败时退化为拷贝+删除
+                    File.Copy(tmpPath, path, overwrite: true);
+                    File.Delete(tmpPath);
+                }
             }
-            catch (IOException)
+            finally
             {
-                // 跨卷移动失败时退化为拷贝+删除
-                File.Copy(tmpPath, path, overwrite: true);
-                File.Delete(tmpPath);
+                if (File.Exists(tmpPath))
+                    try { File.Delete(tmpPath); } catch { }
             }
         }
     }

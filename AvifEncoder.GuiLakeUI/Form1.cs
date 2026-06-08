@@ -54,8 +54,8 @@ namespace AvifEncoder.GuiLakeUI
                 // 根据边缘修正尺寸
                 Rectangle newRect = ApplyAspectRatio(r, edge);
                 Marshal.StructureToPtr(RECT.FromRectangle(newRect), m.LParam, true);
-                m.Result = IntPtr.Zero;
-                return; // 消息已处理
+                m.Result = (IntPtr)1;  // TRUE — 已处理消息，Windows 接受 RECT 修改
+                return;
             }
 
             base.WndProc(ref m);
@@ -383,7 +383,7 @@ namespace AvifEncoder.GuiLakeUI
             }
             if (isRoot)
             {
-                foreach (var page in new Form?[] { _encodePage, _logPage, _helpPage, _otherOptionsPage, _aboutPage })
+                foreach (var page in new Form?[] { _encodePage, _optionsPage, _commandsPage, _logPage, _helpPage, _otherOptionsPage, _aboutPage })
                 {
                     if (page != null && !page.IsDisposed)
                     {

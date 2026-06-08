@@ -307,7 +307,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             btnResume.Click += BtnResume_Click;
             btnAbandon.Click += BtnAbandon_Click;
             btnUpdateJobs.Click += BtnUpdateJobs_Click;
-            txtOutput.TextChanged += TxtOutput_TextChanged;
         }
 
         private void AttachCustomMarkEvents()
@@ -612,6 +611,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// <summary>从 cmbQualityMode 的显示名反查 MetricRegistry 的 key（如 "VMAF" → "vmaf"）</summary>
         private string? ResolveMetricKeyFromQualityMode()
         {
+            if (cmbQualityMode.SelectedIndex < 0 || cmbQualityMode.SelectedIndex >= cmbQualityMode.Items.Count) return null;
             string? qMode = cmbQualityMode.Items[cmbQualityMode.SelectedIndex]?.ToString();
             if (string.IsNullOrEmpty(qMode)) return null;
             var def = MetricRegistry.AllKeys

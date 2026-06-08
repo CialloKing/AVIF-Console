@@ -283,11 +283,15 @@ namespace AvifEncoder
             //    像素数据中误匹配 0x00 0x00 0x00 0x00 "IEND" 字节序列
             int limit = bytes.Length - 12;
 
+            // IEND CRC32 恒为 0xAE426082（大端序: AE 42 60 82）
             for (int i = limit; i >= 0; i--)
             {
                 if (bytes[i] == 0x49 && bytes[i + 1] == 0x45 && bytes[i + 2] == 0x4E && bytes[i + 3] == 0x44)
                 {
-                    if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0)
+                    // 验证 length=0 且 CRC 正确
+                    if (i >= 4 && bytes[i - 4] == 0 && bytes[i - 3] == 0 && bytes[i - 2] == 0 && bytes[i - 1] == 0
+                        && i + 4 + 3 < bytes.Length
+                        && bytes[i + 4] == 0xAE && bytes[i + 5] == 0x42 && bytes[i + 6] == 0x60 && bytes[i + 7] == 0x82)
                     {
                         return i + 8;
                     }
