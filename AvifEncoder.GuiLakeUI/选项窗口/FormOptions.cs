@@ -201,6 +201,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// <summary>公开的预览刷新入口，供 FormEncode 控件变化时调用</summary>
         public void RefreshFfmpegPreview()
         {
+            // ★ 预设应用期间每个控件赋值都触发此方法，11个控件=11次无谓刷新。
+            //    检查 _encodePage.IsApplyingPreset 跳过，仅最终一次刷新有效。
+            if (_encodePage?.IsApplyingPreset == true) return;
             UpdateParamsPreview();
             _commandsPage?.UpdateAnimatedCommand();
         }

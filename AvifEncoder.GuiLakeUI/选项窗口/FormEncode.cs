@@ -16,6 +16,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
     {
         private const string CustomPresetName = "自定义";
         private bool _isApplyingPreset;
+        internal bool IsApplyingPreset => _isApplyingPreset;  // 供 FormOptions 抑制预设期间的无谓刷新
         private readonly Dictionary<string, CliPreset?> _presetMap = new()
         {
             { CustomPresetName, null },

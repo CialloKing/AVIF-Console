@@ -536,8 +536,11 @@ namespace AvifEncoder.Gui
 
         private void AppendLog(string message)
         {
+            if (rtbLog.IsDisposed || !rtbLog.IsHandleCreated) return;
             if (rtbLog.InvokeRequired)
-                rtbLog.Invoke((Action)(() => rtbLog.AppendText(message + Environment.NewLine)));
+            {
+                try { rtbLog.BeginInvoke((Action)(() => AppendLog(message))); } catch { }
+            }
             else
                 rtbLog.AppendText(message + Environment.NewLine);
         }

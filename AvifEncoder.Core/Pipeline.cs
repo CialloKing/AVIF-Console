@@ -1265,6 +1265,7 @@ namespace AvifEncoder
                         if (r != null)
                             item.Results[r.Index] = r;
                     }
+                    catch (OperationCanceledException) { return; }  // 用户取消：立即停止Worker
                     catch (Exception ex)
                     {
                         _logger.LogError($"Worker 异常: {item.FilePath} - {ex.Message}");

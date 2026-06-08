@@ -147,6 +147,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             btnDownload.Enabled = false;
             btnSkip.Enabled = false;
+            _cts?.Dispose();
             _cts = new CancellationTokenSource();
 
             var progress =
@@ -188,6 +189,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private void btnSkip_Click(object? sender, EventArgs e)
         {
             _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
             Close();
         }
 

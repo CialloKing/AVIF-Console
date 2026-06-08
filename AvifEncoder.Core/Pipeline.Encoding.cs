@@ -318,8 +318,8 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
                         string tmpCache = cacheFile + ".tmp";
                         _fs.CopyFile(output, tmpCache, true);
-                        if (_fs.FileExists(cacheFile)) _fs.DeleteFile(cacheFile);
-                        File.Move(tmpCache, cacheFile);
+                        // ★ 用 overwrite:true 直接原子替换，避免 Delete→Move 之间崩溃导致缓存永久丢失
+                        File.Move(tmpCache, cacheFile, true);
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
                         _logger.LogSearch($"[OK] 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F4}s");
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);

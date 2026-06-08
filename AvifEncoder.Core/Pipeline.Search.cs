@@ -271,7 +271,20 @@ namespace AvifEncoder
             if (VmafPriorHelper.HasTable(metricMode) && medianScore >= 0)
             {
                 double nativeTarget = lowerIsBetter ? -target : target;
-                int delta = VmafPriorHelper.GetSentinelDelta(metricMode, nativeTarget);  // 基于 400 图标准差的数据驱动 delta
+                // ★ 中位数远偏离目标时哨兵探测价值低：|score-target| > 2*margin 说明
+                //    中位数大概率在同侧所有点都达标/不达标，哨兵探测不会缩小区间。跳过省 1 次编码。
+                double sentinelMargin = lowerIsBetter ? 0.2 : metricMode == "vmaf" ? 1.0 : 0.02;
+                bool skipSentinel = Math.Abs(displayScore(medianScore) - effectiveTarget) > 2 * sentinelMargin;
+                if (skipSentinel)
+                {
+                    SafeWriteLine($"  [{name}] [SENTINEL] 中位数偏离目标过大，跳过哨兵探测");
+                    searchLo = medianScore >= target ? priorMedian : userMin;
+                    searchHi = medianScore >= target ? userMax : priorMedian - 1;
+                    knownLoScore = medianScore >= target ? medianScore : (double?)null;
+                }
+                else
+                {
+                int delta = VmafPriorHelper.GetSentinelDelta(metricMode, nativeTarget);
                 if (delta > 0)
                 {
                     if (medianScore >= target)
@@ -343,6 +356,7 @@ namespace AvifEncoder
                     searchHi = medianScore >= target ? userMax : priorMedian - 1;
                     knownLoScore = medianScore >= target ? medianScore : (double?)null;
                 }
+                }  // end sentinel skip else
             }
             else
             {

@@ -244,6 +244,8 @@ namespace AvifEncoder.GuiLakeUI
 
         private async void BtnSysInfo_Click(object? sender, EventArgs e)
         {
+            try
+            {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($".NET 版本: {Environment.Version}");
             sb.AppendLine($"OS: {Environment.OSVersion}");
@@ -267,6 +269,8 @@ namespace AvifEncoder.GuiLakeUI
 
             MessageBox.Show(sb.ToString(), "系统信息",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex) { MessageBox.Show($"获取系统信息失败: {ex.Message}"); }
         }
 
         private void BtnResetDefault_Click(object? sender, EventArgs e)
