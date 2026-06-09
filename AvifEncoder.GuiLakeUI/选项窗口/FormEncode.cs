@@ -845,9 +845,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             btnStop.Enabled = true;
             btnUpdateJobs.Enabled = true;
             progressBar1.Value = 0;
-            // 任务栏进度：初始 Normal 状态，进度 0/100
+            _progressSeq = 0;
             if (_topLevelHandle != IntPtr.Zero)
                 SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, 0u, 100u);
+            // ★ Toast 进度通知：编码开始时弹出带进度条的通知
+            try { ShowProgressToast(); } catch { }
 
             try
             {
@@ -902,11 +904,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
                 LogPage?.AppendLog("===== 全部完成 =====");
                 _completedNormally = !_stopping;
+                try { SendCompletionToast(true); } catch { }
             }
             catch (Exception ex)
             {
                 LogPage?.AppendLog($"严重错误: {ex.Message}\n{ex.StackTrace}");
                 MessageBox.Show($"错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                try { SendCompletionToast(false); } catch { }
             }
             finally
             {
@@ -951,6 +955,73 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             }
         }
         private bool _completedNormally;
+
+        private uint _progressSeq;
+
+        private void ShowProgressToast()
+        {
+            try
+            {
+                var req = new LakeUI.Notifications.LakeNotificationRequest
+                {
+                    Tag = "avif-encode",
+                    Group = "avif-encode",
+                    InitialProgress = new LakeUI.Notifications.LakeNotificationProgressUpdate
+                    {
+                        SequenceNumber = ++_progressSeq,
+                        Title = "AVIF 编码中",
+                        Status = "正在处理...",
+                        Value = 0.01,
+                        ValueStringOverride = "0%"
+                    }
+                };
+                req.Texts.Add(new LakeUI.Notifications.LakeNotificationText("AVIF 编码中"));
+                req.Texts.Add(new LakeUI.Notifications.LakeNotificationText("正在处理图片文件..."));
+                req.ProgressBars.Add(new LakeUI.Notifications.LakeNotificationProgressBar
+                {
+                    BindTitle = true,
+                    BindStatus = true,
+                    BindValue = true,
+                    BindValueStringOverride = true
+                });
+                req.SuppressDisplay = false;
+                LakeUI.Notifications.LakeNotificationManager.Show(req);
+            }
+            catch { }
+        }
+
+        private async void UpdateProgressToast(int percent)
+        {
+            try
+            {
+                await LakeUI.Notifications.LakeNotificationManager.UpdateProgressAsync("avif-encode", "avif-encode",
+                    new LakeUI.Notifications.LakeNotificationProgressUpdate
+                    {
+                        SequenceNumber = ++_progressSeq,
+                        Title = "AVIF 编码中",
+                        Status = $"{percent}% 已完成",
+                        Value = percent / 100.0,
+                        ValueStringOverride = $"{percent}%"
+                    });
+            }
+            catch { }
+        }
+
+        private static async void SendCompletionToast(bool success)
+        {
+            try
+            {
+                // 先移除进度通知
+                try { await LakeUI.Notifications.LakeNotificationManager.RemoveByTagAsync("avif-encode"); } catch { }
+                // 再弹出完成通知
+                var req = new LakeUI.Notifications.LakeNotificationRequest();
+                req.Texts.Add(new LakeUI.Notifications.LakeNotificationText(success ? "AVIF 编码完成" : "AVIF 编码异常"));
+                req.Texts.Add(new LakeUI.Notifications.LakeNotificationText(success ? "所有文件已处理完毕" : "请查看日志了解详情"));
+                req.ExpiresOnReboot = true;
+                LakeUI.Notifications.LakeNotificationManager.Show(req);
+            }
+            catch { }
+        }
 
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
         {
@@ -1179,13 +1250,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void UpdateProgress(int percent)
         {
-            if (_stopping) return;  // 停止中，冻结进度
+            if (_stopping) return;
             if (InvokeRequired) { BeginInvoke(new Action(() => UpdateProgress(percent))); return; }
             int clamped = Math.Max(0, Math.Min(percent, 100));
             progressBar1.Value = clamped;
-            // 同步任务栏进度
             if (_topLevelHandle != IntPtr.Zero)
                 SysTaskBarProgress.SetProgress(_topLevelHandle, SysTaskBarProgress.TaskBarProgressState.Normal, (ulong)clamped, 100u);
+            // ★ 同步 Toast 通知进度条
+            try { UpdateProgressToast(clamped); } catch { }
         }
 
 
@@ -1575,7 +1647,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     if (optsPage != null)
                     {
                         if (cfg.TryGetProperty("EncoderCustomParams", out var ecp) && ecp.ValueKind != System.Text.Json.JsonValueKind.Null)
-                            optsPage.SetEncoderCustomParams(ecp.GetString());
+                            optsPage.SetEncoderCustomParams(ecp.GetString() ?? "");
                         if (cfg.TryGetProperty("Denoise", out var dn))
                             optsPage.SetDenoise(dn.GetInt32());
                         if (cfg.TryGetProperty("ArNrUseMaxFrames", out var auf) && auf.ValueKind != System.Text.Json.JsonValueKind.Null)

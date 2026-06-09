@@ -223,6 +223,17 @@ namespace AvifEncoder.GuiLakeUI
 
             TryLoadDefaultConfig();
 
+            // ★ Windows Toast 通知：手动初始化，Runtime 缺失时不弹窗仅记录日志
+            try
+            {
+                string err;
+                if (!LakeUI.Notifications.LakeNotificationManager.TryInitialize(
+                    new() { DisplayName = "AVIF 图片压缩", ShowRuntimeInstallerUi = false }, out err))
+                {
+                    _logPage?.AppendLog("[通知] Windows App Runtime 未安装，Toast 通知不可用");
+                }
+            }
+            catch { }
         }
 
         private async Task RunStartupCheckAsync()

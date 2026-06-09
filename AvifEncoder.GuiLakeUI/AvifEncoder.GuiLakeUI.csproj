@@ -3,14 +3,19 @@
 	<PropertyGroup>
 		<ForceDesignerDpiUnaware>True</ForceDesignerDpiUnaware>
 		<OutputType>WinExe</OutputType>
-		<TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+		<TargetFramework>net10.0-windows10.0.18362.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<UseWindowsForms>true</UseWindowsForms>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- ★ 关闭 Windows App SDK 自动引导，改为代码手动初始化，Runtime 缺失时不弹窗 -->
+		<WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+		<WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+		<WindowsAppSdkAutoInitialize>false</WindowsAppSdkAutoInitialize>
 	</PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\LakeUI\LakeUI\LakeUI.vbproj" />
+    <ProjectReference Include="..\..\LakeUI\LakeUI.Notifications\LakeUI.Notifications.csproj" />
     <ProjectReference Include="..\AvifEncoder.Core\AvifEncoder.Core.csproj" />
   </ItemGroup>
 
