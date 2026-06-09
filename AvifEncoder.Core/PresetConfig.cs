@@ -152,6 +152,38 @@ namespace AvifEncoder
         public bool Verbose { get; set; } = false;
         public bool Resume { get; set; } = false;
 
+        // ═══════════════════════════════════════
+        // --skip-metrics 支持
+        // ═══════════════════════════════════════
+
+        /// <summary>
+        /// 用户指定的跳过指标集合。null 表示全部计算（默认）。
+        /// 合法值来自 ValidSkipMetricKeys。设置后 IsMetricSkipped(key) 返回 true 即跳过对应计算。
+        /// 搜索目标指标不会被跳过（BuildPresetConfig 层保护）。
+        /// </summary>
+        public HashSet<string>? SkippedMetrics { get; set; }
+
+        /// <summary>
+        /// --skip-metrics 可接受的合法键白名单。
+        /// all_advanced 在 CLI 解析阶段展开为 xpsnr/ssimu2/butter3/gmsd/psnr_uncapped。
+        /// </summary>
+        public static readonly HashSet<string> ValidSkipMetricKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "xpsnr", "ssimu2", "butter3", "gmsd", "psnr_uncapped", "all_advanced"
+        };
+
+        /// <summary>
+        /// 判断指定指标是否被跳过。
+        /// SkippedMetrics 为 null 时视为全部计算（保持向后兼容）。
+        /// </summary>
+        public bool IsMetricSkipped(string key)
+        {
+            if (SkippedMetrics == null)
+            {
+                return false;
+            }
+            return SkippedMetrics.Contains(key);
+        }
 
 
 

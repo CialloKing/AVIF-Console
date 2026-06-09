@@ -526,7 +526,8 @@ namespace AvifEncoder
                 bool needUpdate = false;
 
                 // PSNR-Y 接近 libvmaf 60dB 上限时用独立滤镜重算
-                if (cachedMetrics.PSNR_Y >= 59.5)
+                // --skip-metrics psnr_uncapped: 跳过上限突破重算，保留 libvmaf 原始值（≤60dB）
+                if (!config.IsMetricSkipped("psnr_uncapped") && cachedMetrics.PSNR_Y >= 59.5)
                 {
                     _logger.LogInfo($"PSNR={cachedMetrics.PSNR_Y} 触上限，用独立滤镜重算...");
                     try
@@ -550,7 +551,8 @@ namespace AvifEncoder
 
                 // XPSNR 同步计算（确保 BuildResult 时已就绪）
                 // ★ 动图 XPSNR 在高级指标后台任务中逐帧计算，这里跳过
-                if (!encInfo.IsAnimated &&
+                // --skip-metrics xpsnr: 跳过整个 XPSNR 四通道计算
+                if (!config.IsMetricSkipped("xpsnr") && !encInfo.IsAnimated &&
                     (!cachedMetrics.XPSNR_Y.HasValue || !cachedMetrics.XPSNR_U.HasValue ||
                      !cachedMetrics.XPSNR_V.HasValue || !cachedMetrics.W_XPSNR.HasValue))
                 {
@@ -577,18 +579,22 @@ namespace AvifEncoder
                 }
 
                 // 补算缺失的高级指标（异步后台执行）
+                // --skip-metrics 可分别跳过 ssimu2 / butter3 / gmsd
                 bool advancedUpdated = false;
                 {
-                    bool needSsimu2 = !cachedMetrics.SSIMULACRA2.HasValue;
-                    bool needButter = !cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue;
-                    bool needGmsd = !cachedMetrics.GMSD.HasValue;
+                    bool needSsimu2 = !config.IsMetricSkipped("ssimu2") && !cachedMetrics.SSIMULACRA2.HasValue;
+                    bool needButter = !config.IsMetricSkipped("butter3") && (!cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue);
+                    bool needGmsd = !config.IsMetricSkipped("gmsd") && !cachedMetrics.GMSD.HasValue;
 
                     if (needSsimu2 || needButter || needGmsd)
                     {
+                        // 动图 XPSNR 在后台任务中逐帧计算，需传递 skip 信号
+                        bool needXpsnr = !config.IsMetricSkipped("xpsnr");
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath),
+                            _globalCts?.Token ?? CancellationToken.None, needXpsnr,
+                            workingInputPath, Path.GetFileName(outputPath),
                             frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
@@ -627,11 +633,10 @@ namespace AvifEncoder
 
             if (metrics != null)
             {
-                // XPSNR
-                // XPSNR 后台异步计算
                 // XPSNR 同步计算（确保 BuildResult 时已就绪）
                 // ★ 动图 XPSNR 在高级指标后台任务中逐帧计算，这里跳过
-                if (!encInfo.IsAnimated)
+                // --skip-metrics xpsnr: 跳过整个 XPSNR 四通道计算
+                if (!config.IsMetricSkipped("xpsnr") && !encInfo.IsAnimated)
                 {
                     try
                     {
@@ -652,18 +657,22 @@ namespace AvifEncoder
                 }
 
                 // 高级指标（改为异步后台执行）
+                // --skip-metrics 可分别跳过 ssimu2 / butter3 / gmsd
                 bool advancedUpdated = false;
                 {
-                    bool needSsimu2 = !metrics.SSIMULACRA2.HasValue;
-                    bool needButter = !metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue;
-                    bool needGmsd = !metrics.GMSD.HasValue;
+                    bool needSsimu2 = !config.IsMetricSkipped("ssimu2") && !metrics.SSIMULACRA2.HasValue;
+                    bool needButter = !config.IsMetricSkipped("butter3") && (!metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue);
+                    bool needGmsd = !config.IsMetricSkipped("gmsd") && !metrics.GMSD.HasValue;
 
                     if (needSsimu2 || needButter || needGmsd)
                     {
+                        // 动图 XPSNR 在后台任务中逐帧计算，需传递 skip 信号
+                        bool needXpsnr = !config.IsMetricSkipped("xpsnr");
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
-                            _globalCts?.Token ?? CancellationToken.None, workingInputPath, Path.GetFileName(outputPath),
+                            _globalCts?.Token ?? CancellationToken.None, needXpsnr,
+                            workingInputPath, Path.GetFileName(outputPath),
                             frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
                         _advancedMetricTasks.Enqueue(bgTask);
                     }

@@ -81,6 +81,7 @@ namespace AvifEncoder
             public int? Denoise { get; set; }
             public bool ArNrUseMaxFrames { get; set; }
             public string? RgbMode { get; set; } = "";  // 默认关闭
+            public HashSet<string>? SkippedMetrics { get; set; }
         }
 
         // ========== 参数解析 ==========
@@ -270,6 +271,32 @@ namespace AvifEncoder
                             break;
                         case "resume":
                             opts.Resume = true;
+                            break;
+                        case "skip-metrics":
+                            {
+                                string raw = GetValue();
+                                var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                foreach (var token in raw.Split(',',
+                                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    if (string.Equals(token, "all_advanced", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        // 展开别名：all_advanced = 全部可跳过指标
+                                        skipped.UnionWith(new[] { "xpsnr", "ssimu2", "butter3", "gmsd", "psnr_uncapped" });
+                                    }
+                                    else if (PresetConfig.ValidSkipMetricKeys.Contains(token))
+                                    {
+                                        skipped.Add(token.ToLowerInvariant());
+                                    }
+                                    else
+                                    {
+                                        throw new Exception(
+                                            $"未知的 --skip-metrics 值: '{token}'。" +
+                                            $"有效值: {string.Join(", ", PresetConfig.ValidSkipMetricKeys)}");
+                                    }
+                                }
+                                opts.SkippedMetrics = skipped;
+                            }
                             break;
                         default:
                             if (key.StartsWith("timeout-"))
@@ -507,6 +534,31 @@ namespace AvifEncoder
             if (opts.Resume) config.Resume = true;
             config.DryRun = opts.DryRun;
             config.Verbose = opts.Verbose;
+
+            // ★ --skip-metrics：传播到 config，并保护搜索目标指标不被跳过
+            if (opts.SkippedMetrics?.Count > 0)
+            {
+                // 浅拷贝，避免 Remove 副作用污染 opts
+                config.SkippedMetrics = new HashSet<string>(opts.SkippedMetrics, StringComparer.OrdinalIgnoreCase);
+
+                // 搜索目标指标强制计算——映射 MetricMode 到对应的 skip key
+                string searchMetric = config.MetricMode ?? "vmaf";
+                string? protectedKey = searchMetric.ToLowerInvariant() switch
+                {
+                    "xpsnr" or "xpsnr_y" or "xpsnr_u" or "xpsnr_v" or "xpsnr_w" => "xpsnr",
+                    "ssimu2" => "ssimu2",
+                    "butter3" => "butter3",
+                    "gmsd" => "gmsd",
+                    _ => null
+                };
+                if (protectedKey != null && config.IsMetricSkipped(protectedKey))
+                {
+                    config.SkippedMetrics.Remove(protectedKey);
+                    Console.Error.WriteLine(
+                        $"[WARN] 搜索指标 '{searchMetric}' 在 --skip-metrics 中，" +
+                        $"该指标为搜索必需，已忽略跳过并正常计算");
+                }
+            }
 
             // ★ 运行时校验配置，所有模式（含 Lossless）均在此校验
             if (opts.Overwrite && opts.NoClobber)

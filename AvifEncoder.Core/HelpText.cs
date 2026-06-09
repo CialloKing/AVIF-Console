@@ -60,6 +60,17 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
       --target-gmsd <值>       直接设置 GMSD 目标（越小越好，通常取 0~1）
       --target-mix <0-1>       直接设置多指标加权混合评分目标
 
+      --skip-metrics <列表>   跳过指定的质量指标计算，大幅缩短运行时间。
+                              逗号分隔多个值。有效值:
+                                xpsnr        跳过 XPSNR 四通道计算 (~2-5s)
+                                ssimu2       跳过 SSIMULACRA2（需外部工具，~5-15s）
+                                butter3      跳过 Butteraugli（需外部工具，~5-15s）
+                                gmsd         跳过 GMSD 梯度相似度 (~1-3s)
+                                psnr_uncapped 跳过 PSNR 上限重算 (~1-2s)
+                                all_advanced 以上全部（最常用，累计省 ~10-35s）
+                              跳过的指标在 CSV 中留空。
+                              注意: VMAF/SSIM/PSNR-Y/MS-SSIM 一次调用全部计算，无法单独跳过。
+                              示例: --skip-metrics xpsnr,ssimu2
 
       --crf <整数>            手动指定固定 CRF (0-63，同时禁用搜索)
       --crf <最小值>:<最大值>  设置 CRF 搜索范围 (例如 10:50，自动启用搜索)

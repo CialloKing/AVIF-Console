@@ -398,7 +398,8 @@ namespace AvifEncoder
         private async Task ComputeAdvancedMetricsInBackgroundAsync(
             string refPath, string distPath, string outputDir, string cacheKey,
             bool needSsimu2, bool needButter, bool needGmsd,
-            CancellationToken cancellationToken, string? inputPath = null, string? outputFileName = null,
+            CancellationToken cancellationToken, bool needXpsnr = false,
+            string? inputPath = null, string? outputFileName = null,
             int frameCount = 1, string encodingPixFmt = "yuv444p")
         {
             string advName = inputPath != null ? Path.GetFileName(inputPath) : (outputFileName ?? "?");
@@ -414,7 +415,7 @@ namespace AvifEncoder
                 xpsnrPixFmt = Regex.Replace(xpsnrPixFmt, @"p(?=($|[^0-9]))", "p10le");
             else if (bit12 && !xpsnrPixFmt.Contains("12le"))
                 xpsnrPixFmt = Regex.Replace(xpsnrPixFmt, @"p(?=($|[^0-9]))", "p12le");
-            _logger.LogInfo($"[ADV] START {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd} frames={frameCount} pixFmt={encodingPixFmt} png={pngPixFmt} xpsnr={xpsnrPixFmt}");
+            _logger.LogInfo($"[ADV] START {advName} ssimu2={needSsimu2} butter={needButter} gmsd={needGmsd} xpsnr={needXpsnr} frames={frameCount} pixFmt={encodingPixFmt} png={pngPixFmt} xpsnrFmt={xpsnrPixFmt}");
             await _advancedMetricSemaphore.WaitAsync(cancellationToken);
             try
             {
@@ -438,7 +439,8 @@ namespace AvifEncoder
                         (int w, int h, byte[] data)? refGrayAll = null, distGrayAll = null;
 
                         var batchTasks = new List<Task>();
-                        if (needSsimu2 || needButter)
+                        // XPSNR 逐帧也需要 ref/dist PNG 帧，包含 needXpsnr 避免帧提取被跳过
+                        if (needSsimu2 || needButter || needXpsnr)
                         {
                             batchTasks.Add(Task.Run(async () =>
                                 refFrames = await ExtractAllPngFramesAsync(cleanRef, advancedTempDir, "_ref", null, frameCount, pngPixFmt)));
@@ -512,13 +514,17 @@ namespace AvifEncoder
                                     if (raw.HasValue && p3.HasValue) { bagButterRaw.Add(raw.Value); bagButter3.Add(p3.Value); frameButter3 = p3; }
                                 }
 
-                                var (y, u, v) = await ComputeXPSNRFrameAsync(refPng, distPng, xpsnrPixFmt);
-                                if (y.HasValue && u.HasValue && v.HasValue)
+                                // --skip-metrics xpsnr: 跳过动图逐帧 XPSNR
+                                if (needXpsnr)
                                 {
-                                    bagXpsnrY.Add(y.Value); bagXpsnrU.Add(u.Value); bagXpsnrV.Add(v.Value);
-                                    double? w = ComputeWXPSNR(y.Value, u.Value, v.Value, bitDepth);
-                                    if (w.HasValue) bagXpsnrW.Add(w.Value);
-                                    frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
+                                    var (y, u, v) = await ComputeXPSNRFrameAsync(refPng, distPng, xpsnrPixFmt);
+                                    if (y.HasValue && u.HasValue && v.HasValue)
+                                    {
+                                        bagXpsnrY.Add(y.Value); bagXpsnrU.Add(u.Value); bagXpsnrV.Add(v.Value);
+                                        double? w = ComputeWXPSNR(y.Value, u.Value, v.Value, bitDepth);
+                                        if (w.HasValue) bagXpsnrW.Add(w.Value);
+                                        frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
+                                    }
                                 }
                             }
 

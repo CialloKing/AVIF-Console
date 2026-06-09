@@ -301,8 +301,10 @@ namespace AvifEncoder
 
                         if (metrics != null)
                         {
-                            // XPSNR 补算
-                            if (cfg.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
+                            // XPSNR 补算（搜索目标为 xpsnr 时已在 BuildPresetConfig 层保护，此处不会被跳过）
+                            // --skip-metrics xpsnr 仅在目标非 XPSNR 时生效
+                            if (!cfg.IsMetricSkipped("xpsnr") &&
+                                cfg.MetricMode?.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) == true)
                             {
                                 try
                                 {
@@ -320,7 +322,7 @@ namespace AvifEncoder
                             }
 
                             // ★ 搜索模式需要高级指标 → 补算（使用随机目录）
-                            // ★ 搜索模式需要高级指标 → 补算（各自独立）
+                            // --skip-metrics 可分别跳过，但搜索目标已在 BuildPresetConfig 层保护
                             string? needAdvanced = cfg.MetricMode;
                             if (PresetConfig.IsAdvancedMetricMode(needAdvanced))
                             {
@@ -331,9 +333,9 @@ namespace AvifEncoder
                                     // 根据实际需要的指标，有选择地进行 png 转换
                                     string? refPng = null;
                                     string? distPng = null;
-                                    bool needSsimu2 = (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue);
-                                    bool needButter = (needAdvanced == "butter3" && !metrics.Butteraugli_3norm.HasValue);
-                                    bool needGmsd = (needAdvanced == "gmsd" && !metrics.GMSD.HasValue);
+                                    bool needSsimu2 = !cfg.IsMetricSkipped("ssimu2") && (needAdvanced == "ssimu2" && !metrics.SSIMULACRA2.HasValue);
+                                    bool needButter = !cfg.IsMetricSkipped("butter3") && (needAdvanced == "butter3" && !metrics.Butteraugli_3norm.HasValue);
+                                    bool needGmsd = !cfg.IsMetricSkipped("gmsd") && (needAdvanced == "gmsd" && !metrics.GMSD.HasValue);
 
                                     if (needSsimu2 || needButter)
                                     {
