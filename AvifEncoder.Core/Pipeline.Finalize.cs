@@ -383,7 +383,7 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                 }
 
                 if (!result.Success && string.IsNullOrEmpty(result.FailReason))
-                    result.FailReason = $"编码失败（多次重试后）: {result.FailReason}";
+                    result.FailReason = "编码失败（多次重试后）";
 
                 return result;
             }

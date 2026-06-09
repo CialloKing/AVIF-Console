@@ -406,6 +406,7 @@ namespace AvifEncoder
             // ★ 根据编码像素格式推导 PNG 提取格式和 XPSNR 比较格式
             bool bit10 = encodingPixFmt.Contains("10le");
             bool bit12 = encodingPixFmt.Contains("12le");
+            int bitDepth = bit12 ? 12 : bit10 ? 10 : 8;
             string pngPixFmt = (bit10 || bit12) ? "rgb48le" : "rgb24";
             string xpsnrPixFmt = encodingPixFmt.Replace("a", ""); // yuv444p / yuv444p10le / yuv420p 等
             // 保留后缀中的位深标记（10le/12le），只替换基础后缀 "p" → "p10le"/"p12le"
@@ -515,7 +516,7 @@ namespace AvifEncoder
                                 if (y.HasValue && u.HasValue && v.HasValue)
                                 {
                                     bagXpsnrY.Add(y.Value); bagXpsnrU.Add(u.Value); bagXpsnrV.Add(v.Value);
-                                    double? w = ComputeWXPSNR(y.Value, u.Value, v.Value);
+                                    double? w = ComputeWXPSNR(y.Value, u.Value, v.Value, bitDepth);
                                     if (w.HasValue) bagXpsnrW.Add(w.Value);
                                     frameXpsnrY = y; frameXpsnrU = u; frameXpsnrV = v;
                                 }
@@ -532,7 +533,7 @@ namespace AvifEncoder
                             }
 
                             double? frameWXpsnr = frameXpsnrY.HasValue && frameXpsnrU.HasValue && frameXpsnrV.HasValue
-                                ? ComputeWXPSNR(frameXpsnrY, frameXpsnrU, frameXpsnrV) : null;
+                                ? ComputeWXPSNR(frameXpsnrY, frameXpsnrU, frameXpsnrV, bitDepth) : null;
                             csvLines[i + 1] = $"{i}," +  // ← 按帧索引写入，零竞争
                                 $"{(frameSsimu2?.ToString("F6", CultureInfo.InvariantCulture) ?? "")}," +
                                 $"{(frameButter3?.ToString("F6", CultureInfo.InvariantCulture) ?? "")}," +
@@ -1759,16 +1760,18 @@ namespace AvifEncoder
         /// <summary>每文件异步流范围内的动图标记（线程安全，替代共享字段）</summary>
         private readonly System.Threading.AsyncLocal<bool> _isAnimatedFile = new();
 
-        private Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
+        private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             string key = EncodeHelpers.GetNormalizedPathForCache(filePath);
-            // ★ GetOrAdd 会缓存 null 结果（ffprobe 超时/IO错误时），后续请求永久返回 null。
-            //    改用 TryGetValue + TryAdd：只在成功时缓存，失败可重试。
-            if (_probeCache.TryGetValue(key, out var cached))
-                return cached;
+            if (_probeCache.TryGetValue(key, out var cachedTask))
+                return await cachedTask;
             var task = ProbeFileCoreAsync(filePath);
             _probeCache.TryAdd(key, task);
-            return task;
+            // ★ 等待 Task 完成，仅在结果非 null 时保留缓存；null 时移除允许后续重试。
+            var result = await task;
+            if (result == null)
+                _probeCache.TryRemove(key, out _);
+            return result;
         }
 
         private async Task<ProbeInfo?> ProbeFileCoreAsync(string filePath)
@@ -2397,7 +2400,7 @@ namespace AvifEncoder
                                         fileIdToPath[fid] = fp;
                                 }
                             }
-                            catch (JsonException) { break; }
+                            catch (JsonException) { continue; }  // 仅跳过坏行，不丢弃后续有效事件
                         }
                     }
                     catch { }

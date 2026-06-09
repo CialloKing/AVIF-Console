@@ -213,6 +213,8 @@ namespace AvifEncoder.GuiLakeUI
             _optionsPage.SetEncodePage(_encodePage!);
             _optionsPage.SetCommandsPage(_commandsPage!);
             _commandsPage!.UpdateEncoderDefaultParams(_encodePage.GetSelectedEncoder());
+            _commandsPage.RefreshParamsPreview();
+            _commandsPage.UpdateAnimatedCommand();
             _encodePage.UpdateDenoiseLimit();
 
             await RunStartupCheckAsync();

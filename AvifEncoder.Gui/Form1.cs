@@ -503,6 +503,7 @@ namespace AvifEncoder.Gui
                 catch (OperationCanceledException)
                 {
                     AppendLog("编码已被取消。");
+                    return;
                 }
                 finally
                 {

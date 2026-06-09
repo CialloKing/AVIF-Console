@@ -106,9 +106,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             AttachAllEvents();
             // ★ 事件绑定后重设预设，确保 AttachAllEvents→RefreshMetricsFromDetection 等后续调用
             //    不会因 ValueChanged 触发 MarkCustom 而将预设误切为"自定义"
-            _isApplyingPreset = true;
-            SetComboBoxItem(cmbPreset, "balanced");
-            _isApplyingPreset = false;
+            try { _isApplyingPreset = true; SetComboBoxItem(cmbPreset, "balanced"); }
+            finally { _isApplyingPreset = false; }
 
             SetupDragDrop();   // ← 新增此行
             this.FormClosing += FormEncode_FormClosing;
@@ -840,6 +839,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             catch { }
 
             _isEncoding = true;
+            _completedNormally = false;  // ★ 每次编码开始重置，防止上次成功标志残留
             _resumePollTimer?.Stop();
             btnStart.Enabled = false;
             btnStop.Enabled = true;

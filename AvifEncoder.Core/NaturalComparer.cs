@@ -51,22 +51,18 @@ namespace AvifEncoder
                         ny++;
                         yi++;
                     }
-                    // ★ long 最多存 18 位数字（9,223,372,036,854,775,807），超出后 xn/yn 均为截断值。
-                    //    位数不同 → 长数字 > 短数字（如 20 位 > 19 位）。
-                    //    位数相同且双方溢出 → 必须逐字符比较，不能用截断的 long 值。
+                    // ★ long 最多 18 位。任一侧溢出且位数相同时，必须逐字符比较：
+                    //    单侧溢出时截断值不可靠（可能为负数），双侧溢出时截断值相同但实际不同。
                     if (xOverflow || yOverflow)
                     {
                         if (nx != ny) return nx.CompareTo(ny);
-                        if (xOverflow && yOverflow)
+                        int xStart = xi - nx, yStart = yi - ny;
+                        for (int d = 0; d < nx; d++)
                         {
-                            int xStart = xi - nx, yStart = yi - ny;
-                            for (int d = 0; d < nx; d++)
-                            {
-                                int cmp = x[xStart + d].CompareTo(y[yStart + d]);
-                                if (cmp != 0) return cmp;
-                            }
-                            return 0;
+                            int cmp = x[xStart + d].CompareTo(y[yStart + d]);
+                            if (cmp != 0) return cmp;
                         }
+                        return 0;
                     }
                     if (xn != yn)
                     {
