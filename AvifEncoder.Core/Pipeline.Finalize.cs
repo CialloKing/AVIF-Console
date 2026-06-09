@@ -218,19 +218,22 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                     lo = mid + 1;  // 尝试更大的 CRF
                     consecutiveFailures = 0;
                 }
+                else if (curScore < 0)
+                {
+                    // ★ 编码失败：更低 CRF = 更难编码，方向错误。应搜索更高 CRF（更易编码）。
+                    //    对所有指标方向成立（lowerIsBetter 和非 lowerIsBetter 均适用）。
+                    lo = mid + 1;
+                    consecutiveFailures++;
+                    if (consecutiveFailures >= maxConsecutive)
+                    {
+                        SafeWriteLine($"  [{name}] [SAFE] 连续失败 {consecutiveFailures} 次，终止搜索");
+                        break;
+                    }
+                }
                 else
                 {
                     hi = mid - 1;
-                    if (curScore < 0)
-                    {
-                        consecutiveFailures++;
-                        if (consecutiveFailures >= maxConsecutive)
-                        {
-                            SafeWriteLine($"  [{name}] [SAFE] 连续失败 {consecutiveFailures} 次，终止搜索");
-                            break;
-                        }
-                    }
-                    else consecutiveFailures = 0;
+                    consecutiveFailures = 0;
                 }
             }
 

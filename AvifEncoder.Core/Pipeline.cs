@@ -1292,7 +1292,11 @@ namespace AvifEncoder
                     }
                     finally
                     {
-                        item.DoneSignal?.Release();
+                        // ★ 防竞态：ProcessFilesAsync 取消时 doneSignal 被 using Dispose，
+                        //    Worker 的 finally 对已释放 SemaphoreSlim 调 Release 抛 ObjectDisposedException，
+                        //    catch 静默吞掉避免未观察任务异常
+                        try { item.DoneSignal?.Release(); }
+                        catch (ObjectDisposedException) { }
                     }
                 }
             }

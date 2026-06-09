@@ -68,6 +68,12 @@ namespace AvifEncoder
                     {
                         return xn.CompareTo(yn);
                     }
+                    // ★ 数值相等但位数不同（如 "2" vs "02"），以位数少的优先（"2" < "02"）
+                    //    否则后续字符比较时偏移量错位："file2b" vs "file02a" → 'b' vs '0' 而非 'b' vs 'a'
+                    if (nx != ny)
+                    {
+                        return nx.CompareTo(ny);
+                    }
                 }
                 else
                 {

@@ -92,22 +92,25 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             if (skipped.Count > 0)
             {
                 // ★ 搜索目标指标保护（与 CLI BuildPresetConfig 逻辑一致）
-                //    若用户取消勾选了搜索目标对应的指标，强制恢复计算并提示
-                string searchMetric = config.MetricMode ?? "vmaf";
-                string? protectedKey = searchMetric.ToLowerInvariant() switch
+                //    仅在搜索启用时执行 — 固定CRF/无损/遍历模式下无需保护, 避免误导性弹窗
+                if (config.UseCRFSearch)
                 {
-                    "xpsnr" or "xpsnr_y" or "xpsnr_u" or "xpsnr_v" or "xpsnr_w" => "xpsnr",
-                    "ssimu2" => "ssimu2",
-                    "butter3" => "butter3",
-                    "gmsd" => "gmsd",
-                    _ => null
-                };
-                if (protectedKey != null && skipped.Contains(protectedKey))
-                {
-                    skipped.Remove(protectedKey);
-                    MessageBox.Show(
-                        $"搜索目标指标 '{searchMetric}' 为搜索必需，无法跳过。已自动恢复计算。",
-                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    string searchMetric = config.MetricMode ?? "vmaf";
+                    string? protectedKey = searchMetric.ToLowerInvariant() switch
+                    {
+                        "xpsnr" or "xpsnr_y" or "xpsnr_u" or "xpsnr_v" or "xpsnr_w" => "xpsnr",
+                        "ssimu2" => "ssimu2",
+                        "butter3" => "butter3",
+                        "gmsd" => "gmsd",
+                        _ => null
+                    };
+                    if (protectedKey != null && skipped.Contains(protectedKey))
+                    {
+                        skipped.Remove(protectedKey);
+                        MessageBox.Show(
+                            $"搜索目标指标 '{searchMetric}' 为搜索必需，无法跳过。已自动恢复计算。",
+                            "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
                 }
 
                 if (skipped.Count > 0)
@@ -956,7 +959,16 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         // 转发到 FormCommands（保持旧 API 兼容）
         public string GetEncoderCustomParams() => _commandsPage?.GetEncoderCustomParams() ?? "";
         public void SetEncoderCustomParams(string v) => _commandsPage?.SetEncoderCustomParams(v);
-        public void UpdateEncoderDefaultParams(string? encoder) => _commandsPage?.UpdateEncoderDefaultParams(encoder ?? "");
+        public void UpdateEncoderDefaultParams(string? encoder)
+        {
+            // ★ 同步 _currentEncoder，确保降噪参数走正确的编码器分支
+            //    此前仅在构造函数初始化为 libaom-av1，切换编码器后未更新导致降噪功能对非 libaom 失效
+            if (!string.IsNullOrEmpty(encoder))
+            {
+                _currentEncoder = encoder;
+            }
+            _commandsPage?.UpdateEncoderDefaultParams(encoder ?? "");
+        }
         public void SchedulePreviewRefresh() { }  // FormCommands 已自行刷新，此方法仅用于兼容
 
     }

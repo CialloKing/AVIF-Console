@@ -473,7 +473,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     else chroma = "420";
                 }
                 SetComboBoxItem(cmbChroma, chroma);
-                SetComboBoxItem(cmbBitDepth, cfg.BitDepth == 10 ? "10" : (cfg.AutoSource ? "auto" : "8"));
+                SetComboBoxItem(cmbBitDepth, cfg.BitDepth >= 12 ? "12" : cfg.BitDepth >= 10 ? "10" : (cfg.AutoSource ? "auto" : "8"));
 
                 string metricMode = cfg.MetricMode ?? "vmaf";
 
@@ -1618,6 +1618,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (cfg.TryGetProperty("SearchCpuUsed", out var sc)) numSearchCpuUsed.Value = sc.GetInt32();
                 if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) numFinalCpuUsed.Value = fc.GetInt32();
                 if (cfg.TryGetProperty("MaxResolution", out var mr)) numMaxRes.Value = mr.GetInt32();
+                if (cfg.TryGetProperty("ApplyScalingToOutput", out var aso))
+                    chkOutputFullRes.Checked = !aso.GetBoolean();  // 反转: ApplyScaling=true → 不勾选"保持原图"
                 if (cfg.TryGetProperty("MaxJobs", out var mj)) numJobs.Value = mj.GetInt32();
                 if (cfg.TryGetProperty("InputExtensions", out var ie))
                 {
@@ -1644,7 +1646,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
                     optsPage?.SetSsimTimeout(ss.GetInt32());
                 }
-                // ★ 恢复新增字段（EncoderCustomParams / Denoise / ArNrUseMaxFrames / RgbMode）
+                // ★ 恢复新增字段（EncoderCustomParams / Denoise / ArNrUseMaxFrames / RgbMode / DryRun / Verbose）
                 {
                     var optsPage = Application.OpenForms["Form1"] is Form1 mf ? mf.GetOptionsPage() : null;
                     if (optsPage != null)
@@ -1659,6 +1661,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             optsPage.SetRgbMode(rgb.GetString());
                         if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetAnimatedCommand(ac.GetString() ?? "");
+                        if (cfg.TryGetProperty("DryRun", out var dr))
+                            optsPage.SetDryRun(dr.GetBoolean());
+                        if (cfg.TryGetProperty("Verbose", out var vb))
+                            optsPage.SetVerboseOutput(vb.GetBoolean());
                     }
                 }
                 if (cfg.TryGetProperty("FileConflictStrategy", out var fcs))

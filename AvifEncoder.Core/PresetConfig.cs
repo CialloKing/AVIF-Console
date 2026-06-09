@@ -175,6 +175,8 @@ namespace AvifEncoder
         /// <summary>
         /// 判断指定指标是否被跳过。
         /// SkippedMetrics 为 null 时视为全部计算（保持向后兼容）。
+        /// 支持 "all_advanced" 别名展开 — 若集合含 all_advanced, 则 xpsnr/ssimu2/butter3/gmsd/psnr_uncapped 均视为被跳过。
+        /// 当前 CLI/GUI 路径均已在存储前展开别名 (防御性代码), 此处展开覆盖反序列化/配置文件等未知路径。
         /// </summary>
         public bool IsMetricSkipped(string key)
         {
@@ -182,7 +184,17 @@ namespace AvifEncoder
             {
                 return false;
             }
-            return SkippedMetrics.Contains(key);
+            if (SkippedMetrics.Contains(key))
+            {
+                return true;
+            }
+            // 防御性展开：若集合含 all_advanced 别名 (反序列化/配置文件等未展开路径), 等效跳过所有可跳过指标
+            if (SkippedMetrics.Contains("all_advanced") &&
+                key is "xpsnr" or "ssimu2" or "butter3" or "gmsd" or "psnr_uncapped")
+            {
+                return true;
+            }
+            return false;
         }
 
 
@@ -346,10 +358,44 @@ namespace AvifEncoder
                 errors.Add("编码器名称不能为空");
             if (MaxJobs < 0)
                 errors.Add($"MaxJobs ({MaxJobs}) 不能为负数");
-            if (SearchCpuUsed < 0)
-                errors.Add($"SearchCpuUsed ({SearchCpuUsed}) 不能为负数");
-            if (FinalCpuUsed < 0)
-                errors.Add($"FinalCpuUsed ({FinalCpuUsed}) 不能为负数");
+            if (SearchCpuUsed < 0 || SearchCpuUsed > 13)
+                errors.Add($"SearchCpuUsed ({SearchCpuUsed}) 超出有效范围 0-13");
+            if (FinalCpuUsed < 0 || FinalCpuUsed > 13)
+                errors.Add($"FinalCpuUsed ({FinalCpuUsed}) 超出有效范围 0-13");
+            if (Denoise < 0 || Denoise > 15)
+                errors.Add($"Denoise ({Denoise}) 超出有效范围 0-15");
+
+            // ── 质量目标范围校验 ──
+            if (NativeTargetValue.HasValue)
+            {
+                string mode = MetricMode ?? "vmaf";
+                double v = NativeTargetValue.Value;
+                switch (mode.ToLowerInvariant())
+                {
+                    case "vmaf":
+                        if (v < 0 || v > 100) errors.Add($"VMAF 目标 ({v}) 超出有效范围 0-100");
+                        break;
+                    case "psnr":
+                        if (v < 0) errors.Add($"PSNR 目标 ({v}) 不能为负数");
+                        break;
+                    case "ssim" or "msssim" or "mix":
+                        if (v < 0 || v > 1) errors.Add($"{mode.ToUpper()} 目标 ({v}) 超出有效范围 0-1");
+                        break;
+                }
+            }
+            if (XpsnrTargetValue.HasValue)
+            {
+                if (XpsnrTargetValue.Value < 0) errors.Add($"XPSNR 目标 ({XpsnrTargetValue.Value}) 不能为负数");
+            }
+            if (Butteraugli3TargetValue.HasValue)
+            {
+                if (Butteraugli3TargetValue.Value < 0) errors.Add($"Butteraugli 目标 ({Butteraugli3TargetValue.Value}) 不能为负数");
+            }
+            if (GmsdTargetValue.HasValue)
+            {
+                if (GmsdTargetValue.Value < 0) errors.Add($"GMSD 目标 ({GmsdTargetValue.Value}) 不能为负数");
+            }
+
             return errors;
         }
 

@@ -80,7 +80,7 @@ namespace AvifEncoder
             public string? EncoderCustomParams { get; set; }
             public int? Denoise { get; set; }
             public bool ArNrUseMaxFrames { get; set; }
-            public string? RgbMode { get; set; } = "";  // 默认关闭
+            public string? RgbMode { get; set; } = null;  // null=自动检测（与 GUI 默认一致）
             public HashSet<string>? SkippedMetrics { get; set; }
         }
 
@@ -445,6 +445,13 @@ namespace AvifEncoder
                 {
                     opts.MetricMode = opts.DirectTargetMode;
                     opts.QualityTarget = opts.DirectTargetValue;
+                    // ★ 清除 AdvancedMetricMode 残留：--target-vmaf 覆盖 --metric ssimu2 后，
+                    //    AdvancedMetricMode 仍为 "ssimu2"，导致 effectiveMetric 取错。
+                    //    仅当 DirectTargetMode 本身是高级指标时保留。
+                    if (opts.DirectTargetMode is not ("ssimu2" or "butter3" or "gmsd"))
+                    {
+                        opts.AdvancedMetricMode = null;
+                    }
                 }
                 if (opts.QualityTarget.HasValue)
                 {
@@ -497,7 +504,7 @@ namespace AvifEncoder
             if (opts.Denoise.HasValue)
                 config.Denoise = opts.Denoise.Value;
             config.ArNrUseMaxFrames = opts.ArNrUseMaxFrames;
-            config.RgbMode = opts.RgbMode;
+            if (opts.RgbMode != null) config.RgbMode = opts.RgbMode;
             if (opts.Denoise.HasValue && opts.Denoise.Value > 0 && string.IsNullOrEmpty(opts.EncoderCustomParams))
             {
                 string encParams = config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase)
