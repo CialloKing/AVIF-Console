@@ -1227,6 +1227,9 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     config.RgbMode = optsPage.GetRgbMode();
                     config.AnimatedCommand = string.IsNullOrWhiteSpace(optsPage.GetAnimatedCommand())
                         ? null : optsPage.GetAnimatedCommand();
+
+                    // --skip-metrics：从选项页复选框收集被取消勾选的指标
+                    optsPage.ApplySkippedMetrics(config);
                 }
             }
             config.UsePriorSearch = chkPriorSearch.Checked;

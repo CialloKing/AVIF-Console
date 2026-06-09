@@ -33,6 +33,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 UpdateEncoderParamsWithDenoise();
                 RefreshFfmpegPreview();
             };
+
+            // --skip-metrics 复选框默认全部勾选（即默认计算所有指标）
+            chkMetricXpsnr!.Checked = true;
+            chkMetricSsimu2!.Checked = true;
+            chkMetricButter3!.Checked = true;
+            chkMetricGmsd!.Checked = true;
+            chkMetricPsnrUncapped!.Checked = true;
             cmbRgbMode!.SelectedIndexChanged += (s, e) => RefreshFfmpegPreview();
             chkArnrMaxFrames!.Text = "arnr-strength";
             chkArnrMaxFrames!.CheckedChanged += (s, e) =>
@@ -67,6 +74,59 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         public int Denoise => (int)numDenoise.Value;
         public void SetDenoise(int v) => numDenoise.Value = Math.Clamp(v, 0, (int)numDenoise.Maximum);
+
+        // ═══════════════════════════════════════
+        // --skip-metrics 复选框读写
+        // ═══════════════════════════════════════
+
+        /// <summary>收集 UI 中被取消勾选的指标键，写入 PresetConfig.SkippedMetrics（含搜索目标保护）</summary>
+        public void ApplySkippedMetrics(PresetConfig config)
+        {
+            if (chkMetricXpsnr == null) return;
+            var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!chkMetricXpsnr.Checked)       skipped.Add("xpsnr");
+            if (!chkMetricSsimu2.Checked)      skipped.Add("ssimu2");
+            if (!chkMetricButter3.Checked)     skipped.Add("butter3");
+            if (!chkMetricGmsd.Checked)        skipped.Add("gmsd");
+            if (!chkMetricPsnrUncapped.Checked) skipped.Add("psnr_uncapped");
+            if (skipped.Count > 0)
+            {
+                // ★ 搜索目标指标保护（与 CLI BuildPresetConfig 逻辑一致）
+                //    若用户取消勾选了搜索目标对应的指标，强制恢复计算并提示
+                string searchMetric = config.MetricMode ?? "vmaf";
+                string? protectedKey = searchMetric.ToLowerInvariant() switch
+                {
+                    "xpsnr" or "xpsnr_y" or "xpsnr_u" or "xpsnr_v" or "xpsnr_w" => "xpsnr",
+                    "ssimu2" => "ssimu2",
+                    "butter3" => "butter3",
+                    "gmsd" => "gmsd",
+                    _ => null
+                };
+                if (protectedKey != null && skipped.Contains(protectedKey))
+                {
+                    skipped.Remove(protectedKey);
+                    MessageBox.Show(
+                        $"搜索目标指标 '{searchMetric}' 为搜索必需，无法跳过。已自动恢复计算。",
+                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+
+                if (skipped.Count > 0)
+                {
+                    config.SkippedMetrics = skipped;
+                }
+            }
+        }
+
+        /// <summary>从 PresetConfig 恢复复选框勾选状态（勾选=计算，取消=跳过）</summary>
+        public void LoadSkippedMetrics(PresetConfig config)
+        {
+            if (chkMetricXpsnr == null) return;
+            chkMetricXpsnr.Checked       = !config.IsMetricSkipped("xpsnr");
+            chkMetricSsimu2.Checked      = !config.IsMetricSkipped("ssimu2");
+            chkMetricButter3.Checked     = !config.IsMetricSkipped("butter3");
+            chkMetricGmsd.Checked        = !config.IsMetricSkipped("gmsd");
+            chkMetricPsnrUncapped.Checked = !config.IsMetricSkipped("psnr_uncapped");
+        }
 
         /// <summary>根据编码器类型调整降噪数字框的上限和启用状态</summary>
         public void SetDenoiseLimit(int max, bool enabled)
@@ -143,6 +203,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private Label label2 = null!;
         private string _currentEncoder = "libaom-av1";
         private FormEncode? _encodePage;
+        private ModernCheckBox chkMetricXpsnr;
+        private ModernCheckBox chkMetricSsimu2;
+        private ModernCheckBox chkMetricButter3;
+        private ModernCheckBox chkMetricGmsd;
+        private ModernCheckBox chkMetricPsnrUncapped;
+        private Label label3;
         private FormCommands? _commandsPage;
 
         /// <summary>由 Form1 调用，注入编码页引用。</summary>
@@ -495,6 +561,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private void InitializeComponent()
         {
             modernPanel1 = new ModernPanel();
+            label3 = new Label();
+            chkMetricPsnrUncapped = new ModernCheckBox();
+            chkMetricGmsd = new ModernCheckBox();
+            chkMetricButter3 = new ModernCheckBox();
+            chkMetricSsimu2 = new ModernCheckBox();
+            chkMetricXpsnr = new ModernCheckBox();
             label2 = new Label();
             cmbRgbMode = new ModernComboBox();
             label1 = new Label();
@@ -519,6 +591,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             modernPanel1.BackColor = Color.Transparent;
             modernPanel1.BackColor1 = Color.Transparent;
             modernPanel1.BorderColor = Color.Transparent;
+            modernPanel1.Controls.Add(label3);
+            modernPanel1.Controls.Add(chkMetricPsnrUncapped);
+            modernPanel1.Controls.Add(chkMetricGmsd);
+            modernPanel1.Controls.Add(chkMetricButter3);
+            modernPanel1.Controls.Add(chkMetricSsimu2);
+            modernPanel1.Controls.Add(chkMetricXpsnr);
             modernPanel1.Controls.Add(label2);
             modernPanel1.Controls.Add(cmbRgbMode);
             modernPanel1.Controls.Add(label1);
@@ -541,6 +619,77 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             modernPanel1.Name = "modernPanel1";
             modernPanel1.Size = new Size(1114, 681);
             modernPanel1.TabIndex = 0;
+            // 
+            // label3
+            // 
+            label3.AutoSize = true;
+            label3.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold, GraphicsUnit.Point, 134);
+            label3.ForeColor = Color.WhiteSmoke;
+            label3.Location = new Point(264, 129);
+            label3.Name = "label3";
+            label3.Size = new Size(240, 26);
+            label3.TabIndex = 83;
+            label3.Text = "CSV导出质量指标计算设置";
+            // 
+            // chkMetricPsnrUncapped
+            // 
+            chkMetricPsnrUncapped.AnimationFPS = 0;
+            chkMetricPsnrUncapped.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkMetricPsnrUncapped.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
+            chkMetricPsnrUncapped.ForeColor = Color.WhiteSmoke;
+            chkMetricPsnrUncapped.Location = new Point(269, 293);
+            chkMetricPsnrUncapped.Name = "chkMetricPsnrUncapped";
+            chkMetricPsnrUncapped.Size = new Size(363, 24);
+            chkMetricPsnrUncapped.TabIndex = 82;
+            chkMetricPsnrUncapped.Text = "PSNR上限突破重计算（仅 PSNR≥59.5dB 时触发）";
+            // 
+            // chkMetricGmsd
+            // 
+            chkMetricGmsd.AnimationFPS = 0;
+            chkMetricGmsd.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkMetricGmsd.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
+            chkMetricGmsd.ForeColor = Color.WhiteSmoke;
+            chkMetricGmsd.Location = new Point(269, 262);
+            chkMetricGmsd.Name = "chkMetricGmsd";
+            chkMetricGmsd.Size = new Size(150, 24);
+            chkMetricGmsd.TabIndex = 81;
+            chkMetricGmsd.Text = "GMSD";
+            // 
+            // chkMetricButter3
+            // 
+            chkMetricButter3.AnimationFPS = 0;
+            chkMetricButter3.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkMetricButter3.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
+            chkMetricButter3.ForeColor = Color.WhiteSmoke;
+            chkMetricButter3.Location = new Point(269, 232);
+            chkMetricButter3.Name = "chkMetricButter3";
+            chkMetricButter3.Size = new Size(150, 24);
+            chkMetricButter3.TabIndex = 80;
+            chkMetricButter3.Text = "Butteraugli";
+            // 
+            // chkMetricSsimu2
+            // 
+            chkMetricSsimu2.AnimationFPS = 0;
+            chkMetricSsimu2.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkMetricSsimu2.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
+            chkMetricSsimu2.ForeColor = Color.WhiteSmoke;
+            chkMetricSsimu2.Location = new Point(269, 202);
+            chkMetricSsimu2.Name = "chkMetricSsimu2";
+            chkMetricSsimu2.Size = new Size(150, 24);
+            chkMetricSsimu2.TabIndex = 79;
+            chkMetricSsimu2.Text = "SSIMULACRA2";
+            // 
+            // chkMetricXpsnr
+            // 
+            chkMetricXpsnr.AnimationFPS = 0;
+            chkMetricXpsnr.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
+            chkMetricXpsnr.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
+            chkMetricXpsnr.ForeColor = Color.WhiteSmoke;
+            chkMetricXpsnr.Location = new Point(269, 167);
+            chkMetricXpsnr.Name = "chkMetricXpsnr";
+            chkMetricXpsnr.Size = new Size(150, 24);
+            chkMetricXpsnr.TabIndex = 78;
+            chkMetricXpsnr.Text = "XPSNR";
             // 
             // label2
             // 
@@ -626,7 +775,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkDryRun.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkDryRun.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkDryRun.ForeColor = Color.WhiteSmoke;
-            chkDryRun.Location = new Point(269, 202);
+            chkDryRun.Location = new Point(634, 57);
             chkDryRun.Name = "chkDryRun";
             chkDryRun.Size = new Size(150, 24);
             chkDryRun.TabIndex = 64;
@@ -638,7 +787,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkVerbose.BoxCheckedBackColor = Color.FromArgb(0, 120, 215);
             chkVerbose.BoxUncheckedBackColor = Color.FromArgb(30, 50, 50, 50);
             chkVerbose.ForeColor = Color.WhiteSmoke;
-            chkVerbose.Location = new Point(269, 171);
+            chkVerbose.Location = new Point(634, 88);
             chkVerbose.Name = "chkVerbose";
             chkVerbose.Size = new Size(150, 24);
             chkVerbose.TabIndex = 63;
