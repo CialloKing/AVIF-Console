@@ -23,21 +23,24 @@ namespace AvifEncoder
                 return await ProcessFilesSweepAsync(files, config);
             }
             var results = new ConcurrentDictionary<int, EncodeResult>();
-            int remaining = files.Count;
             using var doneSignal = new SemaphoreSlim(0, files.Count);
             var token = _globalCts?.Token ?? CancellationToken.None;
 
             // 通过 Channel 投递文件，长驻 Worker 自动消费
+            // ★ 记录实际入队数量：取消时 WriteAsync 抛异常或 break 提前退出，
+            //    doneSignal.WaitAsync 必须等入队数量而非 files.Count，否则死锁
+            int enqueuedCount = 0;
             foreach (var (path, idx) in files)
             {
                 if (token.IsCancellationRequested) break;
                 await _fileChannel.Writer.WriteAsync(
                     new FileWorkItem(path, idx, config, isRetry, results, doneSignal),
                     token);
+                enqueuedCount++;
             }
 
             // 等待 Worker 处理完成
-            for (int i = 0; i < files.Count; i++)
+            for (int i = 0; i < enqueuedCount; i++)
                 await doneSignal.WaitAsync(token);
 
             return results.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value);
@@ -502,7 +505,10 @@ namespace AvifEncoder
                 return (0, null, "");
 
             string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(workingInputPath);
-            string cleanPixFmt = encodeResult.ActualPixFmt?.Replace("a", "") ?? "";
+            // ★ 精确移除 Alpha 通道标识：仅处理 yuva/rgba/bgra/gbra，避免 "gray"→"gry" 等误伤
+            string actualP = encodeResult.ActualPixFmt ?? "";
+            bool hasAlpha = actualP.Contains("yuva") || actualP.Contains("rgba") || actualP.Contains("bgra") || actualP.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
+            string cleanPixFmt = hasAlpha ? actualP.Replace("a", "") : actualP;
             int actualDepth = encodeResult.ActualPixFmt?.Contains("12le") == true ? 12
                 : encodeResult.ActualPixFmt?.Contains("10le") == true ? 10 : 8;
             string aomParams = config.GetEffectiveAomParams();

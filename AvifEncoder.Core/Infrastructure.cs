@@ -208,15 +208,66 @@ namespace AvifEncoder
             }
             catch { /* 忽略 */ }
 
-            // 3. 回退到 PATH
+            // 3. 回退到进程级 PATH（继承自父进程，是启动时的快照）
+            //    ★ 同时建立去重集，供步骤 4 注册表级 PATH 回退使用
             var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var p in paths ?? Array.Empty<string>())
             {
-                string full = Path.Combine(p,
+                if (string.IsNullOrWhiteSpace(p))
+                    continue;
+                string normalized = p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                seen.Add(normalized);
+                string full = Path.Combine(normalized,
                     isWindows ? $"{cleanName}.exe" : cleanName);
                 if (File.Exists(full))
                     return full;
             }
+
+            // 4. 进程级 PATH 未命中时，回退到注册表级 PATH（Machine + User）
+            //    进程级 PATH 是父进程启动时的快照——安装新工具后不会自动更新；
+            //    注册表级 PATH 直接读取 HKLM/HKCU，能反映最近的环境变更。
+            //    典型场景：VS 启动后才安装 ffmpeg，调试运行找不到可执行文件。
+
+            try
+            {
+                var machinePath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
+                if (!string.IsNullOrEmpty(machinePath))
+                {
+                    foreach (var p in machinePath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string normalized = p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        if (seen.Add(normalized))
+                        {
+                            string full = Path.Combine(normalized,
+                                isWindows ? $"{cleanName}.exe" : cleanName);
+                            if (File.Exists(full))
+                                return full;
+                        }
+                    }
+                }
+            }
+            catch { /* 注册表读取可能因权限不足而失败，静默跳过 */ }
+
+            try
+            {
+                var userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+                if (!string.IsNullOrEmpty(userPath))
+                {
+                    foreach (var p in userPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string normalized = p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        if (seen.Add(normalized))
+                        {
+                            string full = Path.Combine(normalized,
+                                isWindows ? $"{cleanName}.exe" : cleanName);
+                            if (File.Exists(full))
+                                return full;
+                        }
+                    }
+                }
+            }
+            catch { /* 注册表读取可能因权限不足而失败，静默跳过 */ }
 
             return null;
         }

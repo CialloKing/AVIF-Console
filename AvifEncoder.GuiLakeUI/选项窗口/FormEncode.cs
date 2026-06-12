@@ -960,6 +960,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void ShowProgressToast()
         {
+            if (!Form1.ToastAvailable) return;  // ★ Runtime 未安装时跳过，防止 lazy init 弹安装对话框
             try
             {
                 var req = new LakeUI.Notifications.LakeNotificationRequest
@@ -992,6 +993,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private async void UpdateProgressToast(int percent)
         {
+            if (!Form1.ToastAvailable) return;  // ★ Runtime 未安装时跳过
             try
             {
                 await LakeUI.Notifications.LakeNotificationManager.UpdateProgressAsync("avif-encode", "avif-encode",
@@ -1009,6 +1011,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private static async void SendCompletionToast(bool success)
         {
+            if (!Form1.ToastAvailable) return;  // ★ Runtime 未安装时跳过
             try
             {
                 // 先移除进度通知

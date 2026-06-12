@@ -18,7 +18,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
         private void LoadAboutText()
         {
-            string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.0";
+            string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.1.0";
             string about = $@"AVIF 编码器  v{version}
 
 ===== 功能特性 =====

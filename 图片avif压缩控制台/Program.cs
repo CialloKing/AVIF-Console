@@ -19,7 +19,7 @@ namespace AvifEncoder
     {
         private static string AppVersion =>
     System.Reflection.Assembly.GetEntryAssembly()?
-        .GetName().Version?.ToString(3) ?? "1.1.0";
+        .GetName().Version?.ToString(3) ?? "2.1.0";
 
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);

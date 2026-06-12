@@ -68,7 +68,7 @@ namespace AvifEncoder
 
                 // 2. 获取编码器列表
                 Log("\n正在检测可用的 AV1 编码器...");
-                var encoders = await GetAvailableEncodersAsync();
+                var encoders = await GetAvailableEncodersAsync(ffmpeg!);
                 Log($"当前 ffmpeg 支持的 AV1 编码器: {string.Join(", ", encoders)}");
 
                 // 3. 测试编码器
@@ -76,7 +76,7 @@ namespace AvifEncoder
                 byte[] bmpBytes = CreateTestBmp();
                 File.WriteAllBytes(testBmpPath, bmpBytes);
 
-                var tasks = encoders.Select(enc => TestEncoderAsync(enc, testBmpPath, workDir));
+                var tasks = encoders.Select(enc => TestEncoderAsync(enc, testBmpPath, workDir, ffmpeg!));
                 var encoderResults = await Task.WhenAll(tasks);
                 result.Encoders = [.. encoderResults];
 
@@ -147,7 +147,7 @@ namespace AvifEncoder
         }
 
         // ========== 以下私有方法保持不变 ==========
-        private static async Task<List<string>> GetAvailableEncodersAsync()
+        private static async Task<List<string>> GetAvailableEncodersAsync(string ffmpegPath)
         {
             var list = new List<string>();
             Process? p = null;
@@ -155,7 +155,7 @@ namespace AvifEncoder
             {
                 p = new Process
                 {
-                    StartInfo = new ProcessStartInfo("ffmpeg", "-encoders")
+                    StartInfo = new ProcessStartInfo(ffmpegPath, "-encoders")
                     {
                         UseShellExecute = false,
                         CreateNoWindow = true,
@@ -197,7 +197,7 @@ namespace AvifEncoder
             return list;
         }
 
-        private static async Task<EncoderStatus> TestEncoderAsync(string enc, string testInput, string testDir)
+        private static async Task<EncoderStatus> TestEncoderAsync(string enc, string testInput, string testDir, string ffmpegPath)
         {
             bool ok = false;
             string note = "不可用";
@@ -217,7 +217,7 @@ namespace AvifEncoder
                 string escOutput = EncodeHelpers.EscapeArg(outFile);
                 string args = $"-y -loglevel error -i \"{escInput}\" -c:v {enc} -pix_fmt yuv420p {qpArg} -frames:v 1 \"{escOutput}\"";
 
-                var psi = new ProcessStartInfo("ffmpeg", args)
+                var psi = new ProcessStartInfo(ffmpegPath, args)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,

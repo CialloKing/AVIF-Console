@@ -21,6 +21,9 @@ namespace AvifEncoder.GuiLakeUI
         private FormOtherOptions? _otherOptionsPage;
         private FormAbout? _aboutPage;
 
+        // ★ Toast 通知可用性标志：TryInitialize 失败后置 false，防止 lazy init 弹 Runtime 安装对话框
+        internal static bool ToastAvailable { get; private set; }
+
         public Form1()
         {
             InitializeComponent();
@@ -232,10 +235,18 @@ namespace AvifEncoder.GuiLakeUI
                 if (!LakeUI.Notifications.LakeNotificationManager.TryInitialize(
                     new() { DisplayName = "AVIF 图片压缩", ShowRuntimeInstallerUi = false }, out err))
                 {
+                    ToastAvailable = false;
                     _logPage?.AppendLog("[通知] Windows App Runtime 未安装，Toast 通知不可用");
                 }
+                else
+                {
+                    ToastAvailable = true;
+                }
             }
-            catch { }
+            catch
+            {
+                ToastAvailable = false;
+            }
         }
 
         private async Task RunStartupCheckAsync()
