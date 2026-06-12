@@ -16,10 +16,14 @@
 		<PublishReadyToRun>false</PublishReadyToRun>
 	</PropertyGroup>
 
-	<!-- ★ 单文件发布：Windows App SDK 要求 MSIX 工具链打包 .pri 资源 -->
+	<!-- ★ 单文件发布：Windows App SDK Base 包会校验 MSIX/SelfContained 等，
+	    但通知已用手动 TryInitialize + Bootstrap.TryInitialize，无需这些检查 -->
 	<PropertyGroup Condition="'$(PublishSingleFile)'=='true'">
 		<EnableMsixTooling>true</EnableMsixTooling>
+		<WindowsPackageType>None</WindowsPackageType>
 		<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+		<WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+		<WindowsAppSDKSingleFileVerifyConfiguration>false</WindowsAppSDKSingleFileVerifyConfiguration>
 	</PropertyGroup>
 
   <ItemGroup>

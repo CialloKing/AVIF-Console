@@ -370,3 +370,11 @@ FodyWeavers.xsd
 
 # VMAF 输出文件，不属源码
 __vmaf.json
+
+# VMAF 模型文件（外部下载），不属源码
+ms_ssim.json
+ms_ssim2.json
+vmaf_ms_ssim.json
+
+# Reasonix 配置文件，不提交
+reasonix.toml
