@@ -367,6 +367,7 @@ FodyWeavers.xsd
 
 # 工具运行时产生的临时文件
 .reasonix/
+.codegraph/
 
 # VMAF 输出文件，不属源码
 __vmaf.json
