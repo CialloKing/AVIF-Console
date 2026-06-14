@@ -50,7 +50,7 @@
             txtAbout.AllowDrop = true;
             txtAbout.AnimationFPS = 0;
             txtAbout.BackColor1 = Color.Transparent;
-            txtAbout.BackgroundSource = modernPanel1;
+            // ★ LakeUI v2.8 BackgroundPenetrationV2 切页时可能死循环，去掉后影响仅背景无毛玻璃效果
             txtAbout.BorderColor = Color.Transparent;
             txtAbout.BorderColorFocus = Color.Transparent;
             txtAbout.Dock = DockStyle.Fill;

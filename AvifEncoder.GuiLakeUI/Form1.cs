@@ -171,6 +171,9 @@ namespace AvifEncoder.GuiLakeUI
             _otherOptionsPage = new FormOtherOptions();
             _aboutPage = new FormAbout();
 
+            // ★ LakeUI v2.8 切换页抑制刷新会导致 Help/About 页卡死（BackgroundPenetrationV2 + OuterToInnerRefreshScheduler 交互），关闭此优化
+            modernTabListControl1.SuppressBoundPageRefreshOnSwitch = false;
+
             MakePanelTransparent(_encodePage.modernPanel1);
             MakePanelTransparent(_optionsPage.modernPanel1);
             MakePanelTransparent(_commandsPage.modernPanel1);
