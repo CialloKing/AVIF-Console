@@ -171,6 +171,11 @@ namespace AvifEncoder.GuiLakeUI
             _otherOptionsPage = new FormOtherOptions();
             _aboutPage = new FormAbout();
 
+            // 由 Tab 容器统一向主窗体取 Image Backdrop 背景；页面根面板再采样 Tab 容器。
+            // LakeUI v2.10 会跟踪 BackgroundSource 的祖先失效，若每个页面都直接指向 Form，
+            // 快速切页时容易形成 Form -> 页面 -> Form 的重复刷新链。
+            modernTabListControl1.BackgroundSource = this;
+
             // ★ LakeUI v2.8 切换页抑制刷新会导致 Help/About 页卡死（BackgroundPenetrationV2 + OuterToInnerRefreshScheduler 交互），关闭此优化
             modernTabListControl1.SuppressBoundPageRefreshOnSwitch = false;
 
@@ -273,7 +278,7 @@ namespace AvifEncoder.GuiLakeUI
         {
             panel.BackColor = Color.Transparent;
             panel.BackColor1 = Color.Transparent;
-            panel.BackgroundSource = this;
+            panel.BackgroundSource = modernTabListControl1;
         }
         /// <summary>
         /// 递归为指定控件及其所有子控件设置字体
