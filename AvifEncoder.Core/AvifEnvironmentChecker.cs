@@ -231,8 +231,12 @@ namespace AvifEncoder
                 try
                 {
                     using var testCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    // ★ 必须同时消费 stdout 和 stderr：ffmpeg 的 -loglevel error 仅控制 stderr，
+                    //    stdout 仍可能输出 stream mapping 等信息，管道满 → 进程阻塞 → 死锁
+                    var stdoutTask = p.StandardOutput.ReadToEndAsync();
                     string stderr = await p.StandardError.ReadToEndAsync();
                     await p.WaitForExitAsync(testCts.Token);
+                    await stdoutTask;   // 确保 stdout 已被完全消费
 
                     if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
                     {

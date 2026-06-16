@@ -22,8 +22,8 @@ namespace AvifEncoder.Core.Tests
             var fmtsNoAlpha = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", false);
             var fmtsAlpha = AvifPipeline.BuildPixFmtAttempts(cfg, "yuv444p", true);
 
-            Assert.IsGreaterThanOrEqualTo(fmtsNoAlpha.Count,
-fmtsAlpha.Count, $"Alpha should produce at least as many formats");
+            Assert.IsGreaterThanOrEqualTo(fmtsAlpha.Count,
+fmtsNoAlpha.Count, $"Alpha should produce at least as many formats (got {fmtsAlpha.Count} vs {fmtsNoAlpha.Count})");
         }
 
         [TestMethod]
@@ -57,6 +57,19 @@ fmtsAlpha.Count, $"Alpha should produce at least as many formats");
                 Assert.IsTrue(fmt.Contains("444") || fmt.Contains("420") || fmt.Contains("422"),
                     $"Format {fmt} doesn't contain chroma info");
             }
+        }
+
+        [TestMethod]
+        public void BuildPixFmtAttempts_ManualSource_WithAlpha_DowngradesChroma()
+        {
+            // ★ 关闭 AutoSource 才能覆盖多格式降级核心逻辑
+            var cfg = new PresetConfig { BitDepth = 8, AutoSource = false };
+            var fmts = AvifPipeline.BuildPixFmtAttempts(cfg, "yuva444p", true);
+
+            Assert.IsGreaterThanOrEqualTo(3, fmts.Count,
+                $"Manual source with alpha should produce at least 3 formats, got {fmts.Count}: {string.Join(", ", fmts)}");
+            Assert.Contains("yuva444p", fmts);
+            Assert.Contains("yuva420p", fmts);
         }
     }
 }

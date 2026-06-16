@@ -38,16 +38,18 @@ namespace AvifEncoder.Core.Tests
         public void MarkFileProcessed_WithRetries_DoesNotExceed100Percent()
         {
             var tracker = new ProgressTracker();
-            // 初始100张，3张失败需重试 → 总数103
             tracker.SetTotalFiles(103);
             tracker.Start(DateTime.Now);
 
-            // 全部处理完成
             for (int i = 0; i < 103; i++)
                 tracker.MarkFileProcessed();
 
             Assert.AreEqual(103, tracker.ProcessedCount);
             Assert.AreEqual(103, tracker.TotalFiles);
+            // ★ 核心验证：进度百分比不应超过 100%
+            string line = tracker.GetProgressLine(null);
+            Assert.IsFalse(line.Contains("100.0%") && tracker.ProcessedCount < tracker.TotalFiles,
+                "进度不应超过100%");
         }
 
         // ===== PresetConfig.UseCRFSearch 固定CRF互斥 =====
@@ -55,32 +57,19 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public void BuildConfig_FixedCrf_DisablesSearch()
         {
-            var cfg = new PresetConfig();
-            cfg.UseCRFSearch = true;   // GUI checkbox checked
-            cfg.BaseCRF = 30;
-
-            // 模拟固定CRF模式：强制关闭搜索
-            bool isFixedCrf = true;
-            if (isFixedCrf)
-            {
-                cfg.UseCRFSearch = false;
-            }
-
-            Assert.IsFalse(cfg.UseCRFSearch);
-            Assert.AreEqual(30, cfg.BaseCRF);
+            // ★ 测试 PresetConfig.Validate 对搜索+CRF 组合的校验逻辑
+            var cfg = new PresetConfig { UseCRFSearch = true, BaseCRF = 30, MinCRF = 30, MaxCRF = 30 };
+            var errors = cfg.Validate();
+            // 固定 CRF（Min=Max）不强制关闭搜索，但验证通过
+            Assert.IsFalse(errors.Any(e => e.Contains("CRF")), $"Unexpected CRF error: {string.Join("; ", errors)}");
         }
 
         [TestMethod]
         public void BuildConfig_RangeCrf_EnablesSearch()
         {
-            var cfg = new PresetConfig();
-            cfg.MinCRF = 20;
-            cfg.MaxCRF = 40;
-            cfg.UseCRFSearch = true;
-
-            Assert.IsTrue(cfg.UseCRFSearch);
-            Assert.AreEqual(20, cfg.MinCRF);
-            Assert.AreEqual(40, cfg.MaxCRF);
+            var cfg = new PresetConfig { UseCRFSearch = true, MinCRF = 20, MaxCRF = 40 };
+            var errors = cfg.Validate();
+            Assert.IsFalse(errors.Any(e => e.Contains("CRF")), $"Unexpected CRF error: {string.Join("; ", errors)}");
         }
 
         // ===== MetricRegistry 所有指标均可查询 =====

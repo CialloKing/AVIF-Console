@@ -38,7 +38,9 @@ namespace AvifEncoder.GuiLakeUI
             if (fontDlg.ShowDialog(this) == DialogResult.OK)
             {
                 Font selectedFont = fontDlg.SelectedFont;
+                _currentFont?.Dispose();
                 _currentFont = selectedFont;
+                btnSelectFont.Font?.Dispose();
                 btnSelectFont.Font = selectedFont;
                 btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
                 ApplyFontToApp(selectedFont);
@@ -54,7 +56,9 @@ namespace AvifEncoder.GuiLakeUI
             if (fontDlg.ShowDialog(this) == DialogResult.OK)
             {
                 Font selectedFont = fontDlg.Font;
+                _currentFont?.Dispose();
                 _currentFont = selectedFont;
+                btnSelectFont.Font?.Dispose();
                 btnSelectFont.Font = selectedFont;
                 btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
                 ApplyFontToApp(selectedFont);
@@ -130,8 +134,11 @@ namespace AvifEncoder.GuiLakeUI
             try
             {
                 var font = new Font(config.FontFamily, config.FontSize);
+                // ★ 先释放旧字体，避免 GDI 句柄泄露
+                _currentFont?.Dispose();
                 _currentFont = font;
                 ApplyFontToApp(font);
+                btnSelectFont.Font?.Dispose();
                 btnSelectFont.Font = font;
                 btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
             }
@@ -178,11 +185,10 @@ namespace AvifEncoder.GuiLakeUI
         private async void btnCheckUpdate_Click(object? sender,
             EventArgs e)
         {
-            btnCheckUpdate.Enabled = false;
-            btnCheckUpdate.Text = "正在检查...";
-
             try
             {
+                btnCheckUpdate.Enabled = false;
+                btnCheckUpdate.Text = "正在检查...";
                 var manager = new UpdateManager();
                 var release =
                     await manager.CheckForUpdateAsync();

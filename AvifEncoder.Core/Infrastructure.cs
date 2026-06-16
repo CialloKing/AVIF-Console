@@ -112,7 +112,7 @@ namespace AvifEncoder
                 eta = FormatTimeSpanLocal(TimeSpan.FromSeconds(elapsed.TotalSeconds / done * (total - done)));
             else if (done == total)
                 eta = "已完成";
-            string line = $"[{done}/{total} {pct,5:F4}%]";
+            string line = $"[{done}/{total} {pct,5:F1}%]";
 
             if (r != null)
             {

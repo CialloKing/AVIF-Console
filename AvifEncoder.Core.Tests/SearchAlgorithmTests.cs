@@ -118,5 +118,79 @@ namespace AvifEncoder.Core.Tests
                 // Expected
             }
         }
+
+        [TestMethod]
+        public async Task BinarySearch_NaN_SkipsAndContinues()
+        {
+            int callCount = 0;
+            Func<int, Task<double>> getScore = crf =>
+            {
+                callCount++;
+                return Task.FromResult(crf == 30 ? double.NaN : 0.95);
+            };
+
+            var cfg = new PresetConfig { MetricMode = "ssim", NativeTargetValue = 0.95 };
+            var (bestCrf, _) = await AvifPipeline.StandardBinarySearch(
+                "test.png", 0, cfg, "yuv420p", false,
+                "test", 0.95, getScore,
+                CancellationToken.None, 20, 50);
+
+            Assert.IsTrue(callCount > 0, "Search should have been performed");
+        }
+
+        [TestMethod]
+        public async Task BinarySearch_LowerIsBetter_WithNegationWrapper()
+        {
+            // ★ 复现 HybridSearchCRFAsync:151-161 的取反包装逻辑
+            //   越小越好指标（butter3/gmsd）通过取反映射到 >= 比较
+            double butterTarget = 2.0;
+            bool lowerIsBetter = true;
+
+            Func<int, Task<double>> rawGetScore = crf =>
+            {
+                // 模拟：CRF 越低质量越好 → butteraugli 值越小
+                double score = crf switch
+                {
+                    <= 24 => 0.5,   // 远超目标
+                    25 => 1.0,
+                    26 => 1.3,
+                    27 => 1.6,
+                    28 => 1.8,
+                    29 => 1.95,  // 刚好达标 (< 2.0)
+                    30 => 2.05,  // 不达标
+                    _ => 3.0
+                };
+                return Task.FromResult(score);
+            };
+
+            // 取反包装（与 HybridSearchCRFAsync 逻辑一致）
+            Func<int, Task<double>> getScore;
+            double searchTarget;
+            if (lowerIsBetter)
+            {
+                var original = rawGetScore;
+                getScore = async crf =>
+                {
+                    double s = await original(crf);
+                    return s >= 0 ? -s : s;
+                };
+                searchTarget = -butterTarget;  // 2.0 → -2.0
+            }
+            else
+            {
+                getScore = rawGetScore;
+                searchTarget = butterTarget;
+            }
+
+            var cfg = new PresetConfig { MetricMode = "butter3", NativeTargetValue = butterTarget };
+            var (bestCrf, evals) = await AvifPipeline.StandardBinarySearch(
+                "test.png", 0, cfg, "yuv420p", false,
+                "test", searchTarget, getScore,
+                CancellationToken.None, 20, 40, lowerIsBetter: true);
+
+            // 达标 CRF≈29（score=1.95≤2.0），搜索应找到 29 附近
+            Assert.IsTrue(bestCrf >= 27 && bestCrf <= 31,
+                $"Expected CRF near 29 for lower-is-better butterTarget=2.0, got {bestCrf} in {evals} evals");
+        }
     }
 }
