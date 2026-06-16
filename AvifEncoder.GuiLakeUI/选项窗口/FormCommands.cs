@@ -21,14 +21,17 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             {
                 txtEncoderParams.Text = FormOptions.GetDefaultPrivateParams(_currentEncoder);
                 RefreshParamsPreview();
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnResetEncoderParams, "已恢复为默认编码参数");
             };
             btnCopyFfmpegCommand.Click += (s, e) =>
             {
                 try { Clipboard.SetText(txtParamsPreview.Text); } catch { }
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnCopyFfmpegCommand, "已复制到剪贴板");
             };
             btnResetExtensions.Click += (s, e) =>
             {
                 txtExtensions.Text = ".jpg,.jpeg,.png,.webp,.gif";
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnResetExtensions, "已恢复为默认后缀名");
             };
             btnAnimatedCommand.Click += (s, e) => ResetAnimatedCommand();
         }

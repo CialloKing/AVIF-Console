@@ -1065,18 +1065,21 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private void BtnUpdateJobs_Click(object? sender, EventArgs e)
         {
             int newJobs = (int)numJobs.Value;
-            if (newJobs < 1) newJobs = 1;
+            bool isAuto = newJobs < 1;
+            if (isAuto) newJobs = 1;
             if (_pipeline != null)
             {
                 int result = _pipeline.SetMaxJobs(newJobs);
                 if (numJobs.Value != result) numJobs.Value = result;
                 LogPage?.AppendLog($"[并发] 实时更新为 {result}");
-                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs, $"并发已实时更新为 {result}");
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs,
+                    isAuto ? $"并发已设为自动（当前 {result}）" : $"并发已实时更新为 {result}");
             }
             else
             {
-                LogPage?.AppendLog($"[并发] 已设为 {newJobs}");
-                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs, $"并发数已设为 {newJobs}");
+                LogPage?.AppendLog(isAuto ? "[并发] 已设为自动" : $"[并发] 已设为 {newJobs}");
+                LakeUI.ExFloatingTipModule.ExFloatingTip(btnUpdateJobs,
+                    isAuto ? "并发已设为自动" : $"并发数已设为 {newJobs}");
             }
         }
 
