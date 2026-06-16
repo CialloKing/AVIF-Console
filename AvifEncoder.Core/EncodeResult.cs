@@ -14,7 +14,7 @@ namespace AvifEncoder
         public int UsedCRF { get; set; }
         public double FinalSSIM { get; set; }
         public double CompressionRatio => OriginalSize == 0 ? 0 : Math.Round(1.0 - (double)OutputSize / OriginalSize, 4);
-        public double BPP => Width > 0 && Height > 0 ? (double)OriginalSize * 8 / (Width * Height) : 0;
+        public double BPP => Width > 0 && Height > 0 ? (double)OutputSize * 8 / (Width * Height) : 0;
         public string Encoder { get; set; } = "";
         public TimeSpan EncodeTime { get; set; }
         public TimeSpan SearchTime { get; set; }
@@ -33,6 +33,7 @@ namespace AvifEncoder
 
         public string? CommandLine { get; set; }
         public string? AdvancedMetricsCacheKey { get; set; }
+        internal bool CountFailureInProgress { get; set; } = true;
 
         public double? FinalVMAF { get; set; }
         public double? FinalPSNR_Y { get; set; }

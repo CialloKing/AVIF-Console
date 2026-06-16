@@ -122,6 +122,7 @@ namespace AvifEncoder
                                     PixelFormat = encInfo.ActualPixFmt,
                                     Encoder = config.Encoder,
                                     CommandLine = cmd,
+                                    CountFailureInProgress = true,
                                 };
                                 MarkProcessed(failResult);
                                 results.Add(failResult);
@@ -129,6 +130,7 @@ namespace AvifEncoder
                             }
 
                             // 质量指标计算
+                            string sweepJournalPath = GetSweepJournalPath(inputPath, capturedCrf);
                             (double ssim, QualityMetrics? metrics, string sweepCacheKey) = await EvaluateFinalQualityAsync(
                                 workingInput, outputPath,
                                 new FinalEncodeResult
@@ -152,7 +154,8 @@ namespace AvifEncoder
                                     UseSafeModeFinalEncode = false,
                                     SearchEvalCount = 0
                                 },
-                                config
+                                config,
+                                sweepJournalPath
                             );
 
                             var result = new EncodeResult
@@ -222,6 +225,25 @@ namespace AvifEncoder
                 try
                 {
                     await Task.WhenAll(crfTasks);
+                    // ★ requeueUnfinished: true — 未完成的指标任务放入全局队列，最终汇总阶段统一等待
+                    await WaitForBackgroundMetricTasksAsync(null, "SWEEP", requeueUnfinished: true);
+                    int expectedCount = config.MaxCRF - config.MinCRF + 1;
+                    int baseIndex = file.index * 1000;
+                    var fileResults = results
+                        .Where(r => r.InputPath.Equals(inputPath, StringComparison.OrdinalIgnoreCase)
+                                    && r.Index >= baseIndex + config.MinCRF
+                                    && r.Index <= baseIndex + config.MaxCRF)
+                        .ToList();
+                    var (completed, _, _, _) = ReplayJournalWithMetrics(0);
+                    bool allCrfJournalSuccess = Enumerable
+                        .Range(config.MinCRF, expectedCount)
+                        .All(crf => completed.Contains(GetSweepJournalPath(inputPath, crf)));
+                    if (fileResults.Count == expectedCount &&
+                        fileResults.All(r => r.Success) &&
+                        allCrfJournalSuccess)
+                    {
+                        AppendJournal(inputPath, JournalEventTypes.Success);
+                    }
                 }
                 finally
                 {
@@ -248,6 +270,9 @@ namespace AvifEncoder
 
         private static bool IsJpeg(string path) =>
                 Path.GetExtension(path).ToLower() is ".jpg" or ".jpeg";
+
+        private static string GetSweepJournalPath(string inputPath, int crf) =>
+            $"{inputPath}#sweep-crf:{crf}";
 
 
         public static void ApplyBitDepth(PresetConfig cfg)
@@ -282,7 +307,14 @@ namespace AvifEncoder
         private async Task<EncodeResult?> ProcessSingleFileAsync(string inputPath, int index, PresetConfig config, bool isRetry)
         {
             string name = Path.GetFileName(inputPath);
-            string outputPath = GetOutputPath(inputPath, index);
+            ResumeEncodedInfo resumeInfo = default;
+            bool hasResumeEncodedInfo = _config.Resume &&
+                _resumeEncodedFiles.TryGetValue(inputPath, out resumeInfo);
+            string outputPath = hasResumeEncodedInfo
+                ? (!string.IsNullOrWhiteSpace(resumeInfo.OutputPath)
+                    ? resumeInfo.OutputPath
+                    : GetBaseOutputPathNoReserve(inputPath, index))
+                : GetOutputPath(inputPath, index);
             string fileName = Path.GetFileName(outputPath);
             var fileStartTime = DateTime.Now;
 
@@ -303,8 +335,11 @@ namespace AvifEncoder
                     _logger.LogInfo($"预缩放: {name} {scaling.OriginalWidth}x{scaling.OriginalHeight} -> {scaling.ScaledWidth}x{scaling.ScaledHeight}");
 
                 // 跳过已存在
-                var skipResult = await TrySkipExistingOutputAsync(inputPath, index, config, isRetry);
-                if (skipResult != null) return skipResult;
+                if (!hasResumeEncodedInfo)
+                {
+                    var skipResult = await TrySkipExistingOutputAsync(inputPath, outputPath, index, config, isRetry);
+                    if (skipResult != null) return skipResult;
+                }
 
                 _logger.LogInfo($"开始: {name}");
                 if (_config.Resume) AppendJournal(inputPath, "start");
@@ -320,6 +355,49 @@ namespace AvifEncoder
                 // ★ 动图标记（AsyncLocal，无竞态）
                 _isAnimatedFile.Value = encInfo.IsAnimated;
 
+                if (hasResumeEncodedInfo)
+                {
+                    string resumeOutputPath = !string.IsNullOrWhiteSpace(resumeInfo.OutputPath)
+                        ? resumeInfo.OutputPath
+                        : GetBaseOutputPathNoReserve(inputPath, index);
+                    if (_fs.FileExists(resumeOutputPath) && _fs.GetFileLength(resumeOutputPath) >= 200)
+                    {
+                        _logger.LogInfo($"[RESUME] encoded-only: {name}, supplement metrics from existing output");
+                        var resumeEncodeResult = new FinalEncodeResult
+                        {
+                            Success = true,
+                            Crf = resumeInfo.Crf >= 0 ? resumeInfo.Crf : config.BaseCRF,
+                            ActualPixFmt = !string.IsNullOrWhiteSpace(resumeInfo.PixFmt) ? resumeInfo.PixFmt : encInfo.ActualPixFmt,
+                            EncodeTime = TimeSpan.Zero,
+                            Retries = 0,
+                            FromCache = false,
+                            ActualAom = resumeInfo.ActualAom ?? config.GetEffectiveAomParams(),
+                            FinalCommand = resumeInfo.CommandLine,
+                            UseSafeMode = false,
+                            StartTime = fileStartTime
+                        };
+                        var resumeSearchResult = new CRFSearchResult
+                        {
+                            Crf = resumeEncodeResult.Crf,
+                            ActualPixFmt = resumeEncodeResult.ActualPixFmt,
+                            SearchTime = TimeSpan.Zero,
+                            SearchBasedCRF = false,
+                            UseSafeModeFinalEncode = false,
+                            SearchEvalCount = 0
+                        };
+                        var (resumeSsim, resumeMetrics, resumeCacheKey) = await EvaluateFinalQualityAsync(
+                            workingInputPath, resumeOutputPath, resumeEncodeResult, encInfo, resumeSearchResult, config, inputPath);
+                        return BuildResult(index, Path.GetFileName(resumeOutputPath), name,
+                            inputPath, resumeOutputPath, resumeEncodeResult, resumeSearchResult,
+                            encInfo, resumeSsim, resumeMetrics, fileStartTime, resumeCacheKey);
+                    }
+                    _logger.LogInfo($"[RESUME] encoded-only output missing: {name}, re-encode");
+                    outputPath = GetOutputPath(inputPath, index);
+                    fileName = Path.GetFileName(outputPath);
+                    var skipResult = await TrySkipExistingOutputAsync(inputPath, outputPath, index, config, isRetry);
+                    if (skipResult != null) return skipResult;
+                }
+
                 // 搜索 + 最终编码
                 var swTotal = System.Diagnostics.Stopwatch.StartNew();
                 var searchResult = await RunCRFSearchAsync(workingInputPath, config, encInfo, name);
@@ -332,7 +410,14 @@ namespace AvifEncoder
                 if (encodeResult.Success)
                 {
                     _logger.LogInfo($"[JOURNAL] encoded: {name}");
-                    AppendJournal(inputPath, JournalEventTypes.Encoded);
+                    AppendJournal(inputPath, JournalEventTypes.Encoded, new
+                    {
+                        outputPath,
+                        crf = encodeResult.Crf,
+                        pixFmt = encodeResult.ActualPixFmt,
+                        actualAom = encodeResult.ActualAom,
+                        commandLine = encodeResult.FinalCommand
+                    });
                 }
 
                 // 无损验证：全量逐像素比对，失败即视为编码失败并生成诊断报告
@@ -408,8 +493,9 @@ namespace AvifEncoder
                         // 计算质量指标（编码成功但验证失败，指标依然有效）
                         (double failSsim, QualityMetrics? failMetrics, string failCacheKey) =
                             await EvaluateFinalQualityAsync(
-                             workingInputPath, _fs.FileExists(failedDest) ? failedDest : outputPath,
-                             encodeResult, encInfo, searchResult, config);
+                              workingInputPath, _fs.FileExists(failedDest) ? failedDest : outputPath,
+                              encodeResult, encInfo, searchResult, config, inputPath,
+                              markSuccessWhenMetricsComplete: false);
 
                         // 用 BuildResult 保留完整指标，仅标记为失败
                         var result = BuildResult(index,
@@ -417,9 +503,12 @@ namespace AvifEncoder
                             inputPath,
                             _fs.FileExists(failedDest) ? failedDest : outputPath,
                             encodeResult, searchResult, encInfo, failSsim, failMetrics,
-                            fileStartTime, failCacheKey);
+                            fileStartTime, failCacheKey, isRetry, markProcessed: false);
                         result.Success = false;
+                        // ★ 重试失败不再计入进度（首次失败已计数，避免进度>100%）
+                        result.CountFailureInProgress = !isRetry;
                         result.ErrorMessage = $"无损验证失败：{verReport.FailureType}";
+                        MarkProcessed(result);
                         return result;
                     }
                 }
@@ -431,7 +520,7 @@ namespace AvifEncoder
                 try
                 {
                     (ssim, metrics, advancedCacheKey) = await EvaluateFinalQualityAsync(
-                        workingInputPath, outputPath, encodeResult, encInfo, searchResult, config);
+                        workingInputPath, outputPath, encodeResult, encInfo, searchResult, config, inputPath);
                 }
                 catch (OperationCanceledException)
                 {
@@ -445,7 +534,7 @@ namespace AvifEncoder
                 // 组装结果（即使指标被中断，result.Success 仍由 encodeResult.Success 决定）
                 var finalResult = BuildResult(index, Path.GetFileName(outputPath), name,
                                        inputPath, outputPath,
-                                       encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey);
+                                       encodeResult, searchResult, encInfo, ssim, metrics, fileStartTime, advancedCacheKey, isRetry);
                 { /* journal "success" 仅由指标完成后写入 */ }
                 return finalResult;
             }
@@ -499,10 +588,14 @@ namespace AvifEncoder
         /// </summary>
         private async Task<(double ssim, QualityMetrics? metrics, string cacheKey)> EvaluateFinalQualityAsync(
             string workingInputPath, string outputPath, FinalEncodeResult encodeResult,
-            EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config)
+            EncodingInfo encInfo, CRFSearchResult searchResult, PresetConfig config,
+            string? journalInputPath = null,
+            bool markSuccessWhenMetricsComplete = true)
         {
             if (!encodeResult.Success)
                 return (0, null, "");
+
+            string journalPath = journalInputPath ?? workingInputPath;
 
             string normalizedInput = EncodeHelpers.GetNormalizedPathForCache(workingInputPath);
             // ★ 精确移除 Alpha 通道标识：仅处理 yuva/rgba/bgra/gbra，避免 "gray"→"gry" 等误伤
@@ -600,15 +693,19 @@ namespace AvifEncoder
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
                             _globalCts?.Token ?? CancellationToken.None, needXpsnr,
-                            workingInputPath, Path.GetFileName(outputPath),
-                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
+                            journalPath, Path.GetFileName(outputPath),
+                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p",
+                            markSuccessWhenComplete: markSuccessWhenMetricsComplete);
                         _advancedMetricTasks.Enqueue(bgTask);
                         advancedUpdated = true;
                     }
                     else
                     {
-                        AppendJournal(workingInputPath, JournalEventTypes.Success);
-                        _progress.MarkFileProcessed();
+                        if (markSuccessWhenMetricsComplete)
+                        {
+                            AppendJournal(journalPath, JournalEventTypes.Success);
+                            _progress.MarkFileProcessed();
+                        }
                     }
                 }
 
@@ -678,14 +775,19 @@ namespace AvifEncoder
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
                             _globalCts?.Token ?? CancellationToken.None, needXpsnr,
-                            workingInputPath, Path.GetFileName(outputPath),
-                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p");
+                            journalPath, Path.GetFileName(outputPath),
+                            frameCount: encInfo.FrameCount, encodingPixFmt: encInfo.ActualPixFmt ?? "yuv444p",
+                            markSuccessWhenComplete: markSuccessWhenMetricsComplete);
                         _advancedMetricTasks.Enqueue(bgTask);
+                        advancedUpdated = true;
                     }
                     else
                     {
-                        AppendJournal(workingInputPath, JournalEventTypes.Success);
-                        _progress.MarkFileProcessed();
+                        if (markSuccessWhenMetricsComplete)
+                        {
+                            AppendJournal(journalPath, JournalEventTypes.Success);
+                            _progress.MarkFileProcessed();
+                        }
                     }
                 }
 
@@ -1035,7 +1137,8 @@ namespace AvifEncoder
         }
 
         private EncodeResult FailResult(int index, string outputFileName, string name,
-                                    string inputPath, string error, DateTime fileStartTime)
+                                    string inputPath, string error, DateTime fileStartTime,
+                                    bool countFailureInProgress = true)
         {
             var result = new EncodeResult
             {
@@ -1047,6 +1150,7 @@ namespace AvifEncoder
                 ErrorMessage = error,
                 TotalTime = DateTime.Now - fileStartTime
             };
+            result.CountFailureInProgress = countFailureInProgress;
             MarkProcessed(result);
             return result;
         }
@@ -1054,7 +1158,8 @@ namespace AvifEncoder
         private EncodeResult BuildResult(int index, string outputFileName, string name,
 string inputPath, string outputPath,
 FinalEncodeResult encodeResult, CRFSearchResult searchResult,
-EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime, string? advancedCacheKey = null)
+EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTime,
+string? advancedCacheKey = null, bool countFailureInProgress = true, bool markProcessed = true)
         {
             // ★ 检测是否是“搜索已失败且最终被迫使用 CRF=0（MinCRF=0）”的情景
             // ★ crf0Unreachable 必须加 UseCRFSearch 前置条件：
@@ -1118,7 +1223,8 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
                 // 动图字段
                 IsAnimated = encInfo.IsAnimated,
                 FrameCount = encInfo.FrameCount,
-                Fps = encInfo.Fps
+                Fps = encInfo.Fps,
+                CountFailureInProgress = countFailureInProgress
             };
 
             // 标注 AOM 参数降级
@@ -1139,11 +1245,10 @@ EncodingInfo encInfo, double ssim, QualityMetrics? metrics, DateTime fileStartTi
         // ==================== 辅助方法 ====================
 
         // 1. 跳过已存在文件
-        private async Task<EncodeResult?> TrySkipExistingOutputAsync(string inputPath, int index, PresetConfig config, bool isRetry)
+        private async Task<EncodeResult?> TrySkipExistingOutputAsync(string inputPath, string outputPath, int index, PresetConfig config, bool isRetry)
         {
             if (isRetry) return null;
 
-            string outputPath = GetOutputPath(inputPath, index);
             if (_fs.FileExists(outputPath))
             {
                 // 覆盖模式：不跳过，继续编码（覆盖旧文件）

@@ -239,7 +239,7 @@ namespace AvifEncoder
     CancellationToken ct = default)
         {
             string exePath = Environment.ProcessPath
-                ?? AppContext.BaseDirectory;
+                ?? Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
             string newPath = exePath + ".new";
 
             try
@@ -389,8 +389,10 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
-                string output = process.StandardOutput.ReadToEnd();
+                // ★ 先异步读取再等待退出，避免管道缓冲区满导致死锁
+                var readTask = process.StandardOutput.ReadToEndAsync();
                 process.WaitForExit(5000);
+                string output = readTask.Result;
                 return output.Contains("Microsoft.NETCore.App 10.");
             }
             catch
@@ -405,7 +407,7 @@ namespace AvifEncoder
             {
                 return current.CompareTo(latest);
             }
-            return -1; // 解析失败（tag 不规范），保守假设有新版本
+            return 0; // ★ 解析失败（tag 不规范），不回退到"总有更新"误报
         }
     }
 }

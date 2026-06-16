@@ -350,7 +350,7 @@ namespace AvifEncoder
                 errors.Add($"MinCRF ({MinCRF}) 超出有效范围 0-63");
             if (MaxCRF < 0 || MaxCRF > 63)
                 errors.Add($"MaxCRF ({MaxCRF}) 超出有效范围 0-63");
-            if (!UseCRFSearch && (BaseCRF < 0 || BaseCRF > 63))
+            if (BaseCRF < 0 || BaseCRF > 63)
                 errors.Add($"BaseCRF ({BaseCRF}) 超出有效范围 0-63");
             if (BitDepth != 8 && BitDepth != 10 && BitDepth != 12)
                 errors.Add($"BitDepth ({BitDepth}) 仅支持 8、10 或 12");

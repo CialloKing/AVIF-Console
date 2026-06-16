@@ -1377,6 +1377,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     optsPage.SetArNrUseMaxFrames(cfg.EncodeArNrUseMaxFrames);
                     if (cfg.EncodeRgbMode != null)
                         OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
+                    if (!string.IsNullOrWhiteSpace(cfg.EncodeAnimatedCommand))
+                        optsPage.SetAnimatedCommand(cfg.EncodeAnimatedCommand);
+                    if (!string.IsNullOrWhiteSpace(cfg.EncodeSkippedMetrics))
+                        optsPage.LoadSkippedMetrics(cfg.EncodeSkippedMetrics);
                 }
             }
             finally
@@ -1503,6 +1507,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     cfg.EncodeDenoise = optsPage.Denoise;
                     cfg.EncodeArNrUseMaxFrames = optsPage.GetArNrUseMaxFrames();
                     cfg.EncodeRgbMode = OptionsPage?.GetRgbMode();
+                    cfg.EncodeSkippedMetrics = optsPage.GetSkippedMetricsCsv();
                 }
             }
         }

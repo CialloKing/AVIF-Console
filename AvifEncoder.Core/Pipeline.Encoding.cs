@@ -564,10 +564,10 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
                 _logger.LogInfo($"ffmpeg stderr:\n{stderr.Trim()}");
             }
 
-            // 防呆：检测磁盘空间不足，取消所有后续任务
+            // 防呆：检测磁盘空间不足，取消所有后续任务（英文+中文 locale）
             if (stderr.Contains("No space left on device") ||
-                stderr.Contains("Disk full") ||
-                stderr.Contains("disk full"))
+                stderr.Contains("Disk full") || stderr.Contains("disk full") ||
+                stderr.Contains("磁盘空间不足") || stderr.Contains("not enough space"))
             {
                 SafeWriteLine("[FATAL] 磁盘空间不足，正在取消所有待处理任务...");
                 _logger.LogError("磁盘空间不足，终止编码");

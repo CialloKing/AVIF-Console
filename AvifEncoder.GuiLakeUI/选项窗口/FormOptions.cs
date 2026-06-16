@@ -131,6 +131,30 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             chkMetricPsnrUncapped.Checked = !config.IsMetricSkipped("psnr_uncapped");
         }
 
+        /// <summary>导出复选框状态为逗号分隔字符串，供 AppConfig 持久化</summary>
+        public string GetSkippedMetricsCsv()
+        {
+            var skipped = new List<string>();
+            if (chkMetricXpsnr != null && !chkMetricXpsnr.Checked) skipped.Add("xpsnr");
+            if (chkMetricSsimu2 != null && !chkMetricSsimu2.Checked) skipped.Add("ssimu2");
+            if (chkMetricButter3 != null && !chkMetricButter3.Checked) skipped.Add("butter3");
+            if (chkMetricGmsd != null && !chkMetricGmsd.Checked) skipped.Add("gmsd");
+            if (chkMetricPsnrUncapped != null && !chkMetricPsnrUncapped.Checked) skipped.Add("psnr_uncapped");
+            return string.Join(",", skipped);
+        }
+
+        /// <summary>从逗号分隔字符串恢复复选框状态（勾选=计算，取消=跳过）</summary>
+        public void LoadSkippedMetrics(string csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv) || chkMetricXpsnr == null) return;
+            var set = new HashSet<string>(csv.Split(',').Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
+            chkMetricXpsnr.Checked       = !set.Contains("xpsnr");
+            chkMetricSsimu2.Checked      = !set.Contains("ssimu2");
+            chkMetricButter3.Checked     = !set.Contains("butter3");
+            chkMetricGmsd.Checked        = !set.Contains("gmsd");
+            chkMetricPsnrUncapped.Checked = !set.Contains("psnr_uncapped");
+        }
+
         /// <summary>根据编码器类型调整降噪数字框的上限和启用状态</summary>
         public void SetDenoiseLimit(int max, bool enabled)
         {
@@ -245,6 +269,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             else if (denoise > 0 && _currentEncoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase))
             {
                 int grain = Math.Clamp(denoise, 1, 15);
+                // ★ 先移除已有 film-grain 参数（默认值含 film-grain=0），再追加新值，避免重复 key 导致 first-wins 覆盖
+                defaults = System.Text.RegularExpressions.Regex.Replace(
+                    defaults, @":film-grain=\d+:film-grain-denoise=\d+", "");
+                defaults = System.Text.RegularExpressions.Regex.Replace(
+                    defaults, @":film-grain=\d+", "");
                 int lastQ = defaults.LastIndexOf('"');
                 if (lastQ >= 0)
                     defaults = defaults.Insert(lastQ, $":film-grain={grain}:film-grain-denoise=1");

@@ -58,6 +58,9 @@ namespace AvifEncoder
         public bool EncodeArNrUseMaxFrames { get; set; }
         public string? EncodeRgbMode { get; set; }
 
+        // ===== 指标跳过（对齐 PresetConfig.SkippedMetrics） =====
+        public string? EncodeSkippedMetrics { get; set; }
+
         // ===== 选项页 =====
         public string? EncodeExtensions { get; set; }
         public int EncodeTimeoutEncode { get; set; }

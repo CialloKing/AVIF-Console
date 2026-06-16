@@ -400,7 +400,8 @@ namespace AvifEncoder
             bool needSsimu2, bool needButter, bool needGmsd,
             CancellationToken cancellationToken, bool needXpsnr = false,
             string? inputPath = null, string? outputFileName = null,
-            int frameCount = 1, string encodingPixFmt = "yuv444p")
+            int frameCount = 1, string encodingPixFmt = "yuv444p",
+            bool markSuccessWhenComplete = false)
         {
             string advName = inputPath != null ? Path.GetFileName(inputPath) : (outputFileName ?? "?");
             bool isAnimated = frameCount > 1;
@@ -1285,7 +1286,9 @@ namespace AvifEncoder
                             Success = false,
                             Skipped = false,
                             ErrorMessage = $"异常: {ex.Message}",
-                            TotalTime = TimeSpan.Zero
+                            TotalTime = TimeSpan.Zero,
+                            // ★ 重试失败不再计入进度（首次失败已计数）
+                            CountFailureInProgress = !item.IsRetry
                         };
                         item.Results[item.Index] = failResult;
                         MarkProcessed(failResult);
@@ -1514,7 +1517,10 @@ namespace AvifEncoder
                             if (evt == "success")
                                 completed.Add(file);
                             if (evt == "encoded")
+                            {
                                 encodedOnly!.Add(file);
+                                _resumeEncodedFiles[file] = CreateResumeEncodedInfo(file, root);
+                            }
 
                             if (metricsOut != null && evt == "metrics")
                             {
@@ -1631,7 +1637,12 @@ namespace AvifEncoder
                         _config.EncoderCustomParams,
                         _config.Denoise,
                         _config.ArNrUseMaxFrames,
-                        _config.RgbMode
+                        _config.RgbMode,
+                        ApplyScalingToOutput = _config.ApplyScalingToOutput,
+                        AnimatedCommand = _config.AnimatedCommand,
+                        SafeEncodeTimeoutMinutes = _config.SafeEncodeTimeoutMinutes,
+                        SearchEncodeTimeoutMinutes = _config.SearchEncodeTimeoutMinutes,
+                        SkippedMetrics = _config.SkippedMetrics?.ToArray()
                     }
                 };
                 string tmp = _snapshotPath + ".tmp";
@@ -2326,6 +2337,9 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) _config.FinalCpuUsed = fc.GetInt32();
                             if (cfg.TryGetProperty("MaxResolution", out var mr)) _config.MaxResolution = mr.GetInt32();
                             if (cfg.TryGetProperty("MaxJobs", out var mj)) _config.MaxJobs = mj.GetInt32();
+                            if (cfg.TryGetProperty("FileConflictStrategy", out var fcs) &&
+                                Enum.TryParse<PresetConfig.ConflictStrategy>(fcs.GetString(), out var strategy))
+                                _config.FileConflictStrategy = strategy;
                             if (cfg.TryGetProperty("InputExtensions", out var ie)) _config.InputExtensions = ie.GetString();
                             if (cfg.TryGetProperty("EncodeTimeoutMinutes", out var et)) _config.EncodeTimeoutMinutes = et.GetInt32();
                             if (cfg.TryGetProperty("SearchTimeoutMinutes", out var st)) _config.SearchTimeoutMinutes = st.GetInt32();
@@ -2342,6 +2356,11 @@ namespace AvifEncoder
                                 _config.ArNrUseMaxFrames = auf.GetBoolean();
                             if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != JsonValueKind.Null)
                                 _config.RgbMode = rgb.GetString();
+                            if (cfg.TryGetProperty("SkippedMetrics", out var sm) && sm.ValueKind == JsonValueKind.Array)
+                                _config.SkippedMetrics = sm.EnumerateArray()
+                                    .Select(x => x.GetString())
+                                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                                    .ToHashSet(StringComparer.OrdinalIgnoreCase)!;
                             _logger.LogInfo($"[RESUME] 已从快照恢复编码配置: Encoder={_config.Encoder} CRF={_config.BaseCRF}");
                         }
                         catch (Exception ex)
@@ -2372,7 +2391,7 @@ namespace AvifEncoder
                     {
                         journalLines = File.ReadAllLines(_journalPath);
                         int startIdx = (int)Math.Min(snapshotEventCount, journalLines.Length);
-                        for (int i = startIdx; i < journalLines.Length; i++)
+                        for (int i = 0; i < journalLines.Length; i++)
                         {
                             string line = journalLines[i];
                             if (string.IsNullOrWhiteSpace(line)) continue;
@@ -2385,9 +2404,17 @@ namespace AvifEncoder
                                 {
                                     string evt = evtEl.GetString() ?? "";
                                     string file = fileEl.GetString() ?? "";
-                                    if (evt == "success") deltaDone.Add(file);
-                                    else if (evt == "encoded") resumeEncodedOnly.Add(file);
-                                    else if (evt == "metrics")
+                                    bool isDelta = i >= startIdx;
+                                    if (evt == "success")
+                                    {
+                                        if (isDelta) deltaDone.Add(file);
+                                    }
+                                    else if (evt == "encoded")
+                                    {
+                                        resumeEncodedOnly.Add(file);
+                                        _resumeEncodedFiles[file] = CreateResumeEncodedInfo(file, root);
+                                    }
+                                    else if (isDelta && evt == "metrics")
                                     {
                                         var m = new QualityMetrics();
                                         if (root.TryGetProperty("ssimu2", out var s2) && s2.ValueKind == JsonValueKind.Number) m.SSIMULACRA2 = s2.GetDouble();
@@ -2448,7 +2475,7 @@ namespace AvifEncoder
                     foreach (var (path, idx) in files)
                     {
                         if (completed.Contains(path) || resumeEncodedOnly.Contains(path)) continue;
-                        string outPath = Path.Combine(_outputDir, GetOutputFileName(path, idx));
+                        string outPath = GetBaseOutputPathNoReserve(path, idx);
                         if (_fs.FileExists(outPath) && _fs.GetFileLength(outPath) >= 200)
                             _logger.LogInfo(
                                 $"[RESUME] 输出文件存在但日志无记录: {Path.GetFileName(outPath)}，删除旧文件并重新编码");
@@ -2487,73 +2514,18 @@ namespace AvifEncoder
                 }
                 finally
                 {
-                    // ★ 无论成功、失败、用户中断，都保存快照确保下次可恢复
-                    if (results != null)
+                    // Save snapshot from journal state only; EncodeResult.Success may only mean AVIF exists.
+                    try
                     {
-                        try
-                        {
-                            // ★ 排空后台指标队列，确保高级指标已写入缓存后再保存快照
-                            var pendingBg = new List<Task>();
-                            while (_advancedMetricTasks.TryDequeue(out var t)) pendingBg.Add(t);
-                            while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
-                            if (pendingBg.Count > 0)
-                            {
-                                // ★ 动态超时 = 120s 基准 + 每帧 1.5s（动图逐帧平均耗时）
-                                var valid = results?.Where(r => r != null).ToList() ?? new List<EncodeResult?>();
-                                int totalFrames = valid.Sum(r => r!.FrameCount);
-                                int timeoutSec = Math.Max(120, 5 + (int)(totalFrames * 1.5));
-                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(timeoutSec)); }
-                                catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
-                            }
-
-                            var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
-                            var newCompleted = results!.Where(r => r != null && (r.Success || r.Skipped))
-                                .Select(r => r!.InputPath).ToList();
-                            var newMetrics = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-                            foreach (var r in results!)
-                            {
-                                if (r != null && r.Success && !string.IsNullOrEmpty(r.AdvancedMetricsCacheKey)
-                                    && _cache.TryGetMetrics(r.AdvancedMetricsCacheKey, out var rm))
-                                    newMetrics[r.InputPath] = rm!;
-                            }
-                            var merged = oldCompleted.Union(newCompleted).ToList();
-                            _logger.LogInfo($"[SNAPSHOT] 保存快照: old={oldCompleted.Count} new={newCompleted.Count} merged={merged.Count} metrics={oldMetrics.Count}+{newMetrics.Count}");
-                            SaveSnapshot(merged, MergeMetrics(oldMetrics, newMetrics));
-                        }
-                        catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 保存失败: {ex.Message}"); }
+                        int totalFrames = results?.Where(r => r != null).Sum(r => r!.FrameCount) ?? 0;
+                        int timeoutSec = Math.Max(120, 5 + (int)(totalFrames * 1.5));
+                        await WaitForBackgroundMetricTasksAsync(
+                            TimeSpan.FromSeconds(timeoutSec), "SNAPSHOT", requeueUnfinished: true);
+                        SaveJournalBackedSnapshot("SNAPSHOT");
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        // ★ results=null 兜底：从 journal 回放重建快照，避免进度丢失
-                        _logger.LogInfo("[SNAPSHOT] results=null，从 journal 回放兜底保存快照...");
-                        try
-                        {
-                            // 排空后台指标队列（与正常路径一致）
-                            var pendingBg = new List<Task>();
-                            while (_advancedMetricTasks.TryDequeue(out var t)) pendingBg.Add(t);
-                            while (_xpsnrTasks.TryDequeue(out var t)) pendingBg.Add(t);
-                            if (pendingBg.Count > 0)
-                            {
-                                // ★ 动态超时 = 120s 基准 + 每帧 1.5s（动图逐帧平均耗时）
-                                var valid2 = results?.Where(r => r != null).ToList() ?? new List<EncodeResult?>();
-                                int totalFrames2 = valid2.Sum(r => r!.FrameCount);
-                                int timeoutSec2 = Math.Max(120, 5 + (int)(totalFrames2 * 1.5));
-                                try { await Task.WhenAll(pendingBg).WaitAsync(TimeSpan.FromSeconds(timeoutSec2)); }
-                                catch (Exception ex) { _logger.LogInfo($"[SNAPSHOT] 后台指标等待异常: {ex.Message}"); }
-                            }
-
-                            var (oldCompleted, oldMetrics, _, _) = LoadSnapshot();
-                            var (replayCompleted, replayMetrics, _, _) = ReplayJournalWithMetrics(0);
-                            // 跳过已标记为 completed 的文件（旧快照 + 增量 journal 的并集）
-                            var allCompleted = oldCompleted.Union(replayCompleted).ToList();
-                            var allMetrics = MergeMetrics(oldMetrics, replayMetrics);
-                            _logger.LogInfo($"[SNAPSHOT] 兜底保存: old={oldCompleted.Count} journal={replayCompleted.Count} merged={allCompleted.Count} metrics={allMetrics.Count}");
-                            SaveSnapshot(allCompleted, allMetrics);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogInfo($"[SNAPSHOT] 兜底保存失败: {ex.Message}");
-                        }
+                        _logger.LogInfo($"[SNAPSHOT] save failed: {ex.Message}");
                     }
                 }
 
@@ -2722,15 +2694,13 @@ namespace AvifEncoder
             SafeWriteLine($"\n[RETRY] 开始重试 {failures.Count} 个失败文件...");
 
             // 调整总数避免进度超过 100%
-            _progress.SetTotalFiles(_progress.TotalFiles + failures.Count);
-
             // 使用 Result 中保存的完整输入路径，不再拼接
             var retryFiles = failures.Select(f => (filePath: f!.InputPath, index: f.Index)).ToList();
 
             // 删除已有的输出文件，避免干扰
             foreach (var (filePath, index) in retryFiles)
             {
-                string outPath = GetOutputPath(filePath, index);
+                string outPath = GetBaseOutputPathNoReserve(filePath, index);
                 if (_fs.FileExists(outPath))
                     try { _fs.DeleteFile(outPath); } catch { }
             }
@@ -2751,26 +2721,7 @@ namespace AvifEncoder
         /// <summary> 统计并打印最终总结，导出 CSV </summary>
         private async Task PrintSummaryAndExport(List<EncodeResult?> results)
         {
-            // ★ 原子排空后台任务队列，避免 IsEmpty+ToArray 之间的竞态漏掉任务
-            var pendingAdvanced = new List<Task>();
-            while (_advancedMetricTasks.TryDequeue(out var t))
-                pendingAdvanced.Add(t);
-            if (pendingAdvanced.Count > 0)
-            {
-                SafeWriteLine("?? 等待后台高级指标计算完成...");
-                try { await Task.WhenAll(pendingAdvanced); }
-                catch (Exception ex) { _logger.LogError($"后台高级任务异常: {ex.Message}"); }
-            }
-
-            // ★ 原子排空 XPSNR 后台队列
-            var pendingXpsnr = new List<Task>();
-            while (_xpsnrTasks.TryDequeue(out var t))
-                pendingXpsnr.Add(t);
-            if (pendingXpsnr.Count > 0)
-            {
-                try { await Task.WhenAll(pendingXpsnr); }
-                catch (Exception ex) { _logger.LogInfo($"XPSNR 后台异常: {ex.Message}"); }
-            }
+            await WaitForBackgroundMetricTasksAsync(null, "SUMMARY", requeueUnfinished: false);
 
             var totalTime = DateTime.Now - _progress.StartTime;
             var allResults = results.Where(r => r != null).Cast<EncodeResult>().ToList();

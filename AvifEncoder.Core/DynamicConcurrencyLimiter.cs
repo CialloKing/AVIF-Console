@@ -30,9 +30,9 @@ namespace AvifEncoder
         /// </summary>
         public void Release()
         {
-            // ★ 缩容后 Semaphore 内部计数可能超标，吞噬多余的 Release 直到降到 _currentMax 以下
-            if (_semaphore.CurrentCount < _currentMax)
-                _semaphore.Release();
+            // ★ 缩容后 Semaphore 内部计数可能超标，用 try-catch 安全吞噬多余的 Release
+            try { _semaphore.Release(); }
+            catch (SemaphoreFullException) { }
         }
 
         /// <summary>动态设置为指定最大并发数。扩容立即生效；缩容通过 Release 吞噬逐步收敛。</summary>

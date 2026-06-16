@@ -829,10 +829,10 @@ namespace AvifEncoder
                     foreach (var kv in resumeMetrics)
                     {
                         string fileName = Path.GetFileName(kv.Key);
-                        // 在 merged 中查找匹配的旧行
+                        // 在 merged 中查找匹配的旧行（仅靠 key 精确匹配，避免子串误匹配）
                         foreach (var mk in merged.Keys.ToList())
                         {
-                            if (mk == fileName || merged[mk].Contains(fileName))
+                            if (mk == fileName)
                             {
                                 var cols = SplitCsvLine(merged[mk]);
                                 if (cols.Length >= CsvColumnNames.Length)
