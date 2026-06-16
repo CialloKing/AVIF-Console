@@ -28,7 +28,7 @@ namespace AvifEncoder.GuiLakeUI
         {
             InitializeComponent();
             // 2560×1600 及以下用固定 1600×900，以上用 70% 屏幕可用区域
-            var wa = Screen.PrimaryScreen!.WorkingArea;
+            var wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
             int w, h;
             if (wa.Width <= 2560 || wa.Height <= 1600)
             {

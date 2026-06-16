@@ -152,7 +152,7 @@
 
     public static class Av1EncoderFactory
     {
-        private static readonly Dictionary<string, IAv1Encoder> Cache = new()
+        private static readonly Dictionary<string, IAv1Encoder> Cache = new(StringComparer.OrdinalIgnoreCase)
         {
             ["libaom-av1"] = new LibAomEncoder(),
             ["libsvtav1"] = new SvtAv1Encoder(),

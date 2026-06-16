@@ -98,7 +98,6 @@ namespace AvifEncoder.Gui
             cmbPreset.Items.AddRange(new[] { CustomPresetName, "fast", "balanced", "best", "extreme" });
             cmbPreset.SelectedItem = "fast";
             ApplyPresetToUI(CliPreset.Fast);
-            cmbPreset.SelectedIndexChanged += cmbPreset_SelectedIndexChanged;
             AttachCustomMarkEvents();
 
             // 初始化遍历模式控件（需在设计器已添加名为 chkSweep 的 CheckBox）
@@ -112,6 +111,7 @@ namespace AvifEncoder.Gui
         private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
         {
             try { _globalCts?.Cancel(); } catch { }
+            try { _globalCts?.Dispose(); } catch { }
             _pipeline?.Dispose();
         }
         private void ApplyPresetToUI(CliPreset preset)
@@ -460,6 +460,21 @@ namespace AvifEncoder.Gui
                 AppendLog("正在请求取消编码...");
                 btnStart.Enabled = false;
                 btnStart.Text = "正在停止...";
+                // ★ 取消后异步恢复按钮状态，避免永久禁用
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        _globalCts?.Cancel();
+                        await Task.Delay(2000);  // 给管道2秒清理时间
+                        this.BeginInvoke(new Action(() =>
+                        {
+                            btnStart.Enabled = true;
+                            btnStart.Text = "开始转换";
+                        }));
+                    }
+                    catch { }
+                });
                 return;
             }
 
@@ -617,7 +632,7 @@ namespace AvifEncoder.Gui
 
         private void RefreshMetricsFromDetection()
         {
-
+            // ★ 旧版 GUI 无独立指标下拉框（cmbQualityMode 由 LakeUI 版独有），保留空实现
         }
     }
 

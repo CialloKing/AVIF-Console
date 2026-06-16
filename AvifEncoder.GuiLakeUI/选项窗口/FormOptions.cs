@@ -289,7 +289,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             return encoder switch
             {
                 "libaom-av1" => $"-aom-params {new PresetConfig().AomParams}",
-                "libsvtav1"  => "-svtav1-params \"tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"",
+                "libsvtav1"  => "-svtav1-params \"keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\"",
                 "librav1e"   => "-rav1e-params tune=psychovisual",
                 "av1_nvenc"  => "-tune hq",
                 _            => ""

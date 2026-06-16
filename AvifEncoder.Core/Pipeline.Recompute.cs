@@ -357,6 +357,7 @@ namespace AvifEncoder
             }
             finally
             {
+                Console.CancelKeyPress -= _cancelKeyHandler;  // ★ 取消订阅避免事件处理器泄漏
                 _globalCts?.Dispose();
                 _globalCts = null;
             }

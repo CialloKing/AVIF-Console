@@ -23,8 +23,6 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
   -o, --output <目录>          输出目录 (默认: Avifoutput)
   -p, --preset <预设>          预设模式: fast, balanced, best, extreme (默认: balanced)
   -e, --encoder <名称>         指定 AV1 编码器 (默认: libaom-av1)
-      --enc-params <参数>      编码器私有参数，直接传递到 ffmpeg 命令行（含前缀）
-                               空字符串则清空所有私有参数。示例:
       --denoise <0-15>         编码降噪，0=关闭 (默认: 0)
                                libaom: 映射 arnr-strength(0-6)，arnr-max-frames 自动推导
                                libsvtav1: 映射 film-grain(0-15)
@@ -77,7 +75,7 @@ AVIF 编码器 —— Linux 风格CLI命令行工具
 
 像素格式:
   -c, --chroma <采样>          色度采样: 420, 422, 444, auto (默认: auto)
-  -b, --bit-depth <位数>       输出位深: 8, 10, auto (默认: auto)
+  -b, --bit-depth <位数>       输出位深: 8, 10, 12, auto (默认: auto)
                               当设为 auto 时由程序根据源文件自动选择
 
 其他编码选项:

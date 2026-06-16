@@ -510,7 +510,8 @@ namespace AvifEncoder
                 string encParams = config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase)
                     ? $"-aom-params {config.AomParams}"
                     : config.Encoder.StartsWith("libsvtav1", StringComparison.OrdinalIgnoreCase)
-                        ? "-svtav1-params \"tune=3:keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\""
+                        // ★ 不包含 tune，由 BuildEncoderSpecificArgs 中 BuildFullTuneArg 根据 MetricMode 生成
+                        ? "-svtav1-params \"keyint=1:avif=1:film-grain=0:enable-qm=1:qm-min=0:qm-max=8\""
                         : "";
                 if (config.Encoder.StartsWith("libaom", StringComparison.OrdinalIgnoreCase))
                 {
