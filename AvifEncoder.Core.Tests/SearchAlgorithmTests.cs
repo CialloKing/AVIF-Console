@@ -172,7 +172,7 @@ namespace AvifEncoder.Core.Tests
                 getScore = async crf =>
                 {
                     double s = await original(crf);
-                    return s >= 0 ? -s : s;
+                    return AvifPipeline.NormalizeLowerIsBetterSearchScore(s);
                 };
                 searchTarget = -butterTarget;  // 2.0 → -2.0
             }
@@ -191,6 +191,54 @@ namespace AvifEncoder.Core.Tests
             // 达标 CRF≈29（score=1.95≤2.0），搜索应找到 29 附近
             Assert.IsTrue(bestCrf >= 27 && bestCrf <= 31,
                 $"Expected CRF near 29 for lower-is-better butterTarget=2.0, got {bestCrf} in {evals} evals");
+        }
+
+        [TestMethod]
+        public async Task BinarySearch_LowerIsBetter_FailedScoreIsNotTreatedAsPass()
+        {
+            double butterTarget = 2.0;
+            Func<int, Task<double>> rawGetScore = crf =>
+            {
+                double score = crf switch
+                {
+                    <= 29 => 1.8,  // 达标
+                    30 => 2.2,     // 不达标
+                    35 => -1,      // 评估失败，旧逻辑取反前保留 -1，会被误判为 >= -2
+                    _ => 3.0
+                };
+                return Task.FromResult(score);
+            };
+
+            Func<int, Task<double>> getScore = async crf =>
+                AvifPipeline.NormalizeLowerIsBetterSearchScore(await rawGetScore(crf));
+
+            var cfg = new PresetConfig { MetricMode = "butter3", NativeTargetValue = butterTarget };
+            var (bestCrf, _) = await AvifPipeline.StandardBinarySearch(
+                "test.png", 0, cfg, "yuv420p", false,
+                "test", -butterTarget, getScore,
+                CancellationToken.None, 20, 40, lowerIsBetter: true);
+
+            Assert.AreEqual(29, bestCrf);
+        }
+
+        [TestMethod]
+        public async Task BinarySearch_NaN_SplitsAndContinuesSearch()
+        {
+            int callCount = 0;
+            Func<int, Task<double>> getScore = crf =>
+            {
+                callCount++;
+                return Task.FromResult(crf == 30 ? double.NaN : (crf <= 28 ? 0.96 : 0.90));
+            };
+
+            var cfg = new PresetConfig { MetricMode = "ssim", NativeTargetValue = 0.95 };
+            var (bestCrf, _) = await AvifPipeline.StandardBinarySearch(
+                "test.png", 0, cfg, "yuv420p", false,
+                "test", 0.95, getScore,
+                CancellationToken.None, 20, 40);
+
+            Assert.AreEqual(28, bestCrf);
+            Assert.IsTrue(callCount >= 3, $"Search should continue after NaN, calls={callCount}");
         }
     }
 }

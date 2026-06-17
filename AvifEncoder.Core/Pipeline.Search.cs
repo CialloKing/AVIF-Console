@@ -155,16 +155,16 @@ namespace AvifEncoder
                 getScore = async crf =>
                 {
                     double s = await originalGetScore(crf);
-                    return s >= 0 ? -s : s;      // 负值表示失败，不反转
+                    return NormalizeLowerIsBetterSearchScore(s);
                 };
                 target = -target;
             }
 
             // 辅助函数：将内部反转后的分数恢复为原始值用于控制台显示
-            Func<double, double> displayScore = s => lowerIsBetter && s != -1 ? -s : s;
+            Func<double, double> displayScore = s => lowerIsBetter && !double.IsNaN(s) ? -s : s;
             Func<double, string> fmtScore = s =>
             {
-                double native = lowerIsBetter && s != -1 ? -s : s;
+                double native = lowerIsBetter && !double.IsNaN(s) ? -s : s;
                 return FormatScore(native, metricMode);
             };
 
@@ -398,6 +398,9 @@ namespace AvifEncoder
             return (cfg.BaseCRF, true, false, totalEvalCount);
         }
 
+        internal static double NormalizeLowerIsBetterSearchScore(double score)
+            => score >= 0 ? -score : double.NaN;
+
         // 注意：FormatScore 方法保持不变（已在其他地方定义）
 
         // 辅助格式化方法（可放在同一类中）
@@ -454,7 +457,7 @@ namespace AvifEncoder
             if (knownLoScore.HasValue && knownLoScore.Value >= target)
             {
                 bestCrf = lo;
-                double displayKnown = lowerIsBetter && knownLoScore.Value != -1 ? -knownLoScore.Value : knownLoScore.Value;
+                double displayKnown = lowerIsBetter && !double.IsNaN(knownLoScore.Value) ? -knownLoScore.Value : knownLoScore.Value;
                 string loDisplay = FormatScore(displayKnown, cfg.MetricMode);
                 SafeWriteLine($"  [{name}] [CORE] 下界已知可行 CRF={lo} ({loDisplay})");
             }
@@ -470,7 +473,7 @@ namespace AvifEncoder
                 double score = await getScore(mid);
                 evalCount++;
 
-                double displayMid = lowerIsBetter && score != -1 ? -score : score;
+                double displayMid = lowerIsBetter && !double.IsNaN(score) ? -score : score;
                 string midDisplay = FormatScore(displayMid, cfg.MetricMode);
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
@@ -479,7 +482,26 @@ namespace AvifEncoder
                 //    向左搜索（降低 CRF），方向错误。应跳过保持区间不变。
                 if (double.IsNaN(score))
                 {
-                    l++;  // 跳过 NaN 点，不缩小搜索区间
+                    if (mid < r)
+                    {
+                        var (rightBest, rightEval) = await StandardBinarySearch(
+                            input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                            mid + 1, r, knownLoScore: null, lowerIsBetter: lowerIsBetter);
+                        evalCount += rightEval;
+                        if (rightBest >= 0)
+                            return (Math.Max(bestCrf, rightBest), evalCount);
+                    }
+
+                    if (mid > l)
+                    {
+                        var (leftBest, leftEval) = await StandardBinarySearch(
+                            input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
+                            l, mid - 1, knownLoScore: null, lowerIsBetter: lowerIsBetter);
+                        evalCount += leftEval;
+                        return (Math.Max(bestCrf, leftBest), evalCount);
+                    }
+
+                    return (bestCrf, evalCount);
                 }
                 else if (score >= target)
                 {
