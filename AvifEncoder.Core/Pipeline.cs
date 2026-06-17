@@ -144,6 +144,7 @@ namespace AvifEncoder
         private record struct FileWorkItem(string FilePath, int Index, PresetConfig Config, bool IsRetry,
             ConcurrentDictionary<int, EncodeResult> Results, SemaphoreSlim DoneSignal);
         private ConsoleCancelEventHandler? _cancelKeyHandler;
+        private EventHandler? _processExitHandler;
 
         private static readonly object _consoleLock = new();
         private CancellationTokenSource? _globalCts;
@@ -1243,7 +1244,7 @@ namespace AvifEncoder
             _snapshotPath = Path.Combine(sessionDir, "snapshot.json");
 
             // ★ 跨平台兜底：进程退出时（Ctrl+C、窗口关闭、Environment.Exit）强制清理子进程
-            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            _processExitHandler = (_, _) =>
             {
                 foreach (var p in _spawnedProcesses)
                 {
@@ -1257,6 +1258,7 @@ namespace AvifEncoder
                     catch { }
                 }
             };
+            AppDomain.CurrentDomain.ProcessExit += _processExitHandler;
 
         }
 
@@ -1915,6 +1917,11 @@ namespace AvifEncoder
             try { _ffmpegSlots?.Dispose(); } catch { }
             if (_cancelKeyHandler != null)
                 Console.CancelKeyPress -= _cancelKeyHandler;
+            if (_processExitHandler != null)
+            {
+                AppDomain.CurrentDomain.ProcessExit -= _processExitHandler;
+                _processExitHandler = null;
+            }
             _advancedMetricSemaphore?.Dispose();
             foreach (var cts in workerTokens)
                 try { cts.Dispose(); } catch { }

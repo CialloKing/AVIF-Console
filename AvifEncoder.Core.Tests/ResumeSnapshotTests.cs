@@ -148,6 +148,25 @@ namespace AvifEncoder.Core.Tests
             }
         }
 
+        [TestMethod]
+        public void Dispose_UnsubscribesProcessExitHandler()
+        {
+            var pipeline = CreatePipelineWithJobs(out _, out string root, userSpecified: true);
+            try
+            {
+                Assert.IsNotNull(GetProcessExitHandler(pipeline));
+
+                pipeline.Dispose();
+
+                Assert.IsNull(GetProcessExitHandler(pipeline));
+            }
+            finally
+            {
+                pipeline.Dispose();
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
         private static AvifPipeline CreatePipelineWithJobs(
             out PresetConfig config, out string root, bool userSpecified)
         {
@@ -179,6 +198,11 @@ namespace AvifEncoder.Core.Tests
                 .GetValue(pipeline);
             return (int)tokens!.GetType().GetProperty("Count")!.GetValue(tokens)!;
         }
+
+        private static EventHandler? GetProcessExitHandler(AvifPipeline pipeline)
+            => (EventHandler?)typeof(AvifPipeline)
+                .GetField("_processExitHandler", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(pipeline);
 
         private static int GetWorkerTaskCount(AvifPipeline pipeline)
         {
