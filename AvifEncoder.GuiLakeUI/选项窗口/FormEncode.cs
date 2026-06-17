@@ -886,6 +886,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     else UpdateProgress(p);
                 });
 
+                bool canceledByUser = false;
                 using (_cts = new CancellationTokenSource())
                 {
                     try
@@ -900,15 +901,18 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     }
                     catch (OperationCanceledException)
                     {
+                        canceledByUser = true;
                         LogPage?.AppendLog("编码已被用户取消。");
                         MessageBox.Show("编码已取消。", "信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
                     }
                 }
 
-                LogPage?.AppendLog("===== 全部完成 =====");
-                _completedNormally = !_stopping;
-                try { SendCompletionToast(true); } catch { }
+                if (!canceledByUser)
+                {
+                    LogPage?.AppendLog("===== 全部完成 =====");
+                    _completedNormally = !_stopping;
+                    try { SendCompletionToast(true); } catch { }
+                }
             }
             catch (Exception ex)
             {
