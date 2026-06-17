@@ -1554,7 +1554,9 @@ namespace AvifEncoder
                                 if (root.TryGetProperty("xpsnru", out var xu) && xu.ValueKind == JsonValueKind.Number) m.XPSNR_U = xu.GetDouble();
                                 if (root.TryGetProperty("xpsnrv", out var xv) && xv.ValueKind == JsonValueKind.Number) m.XPSNR_V = xv.GetDouble();
                                 if (root.TryGetProperty("wxpsnr", out var wx) && wx.ValueKind == JsonValueKind.Number) m.W_XPSNR = wx.GetDouble();
-                                metricsOut[file] = m;
+                                metricsOut[file] = MergeQualityMetrics(
+                                    metricsOut.TryGetValue(file, out var existingMetrics) ? existingMetrics : null,
+                                    m);
                             }
                         }
                     }
@@ -1573,12 +1575,76 @@ namespace AvifEncoder
             }
         }
 
+        internal static QualityMetrics MergeQualityMetrics(QualityMetrics? existing, QualityMetrics? incoming)
+        {
+            if (existing == null)
+                return CloneQualityMetrics(incoming);
+
+            var result = CloneQualityMetrics(existing);
+            if (incoming == null) return result;
+
+            // Journal/snapshot payloads omit scalar metrics; their default 0 means "not present".
+            if (HasPersistedScalarMetric(incoming.SSIM)) result.SSIM = incoming.SSIM;
+            if (HasPersistedScalarMetric(incoming.PSNR_Y)) result.PSNR_Y = incoming.PSNR_Y;
+            if (HasPersistedScalarMetric(incoming.MS_SSIM)) result.MS_SSIM = incoming.MS_SSIM;
+            if (HasPersistedScalarMetric(incoming.VMAF)) result.VMAF = incoming.VMAF;
+
+            if (incoming.XPSNR_Y.HasValue) result.XPSNR_Y = incoming.XPSNR_Y;
+            if (incoming.XPSNR_U.HasValue) result.XPSNR_U = incoming.XPSNR_U;
+            if (incoming.XPSNR_V.HasValue) result.XPSNR_V = incoming.XPSNR_V;
+            if (incoming.W_XPSNR.HasValue) result.W_XPSNR = incoming.W_XPSNR;
+            if (incoming.SSIMULACRA2.HasValue) result.SSIMULACRA2 = incoming.SSIMULACRA2;
+            if (incoming.Butteraugli_Raw.HasValue) result.Butteraugli_Raw = incoming.Butteraugli_Raw;
+            if (incoming.Butteraugli_3norm.HasValue) result.Butteraugli_3norm = incoming.Butteraugli_3norm;
+            if (incoming.GMSD.HasValue) result.GMSD = incoming.GMSD;
+
+            return result;
+        }
+
+        private static QualityMetrics CloneQualityMetrics(QualityMetrics? metrics)
+        {
+            if (metrics == null) return new QualityMetrics();
+
+            return new QualityMetrics
+            {
+                SSIM = metrics.SSIM,
+                PSNR_Y = metrics.PSNR_Y,
+                MS_SSIM = metrics.MS_SSIM,
+                VMAF = metrics.VMAF,
+                XPSNR_Y = metrics.XPSNR_Y,
+                XPSNR_U = metrics.XPSNR_U,
+                XPSNR_V = metrics.XPSNR_V,
+                W_XPSNR = metrics.W_XPSNR,
+                SSIMULACRA2 = metrics.SSIMULACRA2,
+                Butteraugli_Raw = metrics.Butteraugli_Raw,
+                Butteraugli_3norm = metrics.Butteraugli_3norm,
+                GMSD = metrics.GMSD
+            };
+        }
+
+        private static bool HasPersistedScalarMetric(double value)
+        {
+            return value != default && !double.IsNaN(value);
+        }
+
         private static Dictionary<string, QualityMetrics> MergeMetrics(
             Dictionary<string, QualityMetrics>? a, Dictionary<string, QualityMetrics>? b)
         {
             var result = new Dictionary<string, QualityMetrics>(StringComparer.OrdinalIgnoreCase);
-            if (a != null) { foreach (var kv in a) result[kv.Key] = kv.Value; }
-            if (b != null) { foreach (var kv in b) result[kv.Key] = kv.Value; }
+            if (a != null)
+            {
+                foreach (var kv in a)
+                    result[kv.Key] = MergeQualityMetrics(
+                        result.TryGetValue(kv.Key, out var existingMetrics) ? existingMetrics : null,
+                        kv.Value);
+            }
+            if (b != null)
+            {
+                foreach (var kv in b)
+                    result[kv.Key] = MergeQualityMetrics(
+                        result.TryGetValue(kv.Key, out var existingMetrics) ? existingMetrics : null,
+                        kv.Value);
+            }
             return result;
         }
 
@@ -2447,7 +2513,9 @@ namespace AvifEncoder
                                         if (root.TryGetProperty("xpsnru", out var xu) && xu.ValueKind == JsonValueKind.Number) m.XPSNR_U = xu.GetDouble();
                                         if (root.TryGetProperty("xpsnrv", out var xv) && xv.ValueKind == JsonValueKind.Number) m.XPSNR_V = xv.GetDouble();
                                         if (root.TryGetProperty("wxpsnr", out var wx) && wx.ValueKind == JsonValueKind.Number) m.W_XPSNR = wx.GetDouble();
-                                        deltaMetrics[file] = m;
+                                        deltaMetrics[file] = MergeQualityMetrics(
+                                            deltaMetrics.TryGetValue(file, out var existingMetrics) ? existingMetrics : null,
+                                            m);
                                     }
                                 }
                                 if (root.TryGetProperty("fileId", out var fidEl) &&
@@ -2465,7 +2533,10 @@ namespace AvifEncoder
                     catch { }
 
                     // 3. 合并：Snapshot 指标 + 增量指标
-                    foreach (var kv in deltaMetrics) resumeMetrics[kv.Key] = kv.Value;
+                    foreach (var kv in deltaMetrics)
+                        resumeMetrics[kv.Key] = MergeQualityMetrics(
+                            resumeMetrics.TryGetValue(kv.Key, out var existingMetrics) ? existingMetrics : null,
+                            kv.Value);
 
                     // 4. 保存引用供 ExportCsv 修补旧行
                     _resumeMetricsForExport = resumeMetrics;
