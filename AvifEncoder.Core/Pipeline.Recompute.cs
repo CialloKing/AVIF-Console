@@ -19,6 +19,18 @@ namespace AvifEncoder
             public string[] Fields;
         }
 
+        internal static bool NeedsRecomputeMetricRow(
+            string[] fields, int idxSsimu2, int idxButterR, int idxButter3, int idxGmsd)
+        {
+            static bool IsMissing(string[] values, int idx)
+                => idx >= 0 && (idx >= values.Length || string.IsNullOrWhiteSpace(values[idx]));
+
+            return IsMissing(fields, idxSsimu2)
+                || IsMissing(fields, idxButterR)
+                || IsMissing(fields, idxButter3)
+                || IsMissing(fields, idxGmsd);
+        }
+
         /// <summary> 解析单行 CSV（支持引号转义） </summary>
         private static string[] ParseCsvLine(string line)
         {
@@ -123,10 +135,8 @@ namespace AvifEncoder
                         continue;
                     }
 
-                    bool hasMetrics = idxSsimu2 >= 0 &&
-                        idxSsimu2 < fields.Length &&
-                        !string.IsNullOrWhiteSpace(fields[idxSsimu2]);
-                    if (hasMetrics)
+                    if (!NeedsRecomputeMetricRow(fields, idxSsimu2,
+                        idxButterR, idxButter3, idxGmsd))
                     {
                         continue;
                     }
