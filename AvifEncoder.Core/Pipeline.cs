@@ -1291,6 +1291,16 @@ namespace AvifEncoder
                 _fileWorkers.Add(worker);
                 _fileWorkerTokens.Add(tokenSource);
             }
+            _ = worker.ContinueWith(
+                static (completedTask, state) =>
+                {
+                    var (pipeline, source) = ((AvifPipeline Pipeline, CancellationTokenSource Source))state!;
+                    pipeline.OnFileWorkerCompleted(completedTask, source);
+                },
+                (this, tokenSource),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
 
         private void StopOneFileWorker()
@@ -1305,6 +1315,18 @@ namespace AvifEncoder
                 _fileWorkerTokens.RemoveAt(last);
             }
             try { tokenSource.Cancel(); } catch { }
+        }
+
+        private void OnFileWorkerCompleted(Task worker, CancellationTokenSource tokenSource)
+        {
+            if (worker.IsFaulted)
+                _logger.LogError($"Worker 异常退出: {worker.Exception?.GetBaseException().Message}");
+            lock (_fileWorkers)
+            {
+                _fileWorkers.Remove(worker);
+                _fileWorkerTokens.Remove(tokenSource);
+            }
+            try { tokenSource.Dispose(); } catch { }
         }
 
         private async Task FileWorkerLoopAsync(CancellationToken token)

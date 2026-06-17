@@ -122,6 +122,32 @@ namespace AvifEncoder.Core.Tests
             }
         }
 
+        [TestMethod]
+        public async Task SetMaxJobs_RemovesStoppedWorkerTasksAfterShrink()
+        {
+            var pipeline = CreatePipelineWithJobs(out _, out string root, userSpecified: true);
+            try
+            {
+                Assert.AreEqual(4, pipeline.SetMaxJobs(4));
+                await WaitForWorkerTaskCountAsync(pipeline, 4);
+
+                Assert.AreEqual(1, pipeline.SetMaxJobs(1));
+                Assert.AreEqual(1, GetActiveWorkerTokenCount(pipeline));
+                await WaitForWorkerTaskCountAsync(pipeline, 1);
+
+                Assert.AreEqual(3, pipeline.SetMaxJobs(3));
+                await WaitForWorkerTaskCountAsync(pipeline, 3);
+
+                Assert.AreEqual(1, pipeline.SetMaxJobs(1));
+                await WaitForWorkerTaskCountAsync(pipeline, 1);
+            }
+            finally
+            {
+                pipeline.Dispose();
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
         private static AvifPipeline CreatePipelineWithJobs(
             out PresetConfig config, out string root, bool userSpecified)
         {
@@ -152,6 +178,27 @@ namespace AvifEncoder.Core.Tests
                 .GetField("_fileWorkerTokens", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(pipeline);
             return (int)tokens!.GetType().GetProperty("Count")!.GetValue(tokens)!;
+        }
+
+        private static int GetWorkerTaskCount(AvifPipeline pipeline)
+        {
+            var workers = typeof(AvifPipeline)
+                .GetField("_fileWorkers", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(pipeline);
+            return (int)workers!.GetType().GetProperty("Count")!.GetValue(workers)!;
+        }
+
+        private static async Task WaitForWorkerTaskCountAsync(AvifPipeline pipeline, int expected)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(3);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (GetWorkerTaskCount(pipeline) == expected)
+                    return;
+                await Task.Delay(20);
+            }
+
+            Assert.AreEqual(expected, GetWorkerTaskCount(pipeline));
         }
     }
 }
