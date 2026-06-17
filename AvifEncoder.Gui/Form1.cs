@@ -178,6 +178,14 @@ namespace AvifEncoder.Gui
         /// <summary>根据质量模式自动设置 numQualityValue 的有效范围，避免越界</summary>
         private void SetQualityValueRange(string mode)
         {
+            if (MetricRegistry.IsXpsnr(mode))
+            {
+                numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
+                numQualityValue.DecimalPlaces = 1;
+                numQualityValue.Enabled = true;
+                return;
+            }
+
             switch (mode)
             {
                 case "VMAF":
@@ -185,9 +193,6 @@ namespace AvifEncoder.Gui
                     numQualityValue.DecimalPlaces = 1; break;
                 case "PSNR-Y":
                     numQualityValue.Minimum = 30; numQualityValue.Maximum = 50;
-                    numQualityValue.DecimalPlaces = 1; break;
-                case "XPSNR":
-                    numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
                     numQualityValue.DecimalPlaces = 1; break;
                 case "SSIMULACRA2":
                     numQualityValue.Minimum = -100; numQualityValue.Maximum = 100;
@@ -315,11 +320,16 @@ namespace AvifEncoder.Gui
             SetQualityValueRange(mode);
 
             // 根据模式设置默认质量值（用户手动切换时触发）
+            if (MetricRegistry.IsXpsnr(mode))
+            {
+                numQualityValue.Value = 45;
+                return;
+            }
+
             numQualityValue.Value = mode switch
             {
                 "VMAF" => 95,
                 "PSNR-Y" => 40,
-                "XPSNR" => 45,
                 "SSIMULACRA2" => 90,
                 "Butteraugli 3norm" => 1,
                 "GMSD" => 0.2m,
