@@ -387,6 +387,10 @@ namespace AvifEncoder
             {
                 if (XpsnrTargetValue.Value < 0) errors.Add($"XPSNR 目标 ({XpsnrTargetValue.Value}) 不能为负数");
             }
+            if (Ssimu2TargetValue.HasValue)
+            {
+                if (Ssimu2TargetValue.Value < 0) errors.Add($"SSIMULACRA2 目标 ({Ssimu2TargetValue.Value}) 不能为负数");
+            }
             if (Butteraugli3TargetValue.HasValue)
             {
                 if (Butteraugli3TargetValue.Value < 0) errors.Add($"Butteraugli 目标 ({Butteraugli3TargetValue.Value}) 不能为负数");
@@ -394,6 +398,20 @@ namespace AvifEncoder
             if (GmsdTargetValue.HasValue)
             {
                 if (GmsdTargetValue.Value < 0) errors.Add($"GMSD 目标 ({GmsdTargetValue.Value}) 不能为负数");
+            }
+
+            // ★ 高级度量搜索时必须显式指定目标值，否则 AdjustTargetForMetricMode 早期返回导致异常
+            if (UseCRFSearch && IsAdvancedMetricMode(MetricMode))
+            {
+                string? missing = MetricMode?.ToLowerInvariant() switch
+                {
+                    "ssimu2" => !Ssimu2TargetValue.HasValue ? "--target-ssimu2" : null,
+                    "butter3" => !Butteraugli3TargetValue.HasValue ? "--target-butter3" : null,
+                    "gmsd" => !GmsdTargetValue.HasValue ? "--target-gmsd" : null,
+                    _ => null
+                };
+                if (missing != null)
+                    errors.Add($"搜索度量 '{MetricMode}' 需要显式设置 {missing} <值>，或使用 --quality-target <值>");
             }
 
             return errors;

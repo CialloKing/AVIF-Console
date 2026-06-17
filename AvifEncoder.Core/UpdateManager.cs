@@ -389,9 +389,11 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
-                // ★ 先异步读取再等待退出，避免管道缓冲区满导致死锁
+                process.Start();
                 var readTask = process.StandardOutput.ReadToEndAsync();
-                process.WaitForExit(5000);
+                bool exited = process.WaitForExit(5000);
+                // ★ 进程超时未退出时 stdout 流不会关闭，readTask 无限阻塞
+                if (!exited) { try { process.Kill(); } catch { } }
                 string output = readTask.Result;
                 return output.Contains("Microsoft.NETCore.App 10.");
             }

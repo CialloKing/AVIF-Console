@@ -631,6 +631,8 @@ namespace AvifEncoder
 
         private static double? ParseSingleValue(string val)
         {
+            if (val.Equals("-inf", StringComparison.OrdinalIgnoreCase))
+                return double.NegativeInfinity;
             if (val.Equals("inf", StringComparison.OrdinalIgnoreCase))
                 return double.PositiveInfinity;
             if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))

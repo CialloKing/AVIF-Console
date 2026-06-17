@@ -68,9 +68,12 @@ namespace AvifEncoder.Core.Tests
                 RedirectStandardError = true
             });
             Assert.IsNotNull(process);
+            // ★ 先读取 stderr 再等待退出，避免管道缓冲区满导致死锁
+            var stderrTask = process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
+            string stderr = await stderrTask;
 
-            Assert.AreEqual(0, process.ExitCode, $"ffmpeg failed: {process.StandardError.ReadToEnd()}");
+            Assert.AreEqual(0, process.ExitCode, $"ffmpeg failed: {stderr}");
             Assert.IsTrue(File.Exists(output), "Output AVIF file was not created");
             Assert.IsTrue(new FileInfo(output).Length > 100, "Output AVIF file is too small");
         }

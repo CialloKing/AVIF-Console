@@ -599,7 +599,7 @@ namespace AvifEncoder
             {
                 Console.WriteLine("[FAIL] 错误: ffmpeg 未找到，请确认 ffmpeg 已安装并添加到 PATH 环境变量中。");
                 Console.WriteLine("按任意键退出...");
-                Console.ReadKey();
+                if (!Console.IsInputRedirected) Console.ReadKey();
                 return;
             }
             if (args.Length == 0)
@@ -613,28 +613,42 @@ namespace AvifEncoder
                 string? line = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(line))
                     args = ParseCommandLineInteractive(line);
-                else { Console.WriteLine("未输入参数，退出。"); Console.ReadKey(); return; }
+                else { Console.WriteLine("未输入参数，退出。"); if (!Console.IsInputRedirected) Console.ReadKey(); return; }
             }
-            ParsedOptions? opts = ParseCommandLineArgs(args);
-            if (opts == null) return;
-            if (opts.ShowVersion)
+            ParsedOptions? opts = null;
+            PresetConfig config = null!;
+            try
             {
-                Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
-                return;
+                opts = ParseCommandLineArgs(args);
+                if (opts == null) return;
+                if (opts.ShowVersion)
+                {
+                    Console.WriteLine($"AVIF-Console v{AppVersion} (Linux-style CLI for Windows)");
+                    return;
+                }
+                // 路径校验
+                if (string.IsNullOrWhiteSpace(opts.InputDir))
+                {
+                    Console.WriteLine("[ERROR] 输入目录不能为空");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(opts.OutputDir))
+                {
+                    Console.WriteLine("[ERROR] 输出目录不能为空");
+                    return;
+                }
+
+                config = BuildPresetConfig(opts);
             }
-            // 路径校验
-            if (string.IsNullOrWhiteSpace(opts.InputDir))
+            catch (Exception ex)
             {
-                Console.WriteLine("[ERROR] 输入目录不能为空");
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(opts.OutputDir))
-            {
-                Console.WriteLine("[ERROR] 输出目录不能为空");
+                try { Logger.Log($"[FAIL] 参数解析错误: {ex.Message}"); } catch { }
+                Console.Error.WriteLine($"[FAIL] 参数解析错误: {ex.Message}");
+                if (!Console.IsInputRedirected) Console.ReadKey();
                 return;
             }
 
-            PresetConfig config = BuildPresetConfig(opts);
+            if (opts == null) return;
             if (opts.DryRun)
             {
                 Console.WriteLine("== Dry Run ==");
@@ -695,7 +709,7 @@ namespace AvifEncoder
                     try { SetConsoleMode(consoleHandle, originalMode); } catch { }
                 }
                 Console.WriteLine("按任意键退出...");
-                Console.ReadKey();
+                if (!Console.IsInputRedirected) Console.ReadKey();
             }
         }
 

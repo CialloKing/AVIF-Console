@@ -359,7 +359,9 @@ namespace AvifEncoder
                 _spawnedProcesses.Add(process);
                 if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
-                using var ms = new MemoryStream(w * h * expectedFrames);  // ★ 预分配：灰度 1 字节/像素
+                // ★ 用 long 乘法避免 int 溢出（4K×260帧≈21.5亿 > int.MaxValue）
+                long capacity = (long)w * h * expectedFrames;
+                using var ms = capacity <= int.MaxValue ? new MemoryStream((int)capacity) : new MemoryStream();
                 var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
                 var stderrTask = process.StandardError.ReadToEndAsync();
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -1106,9 +1108,6 @@ namespace AvifEncoder
                 if (hasAvifInput)
                 {
                     string subDir = Path.Combine(_outputDir, "Avifoutput");
-                    _logger?.LogInfo(
-                        $"[INFO] 输入输出同目录且存在 .avif 源文件，" +
-                        $"输出自动重定向到: {subDir}");
                     SafeWriteLine(
                         $"[INFO] 输入和输出目录相同，为避免覆盖源 .avif 文件，" +
                         $"输出目录自动变更为: {subDir}");
@@ -1784,11 +1783,8 @@ namespace AvifEncoder
         private async Task<ProbeInfo?> GetProbeInfoAsync(string filePath)
         {
             string key = EncodeHelpers.GetNormalizedPathForCache(filePath);
-            if (_probeCache.TryGetValue(key, out var cachedTask))
-                return await cachedTask;
-            var task = ProbeFileCoreAsync(filePath);
-            _probeCache.TryAdd(key, task);
-            // ★ 等待 Task 完成，仅在结果非 null 时保留缓存；null 时移除允许后续重试。
+            // ★ 使用 GetOrAdd 原子化创建+缓存，避免多个线程对同一文件启动重复 ffprobe
+            var task = _probeCache.GetOrAdd(key, _ => ProbeFileCoreAsync(filePath));
             var result = await task;
             if (result == null)
                 _probeCache.TryRemove(key, out _);
@@ -2189,9 +2185,13 @@ namespace AvifEncoder
                 .Replace("{dir}", dir);
 
             // 编码参数占位符
+            // ★ {crf}：搜索模式显示范围，固定CRF模式显示实际值
+            string crfDisplay = _config.UseCRFSearch && _config.MinCRF != _config.MaxCRF
+                ? $"{_config.MinCRF}-{_config.MaxCRF}"
+                : _config.BaseCRF.ToString();
             result = result
                 .Replace("{encoder}", _config.Encoder)
-                .Replace("{crf}", _config.BaseCRF.ToString())
+                .Replace("{crf}", crfDisplay)
                 .Replace("{preset}", _config.MetricMode ?? "")
                 .Replace("{speed}", _config.FinalCpuUsed.ToString())
                 .Replace("{pixfmt}", _config.PixelFormat ?? "auto")
