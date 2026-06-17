@@ -683,6 +683,11 @@ namespace AvifEncoder
                 // GMSD 是内部实现，失败时记录日志并放行，避免单次异常阻塞整个流水线
                 if (needGmsd && !finalMetrics!.GMSD.HasValue)
                     _logger.LogInfo($"[METRICS] GMSD 计算失败，跳过");
+                if (needXpsnr && NeedsXpsnrMetrics(finalMetrics!))
+                {
+                    _logger.LogInfo($"[METRICS] XPSNR 璁＄畻鏈畬鎴愶紝绛夊緟 Resume 琛ョ畻");
+                    allMetricsReady = false;
+                }
             }
             else { allMetricsReady = false; }
 
@@ -1625,6 +1630,14 @@ namespace AvifEncoder
         private static bool HasPersistedScalarMetric(double value)
         {
             return value != default && !double.IsNaN(value);
+        }
+
+        internal static bool NeedsXpsnrMetrics(QualityMetrics metrics)
+        {
+            return !metrics.XPSNR_Y.HasValue ||
+                   !metrics.XPSNR_U.HasValue ||
+                   !metrics.XPSNR_V.HasValue ||
+                   !metrics.W_XPSNR.HasValue;
         }
 
         private static Dictionary<string, QualityMetrics> MergeMetrics(

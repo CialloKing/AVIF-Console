@@ -50,5 +50,32 @@ namespace AvifEncoder.Core.Tests
             Assert.AreEqual(1.1, merged.Butteraugli_3norm);
             Assert.AreEqual(0.02, merged.GMSD);
         }
+
+        [TestMethod]
+        public void NeedsXpsnrMetrics_MissingAnyChannel_ReturnsTrue()
+        {
+            var metrics = new QualityMetrics
+            {
+                XPSNR_Y = 45.0,
+                XPSNR_U = 46.0,
+                XPSNR_V = 47.0
+            };
+
+            Assert.IsTrue(AvifPipeline.NeedsXpsnrMetrics(metrics));
+        }
+
+        [TestMethod]
+        public void NeedsXpsnrMetrics_AllChannelsPresent_ReturnsFalse()
+        {
+            var metrics = new QualityMetrics
+            {
+                XPSNR_Y = 45.0,
+                XPSNR_U = 46.0,
+                XPSNR_V = 47.0,
+                W_XPSNR = 45.5
+            };
+
+            Assert.IsFalse(AvifPipeline.NeedsXpsnrMetrics(metrics));
+        }
     }
 }

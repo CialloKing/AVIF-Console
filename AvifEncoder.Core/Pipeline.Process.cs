@@ -684,11 +684,13 @@ namespace AvifEncoder
                     bool needSsimu2 = !config.IsMetricSkipped("ssimu2") && !cachedMetrics.SSIMULACRA2.HasValue;
                     bool needButter = !config.IsMetricSkipped("butter3") && (!cachedMetrics.Butteraugli_3norm.HasValue || !cachedMetrics.Butteraugli_Raw.HasValue);
                     bool needGmsd = !config.IsMetricSkipped("gmsd") && !cachedMetrics.GMSD.HasValue;
+                    bool needXpsnr = !config.IsMetricSkipped("xpsnr") &&
+                                     encInfo.IsAnimated &&
+                                     NeedsXpsnrMetrics(cachedMetrics);
 
-                    if (needSsimu2 || needButter || needGmsd)
+                    if (needSsimu2 || needButter || needGmsd || needXpsnr)
                     {
                         // 动图 XPSNR 在后台任务中逐帧计算，需传递 skip 信号
-                        bool needXpsnr = !config.IsMetricSkipped("xpsnr");
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
@@ -766,11 +768,13 @@ namespace AvifEncoder
                     bool needSsimu2 = !config.IsMetricSkipped("ssimu2") && !metrics.SSIMULACRA2.HasValue;
                     bool needButter = !config.IsMetricSkipped("butter3") && (!metrics.Butteraugli_3norm.HasValue || !metrics.Butteraugli_Raw.HasValue);
                     bool needGmsd = !config.IsMetricSkipped("gmsd") && !metrics.GMSD.HasValue;
+                    bool needXpsnr = !config.IsMetricSkipped("xpsnr") &&
+                                     encInfo.IsAnimated &&
+                                     NeedsXpsnrMetrics(metrics);
 
-                    if (needSsimu2 || needButter || needGmsd)
+                    if (needSsimu2 || needButter || needGmsd || needXpsnr)
                     {
                         // 动图 XPSNR 在后台任务中逐帧计算，需传递 skip 信号
-                        bool needXpsnr = !config.IsMetricSkipped("xpsnr");
                         var bgTask = ComputeAdvancedMetricsInBackgroundAsync(
                             workingInputPath, outputPath, _outputDir, cacheKey,
                             needSsimu2, needButter, needGmsd,
