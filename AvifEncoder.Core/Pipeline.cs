@@ -138,6 +138,7 @@ namespace AvifEncoder
         private System.Threading.Channels.Channel<FileWorkItem> _fileChannel = null!;
         private readonly CancellationTokenSource _fileWorkerCts = new();
         private readonly List<Task> _fileWorkers = new();
+        private readonly List<CancellationTokenSource> _fileWorkerTokens = new();
         private int _targetFileWorkers;
 
         private record struct FileWorkItem(string FilePath, int Index, PresetConfig Config, bool IsRetry,
@@ -1219,7 +1220,7 @@ namespace AvifEncoder
                 new System.Threading.Channels.BoundedChannelOptions(config.MaxJobs * 2)
                 { FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait });
             for (int i = 0; i < config.MaxJobs; i++)
-                lock (_fileWorkers) { _fileWorkers.Add(FileWorkerLoopAsync()); }
+                StartFileWorker();
 
             _guiProgress = progress;       // ★ 改为 _guiProgress
 
@@ -1276,22 +1277,43 @@ namespace AvifEncoder
             int diff = target - _targetFileWorkers;
             _targetFileWorkers = target;
             for (int i = 0; i < diff; i++)
-                lock (_fileWorkers) { _fileWorkers.Add(FileWorkerLoopAsync()); }
+                StartFileWorker();
             for (int i = 0; i < -diff; i++)
-                _ = Task.Run(async () => { try { await _fileChannel.Writer.WriteAsync(default); } catch { } });  // 毒丸：用 WriteAsync 防 Channel 满时丢失
+                StopOneFileWorker();
         }
 
-        private async Task FileWorkerLoopAsync()
+        private void StartFileWorker()
+        {
+            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_fileWorkerCts.Token);
+            Task worker = FileWorkerLoopAsync(tokenSource.Token);
+            lock (_fileWorkers)
+            {
+                _fileWorkers.Add(worker);
+                _fileWorkerTokens.Add(tokenSource);
+            }
+        }
+
+        private void StopOneFileWorker()
+        {
+            CancellationTokenSource? tokenSource = null;
+            lock (_fileWorkers)
+            {
+                if (_fileWorkerTokens.Count == 0)
+                    return;
+                int last = _fileWorkerTokens.Count - 1;
+                tokenSource = _fileWorkerTokens[last];
+                _fileWorkerTokens.RemoveAt(last);
+            }
+            try { tokenSource.Cancel(); } catch { }
+        }
+
+        private async Task FileWorkerLoopAsync(CancellationToken token)
         {
             try
             {
                 await foreach (var item in _fileChannel.Reader.ReadAllAsync(
-                    _fileWorkerCts.Token))
+                    token))
                 {
-                    if (item.Config == null)  // 毒丸
-                    {
-                        return;
-                    }
                     try
                     {
                         var r = await ProcessSingleFileAsync(item.FilePath, item.Index, item.Config, item.IsRetry);
@@ -1858,6 +1880,10 @@ namespace AvifEncoder
             try { _globalCts?.Cancel(); } catch { }
             try { _fileChannel.Writer.Complete(); } catch { }
             try { _fileWorkerCts.Cancel(); } catch { }
+            CancellationTokenSource[] workerTokens;
+            lock (_fileWorkers) { workerTokens = _fileWorkerTokens.ToArray(); }
+            foreach (var cts in workerTokens)
+                try { cts.Cancel(); } catch { }
             Task[] workers; lock (_fileWorkers) { workers = _fileWorkers.ToArray(); }
             try { Task.WaitAll(workers, TimeSpan.FromSeconds(10)); } catch { }
             try { FinalCleanup(); } catch { }
@@ -1868,6 +1894,8 @@ namespace AvifEncoder
             if (_cancelKeyHandler != null)
                 Console.CancelKeyPress -= _cancelKeyHandler;
             _advancedMetricSemaphore?.Dispose();
+            foreach (var cts in workerTokens)
+                try { cts.Dispose(); } catch { }
             try { _fileWorkerCts.Dispose(); } catch { }
             _lockStream?.Dispose();
             GC.SuppressFinalize(this);

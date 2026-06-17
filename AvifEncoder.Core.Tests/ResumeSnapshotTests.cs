@@ -102,6 +102,26 @@ namespace AvifEncoder.Core.Tests
             }
         }
 
+        [TestMethod]
+        public void SetMaxJobs_CanShrinkAndExpandWorkersRepeatedly()
+        {
+            var pipeline = CreatePipelineWithJobs(out _, out string root, userSpecified: true);
+            try
+            {
+                Assert.AreEqual(3, pipeline.SetMaxJobs(3));
+                Assert.AreEqual(3, GetActiveWorkerTokenCount(pipeline));
+                Assert.AreEqual(1, pipeline.SetMaxJobs(1));
+                Assert.AreEqual(1, GetActiveWorkerTokenCount(pipeline));
+                Assert.AreEqual(3, pipeline.SetMaxJobs(3));
+                Assert.AreEqual(3, GetActiveWorkerTokenCount(pipeline));
+            }
+            finally
+            {
+                pipeline.Dispose();
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
         private static AvifPipeline CreatePipelineWithJobs(
             out PresetConfig config, out string root, bool userSpecified)
         {
@@ -124,6 +144,14 @@ namespace AvifEncoder.Core.Tests
                 .GetField("_ffmpegSlots", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(pipeline);
             return (int)slots!.GetType().GetProperty("CurrentMax")!.GetValue(slots)!;
+        }
+
+        private static int GetActiveWorkerTokenCount(AvifPipeline pipeline)
+        {
+            var tokens = typeof(AvifPipeline)
+                .GetField("_fileWorkerTokens", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(pipeline);
+            return (int)tokens!.GetType().GetProperty("Count")!.GetValue(tokens)!;
         }
     }
 }
