@@ -505,7 +505,7 @@ namespace AvifEncoder
                 if (isAnimated)
                 {
                     // 第一次尝试：[0:v]（封面流/单流）
-                    var (y1, u1, v1) = await TryXpsnrAsync(safeDist, safeRef, "[0:v]", actualPixFmt, isAnimated: true);
+                    var (y1, u1, v1) = await TryXpsnrAsync(safeDist, safeRef, "[0:v]", actualPixFmt, limitToFirstFrame: true);
                     if (y1.HasValue && y1.Value > 20)
                         return (y1, u1, v1, ComputeWXPSNR(y1, u1, v1, bitDepth));
 
@@ -527,7 +527,7 @@ namespace AvifEncoder
                     }
                 }
 
-                var (y, u, v) = await TryXpsnrAsync(actualDist, safeRef, "[0:v]", actualPixFmt, isAnimated: isAnimated);
+                var (y, u, v) = await TryXpsnrAsync(actualDist, safeRef, "[0:v]", actualPixFmt, limitToFirstFrame: isAnimated);
                 double? w = ComputeWXPSNR(y, u, v, bitDepth);
                 return (y, u, v, w);
             }
@@ -578,12 +578,12 @@ namespace AvifEncoder
 
         private async Task<(double? y, double? u, double? v)> TryXpsnrAsync(
             string distPath, string refPath, string distStream, string actualPixFmt,
-            bool isAnimated = false)
+            bool limitToFirstFrame = false)
         {
             // ★ 动图多帧 XPSNR 在部分 ffmpeg 版本触发 heap corruption（0xFFFFFFFFFFFFFFFF）
             //    临时方案：限制 1 帧比较，避免崩溃；libvmaf 已有全帧平均
-            string frameLimit = isAnimated ? "-frames:v 1 " : "";
-            if (isAnimated)
+            string frameLimit = limitToFirstFrame ? "-frames:v 1 " : "";
+            if (limitToFirstFrame)
                 _logger.LogInfo($"XPSNR 动图首帧模式（多帧全比较触发 ffmpeg 崩溃，仅取首帧）");
 
             string args = $"-i \"{distPath}\" -i \"{refPath}\" " +
