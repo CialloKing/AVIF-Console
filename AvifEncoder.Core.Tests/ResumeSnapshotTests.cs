@@ -61,5 +61,69 @@ namespace AvifEncoder.Core.Tests
                 try { Directory.Delete(root, true); } catch { }
             }
         }
+
+        [TestMethod]
+        public void RestoreMaxJobsFromSnapshot_UpdatesRuntimeLimiterWhenNotUserSpecified()
+        {
+            var pipeline = CreatePipelineWithJobs(out var config, out string root, userSpecified: false);
+            try
+            {
+                using var doc = JsonDocument.Parse("""{"MaxJobs":2}""");
+
+                pipeline.RestoreMaxJobsFromSnapshot(doc.RootElement);
+
+                Assert.AreEqual(2, config.MaxJobs);
+                Assert.AreEqual(2, GetFfmpegSlotMax(pipeline));
+            }
+            finally
+            {
+                pipeline.Dispose();
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void RestoreMaxJobsFromSnapshot_KeepsUserSpecifiedRuntimeJobs()
+        {
+            var pipeline = CreatePipelineWithJobs(out var config, out string root, userSpecified: true);
+            try
+            {
+                using var doc = JsonDocument.Parse("""{"MaxJobs":2}""");
+
+                pipeline.RestoreMaxJobsFromSnapshot(doc.RootElement);
+
+                Assert.AreEqual(1, config.MaxJobs);
+                Assert.AreEqual(1, GetFfmpegSlotMax(pipeline));
+            }
+            finally
+            {
+                pipeline.Dispose();
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
+        private static AvifPipeline CreatePipelineWithJobs(
+            out PresetConfig config, out string root, bool userSpecified)
+        {
+            root = Path.Combine(Path.GetTempPath(), $"avif_resume_jobs_{Guid.NewGuid():N}");
+            string inputDir = Path.Combine(root, "input");
+            string outputDir = Path.Combine(root, "output");
+            Directory.CreateDirectory(inputDir);
+
+            config = PresetConfig.CreateFromPreset(CliPreset.Fast);
+            config.MaxJobs = 1;
+            config.UserSpecifiedMaxJobs = true;
+            var pipeline = new AvifPipeline(inputDir, outputDir, config, logger: new NullLogger());
+            config.UserSpecifiedMaxJobs = userSpecified;
+            return pipeline;
+        }
+
+        private static int GetFfmpegSlotMax(AvifPipeline pipeline)
+        {
+            var slots = typeof(AvifPipeline)
+                .GetField("_ffmpegSlots", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(pipeline);
+            return (int)slots!.GetType().GetProperty("CurrentMax")!.GetValue(slots)!;
+        }
     }
 }

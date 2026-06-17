@@ -2439,7 +2439,7 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("SearchCpuUsed", out var sc)) _config.SearchCpuUsed = sc.GetInt32();
                             if (cfg.TryGetProperty("FinalCpuUsed", out var fc)) _config.FinalCpuUsed = fc.GetInt32();
                             if (cfg.TryGetProperty("MaxResolution", out var mr)) _config.MaxResolution = mr.GetInt32();
-                            if (cfg.TryGetProperty("MaxJobs", out var mj)) _config.MaxJobs = mj.GetInt32();
+                            RestoreMaxJobsFromSnapshot(cfg);
                             if (cfg.TryGetProperty("FileConflictStrategy", out var fcs) &&
                                 Enum.TryParse<PresetConfig.ConflictStrategy>(fcs.GetString(), out var strategy))
                                 _config.FileConflictStrategy = strategy;
@@ -2735,6 +2735,17 @@ namespace AvifEncoder
             {
                 config.XpsnrTargetChannel ??= "w";
             }
+        }
+
+        internal void RestoreMaxJobsFromSnapshot(JsonElement cfg)
+        {
+            if (_config.UserSpecifiedMaxJobs)
+                return;
+            if (!cfg.TryGetProperty("MaxJobs", out var mj) || mj.ValueKind != JsonValueKind.Number)
+                return;
+
+            int snapshotJobs = mj.GetInt32();
+            SetMaxJobs(snapshotJobs);
         }
 
         /// <summary>计算文件稳定标识符（相对路径 + 大小 + 修改时间 → SHA256 前 16 位）。</summary>
