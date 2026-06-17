@@ -1707,6 +1707,7 @@ namespace AvifEncoder
                         _config.NativeTargetValue,
                         _config.TargetSSIM,
                         _config.XpsnrTargetValue,
+                        _config.XpsnrTargetChannel,
                         _config.Ssimu2TargetValue,
                         _config.Butteraugli3TargetValue,
                         _config.GmsdTargetValue,
@@ -2418,6 +2419,7 @@ namespace AvifEncoder
                             if (cfg.TryGetProperty("TargetSSIM", out var tssim)) _config.TargetSSIM = tssim.GetDouble();
                             if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != JsonValueKind.Null)
                                 _config.XpsnrTargetValue = xptv.GetDouble();
+                            RestoreXpsnrTargetChannelFromSnapshot(_config, cfg);
                             if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != JsonValueKind.Null)
                                 _config.Ssimu2TargetValue = s2tv.GetDouble();
                             if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != JsonValueKind.Null)
@@ -2709,6 +2711,30 @@ namespace AvifEncoder
                 "gmsd" => target.ToString("F4") + " (GMSD)",
                 _ => target.ToString("F4")
             };
+        }
+
+        internal static void RestoreXpsnrTargetChannelFromSnapshot(PresetConfig config, JsonElement cfg)
+        {
+            if (cfg.TryGetProperty("XpsnrTargetChannel", out var xptc) &&
+                xptc.ValueKind != JsonValueKind.Null)
+            {
+                string? channel = xptc.GetString();
+                if (!string.IsNullOrWhiteSpace(channel))
+                {
+                    config.XpsnrTargetChannel = channel.Trim().ToLowerInvariant();
+                    return;
+                }
+            }
+
+            string metricMode = config.MetricMode ?? "";
+            if (metricMode.StartsWith("xpsnr_", StringComparison.OrdinalIgnoreCase))
+            {
+                config.XpsnrTargetChannel = metricMode.Substring("xpsnr_".Length).ToLowerInvariant();
+            }
+            else if (string.Equals(metricMode, "xpsnr", StringComparison.OrdinalIgnoreCase))
+            {
+                config.XpsnrTargetChannel ??= "w";
+            }
         }
 
         /// <summary>计算文件稳定标识符（相对路径 + 大小 + 修改时间 → SHA256 前 16 位）。</summary>

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -175,6 +176,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         {
             int idx = combo.Items.IndexOf(item);
             combo.SelectedIndex = idx >= 0 ? idx : -1;
+        }
+
+        private static string ResolveMetricDisplayName(JsonElement cfg, string fallback = "VMAF")
+        {
+            string metricMode = cfg.TryGetProperty("MetricMode", out var mm)
+                ? (mm.GetString() ?? "")
+                : "";
+            return MetricRegistry.Get(metricMode)?.DisplayName ?? fallback;
         }
 
         private void InitializeAllControls()
@@ -1597,7 +1606,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 if (cfg.TryGetProperty("NativeTargetValue", out var ntv) && ntv.ValueKind != System.Text.Json.JsonValueKind.Null)
                     nativeTarget = ntv.GetDouble();
                 if (cfg.TryGetProperty("XpsnrTargetValue", out var xptv) && xptv.ValueKind != System.Text.Json.JsonValueKind.Null)
-                { SetComboBoxItem(cmbQualityMode, "XPSNR (W)"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, xptv.GetDouble())); }
+                { SetComboBoxItem(cmbQualityMode, ResolveMetricDisplayName(cfg, "XPSNR (W)")); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, xptv.GetDouble())); }
                 else if (cfg.TryGetProperty("Ssimu2TargetValue", out var s2tv) && s2tv.ValueKind != System.Text.Json.JsonValueKind.Null)
                 { SetComboBoxItem(cmbQualityMode, "SSIMULACRA2"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, s2tv.GetDouble())); }
                 else if (cfg.TryGetProperty("Butteraugli3TargetValue", out var b3tv) && b3tv.ValueKind != System.Text.Json.JsonValueKind.Null)
@@ -1606,9 +1615,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 { SetComboBoxItem(cmbQualityMode, "GMSD"); numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, gtv.GetDouble())); }
                 else if (nativeTarget.HasValue)
                 {
-                    string mmStr = cfg.TryGetProperty("MetricMode", out var mm2) ? (mm2.GetString() ?? "vmaf") : "vmaf";
-                    string modeName = MetricRegistry.Get(mmStr)?.DisplayName ?? "VMAF";
-                    SetComboBoxItem(cmbQualityMode, modeName);
+                    SetComboBoxItem(cmbQualityMode, ResolveMetricDisplayName(cfg));
                     numQualityValue.Value = Math.Max(numQualityValue.Minimum, Math.Min(numQualityValue.Maximum, nativeTarget.Value));
                 }
                 // 恢复 AutoSource 状态：auto 模式下 chroma/bitDepth 显示 "auto"
