@@ -2457,6 +2457,14 @@ namespace AvifEncoder
                                 _config.ArNrUseMaxFrames = auf.GetBoolean();
                             if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != JsonValueKind.Null)
                                 _config.RgbMode = rgb.GetString();
+                            if (cfg.TryGetProperty("ApplyScalingToOutput", out var aso))
+                                _config.ApplyScalingToOutput = aso.GetBoolean();
+                            if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != JsonValueKind.Null)
+                                _config.AnimatedCommand = ac.GetString();
+                            if (cfg.TryGetProperty("SafeEncodeTimeoutMinutes", out var set))
+                                _config.SafeEncodeTimeoutMinutes = set.GetInt32();
+                            if (cfg.TryGetProperty("SearchEncodeTimeoutMinutes", out var sept))
+                                _config.SearchEncodeTimeoutMinutes = sept.GetInt32();
                             if (cfg.TryGetProperty("SkippedMetrics", out var sm) && sm.ValueKind == JsonValueKind.Array)
                                 _config.SkippedMetrics = sm.EnumerateArray()
                                     .Select(x => x.GetString())

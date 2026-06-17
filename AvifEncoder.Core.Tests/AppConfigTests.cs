@@ -125,6 +125,35 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void SaveAndLoad_AdvancedEncodingFields_RoundTrip()
+        {
+            var original = new AppConfig
+            {
+                EncodeAnimatedCommand = "-i {input} -c:v libaom-av1 {output}",
+                EncodeSkippedMetrics = "xpsnr,ssimu2",
+                EncodeEncoderParams = "sharpness=2",
+                EncodeDryRun = true,
+                EncodeVerbose = true,
+                EncodeDenoise = 6,
+                EncodeArNrUseMaxFrames = true,
+                EncodeRgbMode = "gbrp16le"
+            };
+
+            AppConfigHelper.SaveToFile(original, _tempFile);
+            var loaded = AppConfigHelper.LoadFromFile(_tempFile);
+
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual(original.EncodeAnimatedCommand, loaded!.EncodeAnimatedCommand);
+            Assert.AreEqual(original.EncodeSkippedMetrics, loaded.EncodeSkippedMetrics);
+            Assert.AreEqual(original.EncodeEncoderParams, loaded.EncodeEncoderParams);
+            Assert.IsTrue(loaded.EncodeDryRun);
+            Assert.IsTrue(loaded.EncodeVerbose);
+            Assert.AreEqual(6, loaded.EncodeDenoise);
+            Assert.IsTrue(loaded.EncodeArNrUseMaxFrames);
+            Assert.AreEqual("gbrp16le", loaded.EncodeRgbMode);
+        }
+
+        [TestMethod]
         public void Serialize_IncludesEncodingFields()
         {
             var cfg = new AppConfig

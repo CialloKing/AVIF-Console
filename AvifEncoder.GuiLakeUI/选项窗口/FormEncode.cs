@@ -1681,6 +1681,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             optsPage.SetRgbMode(rgb.GetString());
                         if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetAnimatedCommand(ac.GetString() ?? "");
+                        if (cfg.TryGetProperty("SkippedMetrics", out var sm) && sm.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            string csv = string.Join(",",
+                                sm.EnumerateArray()
+                                    .Select(x => x.GetString())
+                                    .Where(x => !string.IsNullOrWhiteSpace(x)));
+                            optsPage.LoadSkippedMetrics(csv);
+                        }
                         if (cfg.TryGetProperty("DryRun", out var dr))
                             optsPage.SetDryRun(dr.GetBoolean());
                         if (cfg.TryGetProperty("Verbose", out var vb))
