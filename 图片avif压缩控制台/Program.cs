@@ -121,8 +121,9 @@ namespace AvifEncoder
                             {
                                 string raw = GetValue().ToLower();
                                 opts.MetricMode = raw;
-                                if (raw is "ssimu2" or "butter3" or "gmsd")
-                                    opts.AdvancedMetricMode = raw;
+                                opts.AdvancedMetricMode = raw is "ssimu2" or "butter3" or "gmsd"
+                                    ? raw
+                                    : null;
                             }
                             break;
                         case "target-vmaf": opts.DirectTargetMode = "vmaf"; opts.DirectTargetValue = double.Parse(GetValue(), CultureInfo.InvariantCulture); break;
@@ -443,12 +444,13 @@ namespace AvifEncoder
                 AvifPipeline.ApplyBitDepth(config);
                 if (opts.DirectTargetValue.HasValue && !string.IsNullOrEmpty(opts.DirectTargetMode))
                 {
-                    opts.MetricMode = opts.DirectTargetMode;
+                    string targetMetricMode = ResolveDirectTargetMetricMode(opts);
+                    opts.MetricMode = targetMetricMode;
                     opts.QualityTarget = opts.DirectTargetValue;
                     // ★ 清除 AdvancedMetricMode 残留：--target-vmaf 覆盖 --metric ssimu2 后，
                     //    AdvancedMetricMode 仍为 "ssimu2"，导致 effectiveMetric 取错。
                     //    仅当 DirectTargetMode 本身是高级指标时保留。
-                    if (opts.DirectTargetMode is not ("ssimu2" or "butter3" or "gmsd"))
+                    if (targetMetricMode is not ("ssimu2" or "butter3" or "gmsd"))
                     {
                         opts.AdvancedMetricMode = null;
                     }
@@ -584,6 +586,17 @@ namespace AvifEncoder
             }
 
             return config;
+        }
+
+        private static string ResolveDirectTargetMetricMode(ParsedOptions opts)
+        {
+            if (string.Equals(opts.DirectTargetMode, "xpsnr", StringComparison.OrdinalIgnoreCase) &&
+                MetricRegistry.IsXpsnr(opts.MetricMode))
+            {
+                return opts.MetricMode.ToLowerInvariant();
+            }
+
+            return opts.DirectTargetMode ?? opts.MetricMode;
         }
 
 
