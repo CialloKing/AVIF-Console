@@ -109,7 +109,7 @@ namespace AvifEncoder
                 // 改名后无法从文件名判断变体 → 检测运行时环境
                 if (currentVariant.Length == 0)
                 {
-                    currentVariant = HasNet10Runtime() ? "fdd" : "scd";
+                    currentVariant = await HasNet10RuntimeAsync(ct).ConfigureAwait(false) ? "fdd" : "scd";
                 }
 
                 // 检测进程类型（CLI / Gui / GuiLakeUl），改名后仍能匹配正确资产
@@ -372,28 +372,13 @@ namespace AvifEncoder
         /// 检测系统是否安装了 .NET 10 运行时。
         /// 改名后无法从文件名判断 fdd/scd 时，靠此方法决定下载哪个变体。
         /// </summary>
-        private static bool HasNet10Runtime()
+        private static async Task<bool> HasNet10RuntimeAsync(CancellationToken ct)
         {
             try
             {
-                using var process = new System.Diagnostics.Process
-                {
-                    StartInfo = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "dotnet",
-                        Arguments = "--list-runtimes",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    }
-                };
-                process.Start();
-                var readTask = process.StandardOutput.ReadToEndAsync();
-                bool exited = process.WaitForExit(5000);
-                // ★ 进程超时未退出时 stdout 流不会关闭，readTask 无限阻塞
-                if (!exited) { try { process.Kill(); } catch { } }
-                string output = readTask.Result;
+                var (_, output, _) = await new RealProcessRunner()
+                    .RunAsync("dotnet", "--list-runtimes", TimeSpan.FromSeconds(5), ct)
+                    .ConfigureAwait(false);
                 return output.Contains("Microsoft.NETCore.App 10.");
             }
             catch

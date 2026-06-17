@@ -342,6 +342,8 @@ namespace AvifEncoder
 
             string args = $"-loglevel error -hide_banner -i \"{cleanPath}\" {streamPart}-vf format=gray -f rawvideo -pix_fmt gray pipe:1";
             Process? process = null;
+            Task? copyTask = null;
+            Task<string>? stderrTask = null;
             try
             {
                 process = new Process
@@ -362,12 +364,13 @@ namespace AvifEncoder
                 // ★ 用 long 乘法避免 int 溢出（4K×260帧≈21.5亿 > int.MaxValue）
                 long capacity = (long)w * h * expectedFrames;
                 using var ms = capacity <= int.MaxValue ? new MemoryStream((int)capacity) : new MemoryStream();
-                var copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
-                var stderrTask = process.StandardError.ReadToEndAsync();
+                copyTask = process.StandardOutput.BaseStream.CopyToAsync(ms);
+                stderrTask = process.StandardError.ReadToEndAsync();
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                     _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
-                await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                await process.WaitForExitAsync(linkedCts.Token);
+                await Task.WhenAll(copyTask, stderrTask);
 
                 if (process.ExitCode != 0) return null;
                 byte[] data = ms.ToArray();
@@ -382,6 +385,17 @@ namespace AvifEncoder
             {
                 if (process != null && !process.HasExited)
                     try { process.Kill(entireProcessTree: true); } catch { }
+                if (process != null)
+                {
+                    try { process.StandardOutput.BaseStream.Dispose(); } catch { }
+                    try { process.StandardError.BaseStream.Dispose(); } catch { }
+                    try
+                    {
+                        if (copyTask != null && stderrTask != null)
+                            await Task.WhenAll(copyTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                    catch { }
+                }
                 return null;
             }
             catch (Exception ex)
@@ -865,7 +879,8 @@ namespace AvifEncoder
                     _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
                 try
                 {
-                    await Task.WhenAll(copyTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                    await process.WaitForExitAsync(linkedCts.Token);
+                    await Task.WhenAll(copyTask, stderrTask);
                 }
                 catch (OperationCanceledException)
                 {
@@ -873,6 +888,9 @@ namespace AvifEncoder
                     {
                         try { process.Kill(entireProcessTree: true); } catch { }
                     }
+                    try { process.StandardOutput.BaseStream.Dispose(); } catch { }
+                    try { process.StandardError.BaseStream.Dispose(); } catch { }
+                    try { await Task.WhenAll(copyTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                     return null;
                 }
 

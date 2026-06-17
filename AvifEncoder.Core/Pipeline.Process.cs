@@ -1031,13 +1031,16 @@ namespace AvifEncoder
                     _globalCts?.Token ?? CancellationToken.None, timeoutCts.Token);
                 try
                 {
-                    await Task.WhenAll(copyTask, stderrTask,
-                        process.WaitForExitAsync(linkedCts.Token));
+                    await process.WaitForExitAsync(linkedCts.Token);
+                    await Task.WhenAll(copyTask, stderrTask);
                 }
                 catch (OperationCanceledException)
                 {
                     if (!process.HasExited)
                         try { process.Kill(entireProcessTree: true); } catch { }
+                    try { process.StandardOutput.BaseStream.Dispose(); } catch { }
+                    try { process.StandardError.BaseStream.Dispose(); } catch { }
+                    try { await Task.WhenAll(copyTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
                     return (false, Array.Empty<byte>());
                 }
 

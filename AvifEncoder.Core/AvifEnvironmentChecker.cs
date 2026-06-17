@@ -150,25 +150,10 @@ namespace AvifEncoder
         private static async Task<List<string>> GetAvailableEncodersAsync(string ffmpegPath)
         {
             var list = new List<string>();
-            Process? p = null;
             try
             {
-                p = new Process
-                {
-                    StartInfo = new ProcessStartInfo(ffmpegPath, "-encoders")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    }
-                };
-                p.Start();
-                var outTask = p.StandardOutput.ReadToEndAsync();
-                var errTask = p.StandardError.ReadToEndAsync();
-                await Task.WhenAll(outTask, errTask, p.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)));
-
-                string output = await outTask;
+                var (_, output, _) = await new RealProcessRunner().RunAsync(
+                    ffmpegPath, "-encoders", TimeSpan.FromSeconds(30));
                 using var reader = new StringReader(output);
                 string? line;
                 while ((line = reader.ReadLine()) != null)
@@ -188,11 +173,6 @@ namespace AvifEncoder
             }
             catch
             {
-                try { p?.Kill(entireProcessTree: true); } catch { }
-            }
-            finally
-            {
-                p?.Dispose();
             }
             return list;
         }
@@ -201,9 +181,9 @@ namespace AvifEncoder
         {
             bool ok = false;
             string note = "不可用";
+            string outFile = Path.Combine(testDir, $"test_{enc}.avif");
             try
             {
-                string outFile = Path.Combine(testDir, $"test_{enc}.avif");
                 string qpArg = enc switch
                 {
                     var e when e.StartsWith("av1_nvenc") => "-qp 30",
@@ -217,28 +197,12 @@ namespace AvifEncoder
                 string escOutput = EncodeHelpers.EscapeArg(outFile);
                 string args = $"-y -loglevel error -i \"{escInput}\" -c:v {enc} -pix_fmt yuv420p {qpArg} -frames:v 1 \"{escOutput}\"";
 
-                var psi = new ProcessStartInfo(ffmpegPath, args)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    // ★ 必须同时重定向 stdout 和 stderr：只重定向 stderr 时，ffmpeg 写满 stdout
-                    //    管道缓冲区（4-64KB）会阻塞，父进程等待子进程退出 → 形成死锁。
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                using var p = Process.Start(psi);
-                if (p == null) return new EncoderStatus { Name = enc, Available = false, Note = "无法启动 ffmpeg" };
                 try
                 {
-                    using var testCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                    // ★ 必须同时消费 stdout 和 stderr：ffmpeg 的 -loglevel error 仅控制 stderr，
-                    //    stdout 仍可能输出 stream mapping 等信息，管道满 → 进程阻塞 → 死锁
-                    var stdoutTask = p.StandardOutput.ReadToEndAsync();
-                    string stderr = await p.StandardError.ReadToEndAsync();
-                    await p.WaitForExitAsync(testCts.Token);
-                    await stdoutTask;   // 确保 stdout 已被完全消费
+                    var (exitCode, _, stderr) = await new RealProcessRunner().RunAsync(
+                        ffmpegPath, args, TimeSpan.FromSeconds(30));
 
-                    if (p.ExitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
+                    if (exitCode == 0 && File.Exists(outFile) && new FileInfo(outFile).Length > 100)
                     {
                         ok = true;
                         note = "可用";
@@ -250,14 +214,16 @@ namespace AvifEncoder
                 }
                 catch
                 {
-                    try { p.Kill(entireProcessTree: true); } catch { }
                     note = "超时";
                 }
-                if (File.Exists(outFile)) File.Delete(outFile);
             }
             catch (Exception ex)
             {
                 note = $"异常: {ex.Message}";
+            }
+            finally
+            {
+                if (File.Exists(outFile)) File.Delete(outFile);
             }
             return new EncoderStatus { Name = enc, Available = ok, Note = note };
         }
@@ -279,20 +245,8 @@ namespace AvifEncoder
             var info = new EncoderVersionInfo();
             try
             {
-                using var process = new Process
-                {
-                    StartInfo = new ProcessStartInfo(ffmpegPath, "-version")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    }
-                };
-                process.Start();
-                string stdout = await process.StandardOutput.ReadToEndAsync();
-                string stderr = await process.StandardError.ReadToEndAsync();
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                var (_, stdout, stderr) = await new RealProcessRunner().RunAsync(
+                    ffmpegPath, "-version", TimeSpan.FromSeconds(10));
 
                 string output = stdout + stderr;
 

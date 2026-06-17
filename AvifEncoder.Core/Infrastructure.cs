@@ -52,7 +52,7 @@ namespace AvifEncoder
 
             try
             {
-                await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(linkedCts.Token));
+                await process.WaitForExitAsync(linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -62,13 +62,20 @@ namespace AvifEncoder
                     // 主动关闭管道流，确保 ReadToEndAsync 不会永久挂起
                     try { process.StandardOutput.BaseStream.Dispose(); } catch { }
                     try { process.StandardError.BaseStream.Dispose(); } catch { }
-                    try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                    try
+                    {
+                        await Task.WhenAll(stdoutTask, stderrTask)
+                            .WaitAsync(TimeSpan.FromSeconds(5))
+                            .ConfigureAwait(false);
+                    }
+                    catch { }
                 }
                 throw;  // 重新抛出，让调用方知道这是取消而非失败
             }
 
-            string stdout = await stdoutTask;
-            string stderr = await stderrTask;
+            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            string stdout = await stdoutTask.ConfigureAwait(false);
+            string stderr = await stderrTask.ConfigureAwait(false);
             return (process.ExitCode, stdout, stderr);
         }
     }
