@@ -170,7 +170,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     "下载完成！正在准备更新...\n" +
                     "应用将在 2 秒后自动重启。";
 
-                await Task.Delay(1500);
+                await Task.Delay(1500, _cts.Token);
 
                 _manager.InstallAndRestart(newPath);
             }

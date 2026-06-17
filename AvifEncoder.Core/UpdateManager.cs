@@ -238,8 +238,7 @@ namespace AvifEncoder
     IProgress<UpdateProgressEventArgs>? progress = null,
     CancellationToken ct = default)
         {
-            string exePath = Environment.ProcessPath
-                ?? Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
+            string exePath = GetExecutablePath();
             string newPath = exePath + ".new";
 
             try
@@ -311,23 +310,13 @@ namespace AvifEncoder
         /// </summary>
         public void InstallAndRestart(string newPath)
         {
-            string exePath = Environment.ProcessPath
-                            ?? AppContext.BaseDirectory;
+            string exePath = GetExecutablePath();
             string exeDir = Path.GetDirectoryName(exePath)
                 ?? AppContext.BaseDirectory;
-            string exeName = Path.GetFileName(exePath);
             string batPath = Path.Combine(exeDir, "_update.bat");
+            string fullNewPath = Path.GetFullPath(newPath);
 
-            File.WriteAllText(batPath, $"""
-                @echo off
-                cd /d "{exeDir}"
-                timeout /t 2 /nobreak > nul
-                del "{exeName}"
-                move /y "{exeName}.new" "{exeName}"
-                start "" "{exeName}"
-                del "%~f0"
-                """);
-
+            File.WriteAllText(batPath, BuildUpdateScript(exePath, fullNewPath));
             // 启动 bat（不等待）
             System.Diagnostics.Process.Start(
                 new System.Diagnostics.ProcessStartInfo
@@ -341,6 +330,24 @@ namespace AvifEncoder
             // 退出应用
             Environment.Exit(0);
         }
+
+        internal static string BuildUpdateScript(string exePath, string newPath)
+        {
+            string fullExePath = Path.GetFullPath(exePath);
+            string fullNewPath = Path.GetFullPath(newPath);
+            return $"""
+                @echo off
+                timeout /t 2 /nobreak > nul
+                del "{fullExePath}"
+                move /y "{fullNewPath}" "{fullExePath}"
+                start "" "{fullExePath}"
+                del "%~f0"
+                """;
+        }
+
+        internal static string GetExecutablePath()
+            => Environment.ProcessPath
+               ?? Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
 
         /// <summary>
         /// 通过当前加载的程序集判断进程类型。
