@@ -97,6 +97,14 @@ namespace AvifEncoder
             return Get(key ?? "")?.LowerIsBetter ?? false;
         }
 
+        public static bool IsXpsnr(string? keyOrDisplayName)
+        {
+            if (string.IsNullOrWhiteSpace(keyOrDisplayName))
+                return false;
+            return keyOrDisplayName.StartsWith("xpsnr", StringComparison.OrdinalIgnoreCase) ||
+                   keyOrDisplayName.StartsWith("XPSNR", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>从 QualityMetrics 提取原生分值，失败返回 -1</summary>
         public static double GetScore(QualityMetrics m, string key)
         {

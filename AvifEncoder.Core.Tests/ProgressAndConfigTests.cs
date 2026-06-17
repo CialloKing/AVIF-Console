@@ -121,6 +121,19 @@ namespace AvifEncoder.Core.Tests
             }
         }
 
+        [TestMethod]
+        public void MetricRegistry_IsXpsnr_CoversKeysAndDisplayNames()
+        {
+            Assert.IsTrue(MetricRegistry.IsXpsnr("xpsnr"));
+            Assert.IsTrue(MetricRegistry.IsXpsnr("xpsnr_y"));
+            Assert.IsTrue(MetricRegistry.IsXpsnr("xpsnr_u"));
+            Assert.IsTrue(MetricRegistry.IsXpsnr("xpsnr_v"));
+            Assert.IsTrue(MetricRegistry.IsXpsnr("XPSNR (W)"));
+            Assert.IsTrue(MetricRegistry.IsXpsnr("XPSNR-U"));
+            Assert.IsFalse(MetricRegistry.IsXpsnr("psnr"));
+            Assert.IsFalse(MetricRegistry.IsXpsnr("VMAF"));
+        }
+
         // ===== SetQualityTarget 不同类型指标 =====
 
         [TestMethod]

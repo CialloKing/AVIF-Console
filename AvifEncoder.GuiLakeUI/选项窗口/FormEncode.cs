@@ -186,6 +186,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             return MetricRegistry.Get(metricMode)?.DisplayName ?? fallback;
         }
 
+        private static bool IsXpsnrMode(string? mode) => MetricRegistry.IsXpsnr(mode);
+
         private void InitializeAllControls()
         {
             cmbPreset.Items.Clear();
@@ -411,6 +413,15 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         // ------------------------------------------------
         private void SetQualityRange(string mode)
         {
+            if (IsXpsnrMode(mode))
+            {
+                numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
+                numQualityValue.DecimalPlaces = 15;
+                numQualityValue.Increment = 0.1;
+                numQualityValue.Enabled = true;
+                return;
+            }
+
             switch (mode)
             {
                 case "VMAF":
@@ -420,11 +431,6 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     break;
                 case "PSNR-Y":
                     numQualityValue.Minimum = 30; numQualityValue.Maximum = 50;
-                    numQualityValue.DecimalPlaces = 15;
-                    numQualityValue.Increment = 0.1;
-                    break;
-                case "XPSNR (W)":
-                    numQualityValue.Minimum = 40; numQualityValue.Maximum = 60;
                     numQualityValue.DecimalPlaces = 15;
                     numQualityValue.Increment = 0.1;
                     break;
@@ -541,16 +547,17 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             SetQualityRange(mode);
             // 根据模式设置默认值（使用 MetricRegistry.DisplayName 保持一致）
-            numQualityValue.Value = mode switch
-            {
-                "VMAF" => 95,
-                "PSNR-Y" => 40,
-                "XPSNR (W)" => 45,
-                "SSIMULACRA2" => 90,
-                "Butteraugli 3norm" => 1,
-                "GMSD" => 0.2,
-                _ => 0.95,
-            };
+            numQualityValue.Value = IsXpsnrMode(mode)
+                ? 45
+                : mode switch
+                {
+                    "VMAF" => 95,
+                    "PSNR-Y" => 40,
+                    "SSIMULACRA2" => 90,
+                    "Butteraugli 3norm" => 1,
+                    "GMSD" => 0.2,
+                    _ => 0.95,
+                };
         }
 
         private void ChkLossless_CheckedChanged(object? sender, EventArgs e)
@@ -1338,8 +1345,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                     SetQualityRange(qMode);
                 }
                 if (cfg.EncodeQualityValue <= numQualityValue.Maximum
-                    && cfg.EncodeQualityValue
-                        >= numQualityValue.Minimum)
+                    && cfg.EncodeQualityValue >= numQualityValue.Minimum)
                 {
                     numQualityValue.Value =
                         cfg.EncodeQualityValue;
