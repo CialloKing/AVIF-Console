@@ -371,9 +371,9 @@ namespace AvifEncoder
 
                 if (process.ExitCode != 0) return null;
                 byte[] data = ms.ToArray();
-                if (data.Length != w * h * expectedFrames)
+                if (data.Length != (long)w * h * expectedFrames)
                 {
-                    _logger.LogInfo($"[ADV] 灰度帧数据尺寸异常: 期望={w * h * expectedFrames} 实际={data.Length}");
+                    _logger.LogInfo($"[ADV] 灰度帧数据尺寸异常: 期望={(long)w * h * expectedFrames} 实际={data.Length}");
                     return null;
                 }
                 return (w, h, data);
@@ -431,7 +431,10 @@ namespace AvifEncoder
                     // ★ 动图逐帧平均 + per-frame CSV（批量提取优化）
                     if (isAnimated)
                     {
-                        const string distStream = "0:v:2";
+                        // ★ 根据编码像素格式判断是否有 Alpha：有Alpha→v:2(alpha)，无→v:1(动画)
+                        bool hasAlpha = encodingPixFmt.Contains("yuva") || encodingPixFmt.Contains("rgba") ||
+                                         encodingPixFmt.Contains("bgra") || encodingPixFmt.StartsWith("gbra", StringComparison.OrdinalIgnoreCase);
+                        string distStream = hasAlpha ? "0:v:2" : "0:v:1";
 
                         // per-frame CSV
                         string csvPath = Path.Combine(outputDir, $"{advName}_perframe.csv");
@@ -1193,7 +1196,7 @@ namespace AvifEncoder
                 new System.Threading.Channels.BoundedChannelOptions(config.MaxJobs * 2)
                 { FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait });
             for (int i = 0; i < config.MaxJobs; i++)
-                _fileWorkers.Add(FileWorkerLoopAsync());
+                lock (_fileWorkers) { _fileWorkers.Add(FileWorkerLoopAsync()); }
 
             _guiProgress = progress;       // ★ 改为 _guiProgress
 
@@ -1250,7 +1253,7 @@ namespace AvifEncoder
             int diff = target - _targetFileWorkers;
             _targetFileWorkers = target;
             for (int i = 0; i < diff; i++)
-                _fileWorkers.Add(FileWorkerLoopAsync());
+                lock (_fileWorkers) { _fileWorkers.Add(FileWorkerLoopAsync()); }
             for (int i = 0; i < -diff; i++)
                 _ = Task.Run(async () => { try { await _fileChannel.Writer.WriteAsync(default); } catch { } });  // 毒丸：用 WriteAsync 防 Channel 满时丢失
         }
@@ -1439,8 +1442,8 @@ namespace AvifEncoder
                     }
                     catch { }
                     Interlocked.Exchange(ref _snapshotInProgress, 0);
+                    _saveSnapshotPending = false;  // ★ 在 CAS 块内重置，避免丢失其他线程的并发触发
                 }
-                _saveSnapshotPending = false;
             }
         }
 
@@ -1757,7 +1760,8 @@ namespace AvifEncoder
             try { _globalCts?.Cancel(); } catch { }
             try { _fileChannel.Writer.Complete(); } catch { }
             try { _fileWorkerCts.Cancel(); } catch { }
-            try { Task.WaitAll(_fileWorkers.ToArray(), TimeSpan.FromSeconds(10)); } catch { }
+            Task[] workers; lock (_fileWorkers) { workers = _fileWorkers.ToArray(); }
+            try { Task.WaitAll(workers, TimeSpan.FromSeconds(10)); } catch { }
             try { FinalCleanup(); } catch { }
             try { _globalCts?.Dispose(); } catch { }
             _globalCts = null;
@@ -3026,8 +3030,8 @@ namespace AvifEncoder
                 // 像素格式标准化（复用原有逻辑）
                 if (fmt == "gray" || fmt.StartsWith("gray"))
                 {
-                    bool is10bit = fmt.Contains("16") || fmt.Contains("10");
-                    fmt = is10bit ? "yuv420p10le" : "yuv420p";
+                    bool isHighBit = fmt.Contains("16") || fmt.Contains("12") || fmt.Contains("10");
+                    fmt = isHighBit ? "yuv420p10le" : "yuv420p";
                 }
                 else if (fmt == "pal8" || fmt.StartsWith("pal"))
                 {
@@ -3076,7 +3080,7 @@ namespace AvifEncoder
 
             // 简单标准化（略去复杂部分以保证程序不崩溃，但建议 probe 正常提供）
             if (fmtFallback == "gray" || fmtFallback.StartsWith("gray"))
-                fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
+                fmtFallback = fmtFallback.Contains("16") || fmtFallback.Contains("12") || fmtFallback.Contains("10") ? "yuv420p10le" : "yuv420p";
             else if (fmtFallback.Contains("yuvj"))
                 fmtFallback = fmtFallback.Replace("yuvj", "yuv");
             else if (fmtFallback.Contains("rgb") || fmtFallback.Contains("bgr"))

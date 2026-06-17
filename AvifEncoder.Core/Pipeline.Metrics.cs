@@ -177,12 +177,13 @@ namespace AvifEncoder
     string effectiveAomParams, int bitDepth,
     int width, int height, string rowMt,
     string encoder, string? encoderCustomParams,
-    int denoise, bool arnrUseMaxFrames, string? rgbMode)
+    int denoise, bool arnrUseMaxFrames, string? rgbMode,
+    string metricMode = "ssim")
         {
-            return EncodingFingerprint.ForEncode(
+            return EncodingFingerprint.ForMetrics(
                 normalizedPath, crf, pixFmt, tileCols,
                 cpuUsed, isTrueLossless: false, effectiveAomParams, isJpeg, bitDepth,
-                width, height, rowMt,
+                width, height, rowMt, metricMode,
                 encoder, encoderCustomParams, denoise, arnrUseMaxFrames, rgbMode).ToCacheKey();
         }
 
@@ -225,8 +226,10 @@ namespace AvifEncoder
 
             var (metricsW, metricsH) = await GetResolutionAsync(input);
             string rowMtArg = EncodeHelpers.GetRowMtArg(cfg);
+            // ★ 实际编码用的 cpu-used = cpuUsed + 2，缓存键需与之匹配
+            int actualCpu = Math.Min(cpuUsed + 2, 8);
             string key = EncodingFingerprint.ForMetrics(
-                normalizedInput, crf, pixFmt, tileCols, cpuUsed,
+                normalizedInput, crf, pixFmt, tileCols, actualCpu,
                 isTrueLossless: false, effectiveAom, jpeg, actualDepth,
                 metricsW, metricsH, rowMtArg, metricMode,
                 cfg.Encoder, cfg.EncoderCustomParams,

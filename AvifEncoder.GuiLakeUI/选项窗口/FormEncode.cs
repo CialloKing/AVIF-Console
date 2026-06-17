@@ -809,7 +809,11 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 }
             }
 
-            var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+            // ★ 优先使用用户在选项页设置的自定义扩展名，否则默认 5 种
+            string customExts = OptionsPage?.GetExtensions() ?? "";
+            var extensions = !string.IsNullOrWhiteSpace(customExts)
+                ? customExts.Split(',').Select(e => e.Trim().ToLower()).Where(e => e.Length > 0).ToArray()
+                : new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
             var searchOption = chkRecursive.Checked ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             var files = Directory.EnumerateFiles(inputDir, "*.*", searchOption)
                                  .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))

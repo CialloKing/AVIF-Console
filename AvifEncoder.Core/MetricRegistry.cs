@@ -78,6 +78,9 @@ namespace AvifEncoder
         /// <summary>获取指标定义，不存在返回 null</summary>
         public static MetricDef? Get(string key)
         {
+            // ★ xpsnr_w 和 xpsnr 指向同一 W-XPSNR 分数，避免 CLI --metric xpsnr_w 回退到 SSIM
+            if (string.Equals(key, "xpsnr_w", StringComparison.OrdinalIgnoreCase))
+                key = "xpsnr";
             _metrics.TryGetValue(key ?? "", out var def);
             return def;
         }

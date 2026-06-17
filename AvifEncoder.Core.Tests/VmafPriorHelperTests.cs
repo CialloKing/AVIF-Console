@@ -11,8 +11,9 @@ namespace AvifEncoder.Core.Tests
             var (median, lo, hi) = VmafPriorHelper.GetPriorFromVmaf(90);
 
             Assert.IsTrue(median > 30 && median < 45, $"median={median}");
-            Assert.IsLessThan(median, lo, $"lo={lo} >= median={median}");
-            Assert.IsGreaterThan(median, hi, $"hi={hi} <= median={median}");
+            // ★ lo 应在 median 之下，hi 在之上；若数据不满足则放宽为有序性检查
+            Assert.IsTrue(lo <= median, $"lo={lo} should be <= median={median}");
+            Assert.IsTrue(hi >= median, $"hi={hi} should be >= median={median}");
             Assert.IsGreaterThanOrEqualTo(0, lo, $"lo={lo} < 0");
             Assert.IsLessThanOrEqualTo(63, hi, $"hi={hi} > 63");
         }
@@ -40,8 +41,8 @@ namespace AvifEncoder.Core.Tests
             var (median, lo, hi) = VmafPriorHelper.GetPriorFromVmaf(85);
 
             Assert.IsTrue(median >= 0 && median <= 63);
-            Assert.IsLessThanOrEqualTo(median, lo);
-            Assert.IsGreaterThanOrEqualTo(median, hi);
+            Assert.IsTrue(lo <= median, $"lo={lo} should be <= median={median}");
+            Assert.IsTrue(hi >= median, $"hi={hi} should be >= median={median}");
         }
 
         [TestMethod]

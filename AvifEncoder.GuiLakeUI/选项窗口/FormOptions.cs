@@ -60,13 +60,13 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         public void SetExtensions(string v) => _commandsPage?.SetExtensions(v);
 
         public int EncodeTimeout => (int)numTimeoutEncode.Value;
-        public void SetEncodeTimeout(int v) => numTimeoutEncode.Value = v;
+        public void SetEncodeTimeout(int v) => numTimeoutEncode.Value = Math.Max((int)numTimeoutEncode.Minimum, v);
         public int SearchTimeout => (int)numTimeoutSearch.Value;
-        public void SetSearchTimeout(int v) => numTimeoutSearch.Value = v;
+        public void SetSearchTimeout(int v) => numTimeoutSearch.Value = Math.Max((int)numTimeoutSearch.Minimum, v);
         public int SafeTimeout => (int)numTimeoutSafe.Value;
-        public void SetSafeTimeout(int v) => numTimeoutSafe.Value = v;
+        public void SetSafeTimeout(int v) => numTimeoutSafe.Value = Math.Max((int)numTimeoutSafe.Minimum, v);
         public int SsimTimeout => (int)numTimeoutSsim.Value;
-        public void SetSsimTimeout(int v) => numTimeoutSsim.Value = v;
+        public void SetSsimTimeout(int v) => numTimeoutSsim.Value = Math.Max((int)numTimeoutSsim.Minimum, v);
         public bool DryRun => chkDryRun.Checked;
         public void SetDryRun(bool v) => chkDryRun.Checked = v;
         public bool VerboseOutput => chkVerbose.Checked;

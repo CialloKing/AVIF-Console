@@ -239,10 +239,14 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
 
             if (bestSafeCRF >= 0)
             {
+                string actualPixFmt = config.BitDepth >= 12 ? "yuv420p12le"
+                    : config.BitDepth >= 10 ? "yuv420p10le" : "yuv420p";
                 SafeWriteLine($"  -> [{name}] 安全模式扫描成功，最佳 CRF = {bestSafeCRF}");
-                return (true, bestSafeCRF, "yuv420p", true);
+                return (true, bestSafeCRF, actualPixFmt, true);
             }
-            return (false, config.BaseCRF, "yuv420p", false);
+            string fallbackPixFmt = config.BitDepth >= 12 ? "yuv420p12le"
+                : config.BitDepth >= 10 ? "yuv420p10le" : "yuv420p";
+            return (false, config.BaseCRF, fallbackPixFmt, false);
         }
 
         // ---------- 安全模式单次 SSIM ----------
@@ -278,9 +282,10 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
                         string rowMtSafe = EncodeHelpers.GetRowMtArg(config);
                         string cacheKey = GetSsimCacheKey(
                             normalizedInput, testCrf, "yuv420p", 0, 0,
-                            IsJpeg(inputPath), effectiveAom, 8, w, h, rowMtSafe,
+                            IsJpeg(inputPath), effectiveAom, config.BitDepth, w, h, rowMtSafe,
                             config.Encoder, config.EncoderCustomParams,
-                            config.Denoise, config.ArNrUseMaxFrames, config.RgbMode);
+                            config.Denoise, config.ArNrUseMaxFrames, config.RgbMode,
+                            config.MetricMode ?? "ssim");
                         _cache.SetMetrics(cacheKey, metrics);
 
                         return GetSearchScore(metrics, config.MetricMode ?? "ssim");
@@ -552,11 +557,13 @@ RunSafeModeScan(string inputPath, PresetConfig config, string name, int scanLow,
             string stillDesc = useStillPic ? ", still-picture" : "";
             string safeDesc = $"safe (yuv420p, {encoderDesc}{stillDesc}, full-range)";
 
+            string actualPixFmt = config.BitDepth >= 12 ? "yuv420p12le"
+                : config.BitDepth >= 10 ? "yuv420p10le" : "yuv420p";
             return new FinalEncodeResult
             {
                 Success = success,
                 Crf = crf,
-                ActualPixFmt = "yuv420p",
+                ActualPixFmt = actualPixFmt,
                 EncodeTime = swSafe.Elapsed,
                 Retries = 0,
                 FailReason = success ? "" : $"安全模式编码失败: {failReason}",

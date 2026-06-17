@@ -8,6 +8,7 @@ namespace AvifEncoder
     {
         private readonly SemaphoreSlim _semaphore;
         private int _currentMax;
+        private int _currentCount;  // ★ 手动追踪释放计数，避免 maxCount=int.MaxValue 使吞噬失效
         private readonly object _lock = new();
 
         public int CurrentMax { get { lock (_lock) return _currentMax; } }
@@ -15,14 +16,22 @@ namespace AvifEncoder
         public DynamicConcurrencyLimiter(int initialMax)
         {
             _currentMax = initialMax;
-            _semaphore = new SemaphoreSlim(initialMax, int.MaxValue);
+            _currentCount = initialMax;
+            _semaphore = new SemaphoreSlim(initialMax);
         }
 
         public async Task<bool> WaitAsync(TimeSpan timeout, CancellationToken token = default)
-            => await _semaphore.WaitAsync(timeout, token);
+        {
+            var result = await _semaphore.WaitAsync(timeout, token);
+            if (result) { lock (_lock) { _currentCount--; } }
+            return result;
+        }
 
         public async Task WaitAsync(CancellationToken token = default)
-            => await _semaphore.WaitAsync(token);
+        {
+            await _semaphore.WaitAsync(token);
+            lock (_lock) { _currentCount--; }
+        }
 
         /// <summary>
         /// 释放槽位。如果当前并发数已超目标上限（缩容后），吞噬本次释放不增加可用计数，
@@ -30,9 +39,15 @@ namespace AvifEncoder
         /// </summary>
         public void Release()
         {
-            // ★ 缩容后 Semaphore 内部计数可能超标，用 try-catch 安全吞噬多余的 Release
-            try { _semaphore.Release(); }
-            catch (SemaphoreFullException) { }
+            // ★ 手动追踪：缩容后如已超 _currentMax，吞噬本次释放不增加槽位
+            lock (_lock)
+            {
+                if (_currentCount < _currentMax)
+                {
+                    _currentCount++;
+                    _semaphore.Release();
+                }
+            }
         }
 
         /// <summary>动态设置为指定最大并发数。扩容立即生效；缩容通过 Release 吞噬逐步收敛。</summary>
@@ -41,20 +56,23 @@ namespace AvifEncoder
             lock (_lock)
             {
                 newMax = Math.Max(1, newMax);
-                int diff = newMax - _currentMax;
+                int oldMax = _currentMax;
+                _currentMax = newMax;
+                int diff = newMax - oldMax;
                 if (diff > 0)
                 {
                     _semaphore.Release(diff);
+                    _currentCount += diff;
                 }
                 else if (diff < 0)
                 {
-                    // 缩容：先回收空闲槽位，剩余通过 Release 吞噬逐步收敛
+                    // 缩容：回收空闲槽位 + 重置计数上限
                     for (int i = 0; i < -diff; i++)
                     {
                         if (!_semaphore.Wait(0)) break;
+                        _currentCount--;
                     }
                 }
-                _currentMax = newMax;
                 return _currentMax;
             }
         }

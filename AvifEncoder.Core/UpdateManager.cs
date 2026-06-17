@@ -389,7 +389,6 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
-                process.Start();
                 var readTask = process.StandardOutput.ReadToEndAsync();
                 bool exited = process.WaitForExit(5000);
                 // ★ 进程超时未退出时 stdout 流不会关闭，readTask 无限阻塞

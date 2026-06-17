@@ -302,8 +302,8 @@ namespace AvifEncoder
                             if (key.StartsWith("timeout-"))
                             {
                                 string type = key["timeout-".Length..];
-                                if (!int.TryParse(GetValue(), out int val) || val <= 0)
-                                    throw new Exception($"--{key} 需要正整数");
+                                if (!int.TryParse(GetValue(), out int val) || val < 0)
+                                    throw new Exception($"--{key} 需要非负整数（0=自动）");
                                 switch (type)
                                 {
                                     case "encode": opts.EncodeTimeout = val; break;
