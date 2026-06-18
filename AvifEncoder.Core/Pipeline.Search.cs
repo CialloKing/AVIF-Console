@@ -885,7 +885,7 @@ namespace AvifEncoder
                 foreach (var key in merged.Keys.OrderBy(k => k, new NaturalComparer()))
                     sb.AppendLine(merged[key]);
 
-                _fs.WriteAllText(_csvPath, sb.ToString(), new UTF8Encoding(true));
+                _fs.WriteAllTextAtomic(_csvPath, sb.ToString(), new UTF8Encoding(true));
                 _logger.LogInfo($"[CSV-EXPORT] 合并导出: 旧行={merged.Count - newList.Count} + 新行={newList.Count} = 总计 {merged.Count}");
             }
             catch (Exception ex)

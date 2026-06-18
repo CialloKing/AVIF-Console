@@ -399,7 +399,7 @@ namespace AvifEncoder
                         }
                     }
 
-                    _fs.WriteAllText(csvPath, string.Join("\n", newLines) + "\n",
+                    _fs.WriteAllTextAtomic(csvPath, string.Join("\n", newLines) + "\n",
                         new System.Text.UTF8Encoding(true));
                     SafeWriteLine("CSV 已更新。");
                 }

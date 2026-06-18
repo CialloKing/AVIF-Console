@@ -437,6 +437,7 @@ namespace AvifEncoder
             DateTime GetCreationTime(string path);
             void AppendAllText(string path, string contents);
             void WriteAllText(string path, string contents, Encoding encoding);
+            void WriteAllTextAtomic(string path, string contents, Encoding encoding);
             Task<string> ReadAllTextAsync(string path);
             IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption);
             bool DirectoryExists(string path);
@@ -458,6 +459,28 @@ namespace AvifEncoder
             public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
             public void AppendAllText(string path, string contents) => File.AppendAllText(path, contents);
             public void WriteAllText(string path, string contents, Encoding encoding) => File.WriteAllText(path, contents, encoding);
+            public void WriteAllTextAtomic(string path, string contents, Encoding encoding)
+            {
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                string tmpPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    File.WriteAllText(tmpPath, contents, encoding);
+                    File.Move(tmpPath, path, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(tmpPath))
+                    {
+                        try { File.Delete(tmpPath); } catch { }
+                    }
+                }
+            }
             public async Task<string> ReadAllTextAsync(string path) => await File.ReadAllTextAsync(path);
             public IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption)
                 => Directory.EnumerateFiles(path, searchPattern, searchOption);
