@@ -13,6 +13,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private readonly UpdateManager _manager = new();
         private ReleaseInfo? _release;
         private CancellationTokenSource? _cts;
+        private bool _closing;
 
         public FormUpdate(ReleaseInfo release)
         {
@@ -153,6 +154,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             var progress =
                 new Progress<UpdateProgressEventArgs>(e =>
                 {
+                    if (!CanUpdateUi())
+                    {
+                        return;
+                    }
                     pbDownload.Value = e.Percent;
                     lblStatus.Text =
                         $"正在下载 v{_release.TagName}...\n" +
@@ -163,43 +168,71 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
             try
             {
+                var cts = _cts;
+                if (cts == null)
+                {
+                    return;
+                }
+
                 string newPath = await _manager.DownloadAsync(
-                    _release, progress, _cts.Token);
+                    _release, progress, cts.Token);
+
+                if (!CanUpdateUi() || cts.IsCancellationRequested)
+                {
+                    return;
+                }
 
                 lblStatus.Text =
                     "下载完成！正在准备更新...\n" +
                     "应用将在 2 秒后自动重启。";
 
-                await Task.Delay(1500, _cts.Token);
+                await Task.Delay(1500, cts.Token);
+
+                if (!CanUpdateUi() || cts.IsCancellationRequested)
+                {
+                    return;
+                }
 
                 _manager.InstallAndRestart(newPath);
             }
             catch (OperationCanceledException)
             {
-                lblStatus.Text = "下载已取消";
-                btnSkip.Enabled = true;
+                if (CanUpdateUi())
+                {
+                    lblStatus.Text = "下载已取消";
+                    btnSkip.Enabled = true;
+                }
             }
             catch (Exception ex)
             {
-                lblStatus.Text = $"下载失败：{ex.Message}";
-                btnSkip.Enabled = true;
+                if (CanUpdateUi())
+                {
+                    lblStatus.Text = $"下载失败：{ex.Message}";
+                    btnSkip.Enabled = true;
+                }
+            }
+            finally
+            {
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
         private void btnSkip_Click(object? sender, EventArgs e)
         {
             _cts?.Cancel();
-            _cts?.Dispose();
-            _cts = null;
             Close();
         }
 
         protected override void OnFormClosing(
             FormClosingEventArgs e)
         {
+            _closing = true;
             _cts?.Cancel();
-            _cts?.Dispose();
             base.OnFormClosing(e);
         }
+
+        private bool CanUpdateUi()
+            => !_closing && !IsDisposed && !Disposing && IsHandleCreated;
     }
 }
