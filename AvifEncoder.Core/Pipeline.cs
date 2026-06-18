@@ -268,7 +268,7 @@ namespace AvifEncoder
             string cleanPath = Path.Combine(tempDir, cleanFileName);
             byte[] cleanBytes = new byte[iendEnd];
             Array.Copy(bytes, cleanBytes, iendEnd);
-            await _fs.WriteAllBytesAsync(cleanPath, cleanBytes);
+            await _fs.WriteAllBytesAtomicAsync(cleanPath, cleanBytes);
             _logger.LogInfo($"PNG 尾部清洗: {Path.GetFileName(originalPath)} 移除 {bytes.Length - iendEnd} 字节 -> {cleanFileName}");
             return cleanPath;
         }
@@ -1390,7 +1390,7 @@ namespace AvifEncoder
             int longSide = Math.Max(w, h);
             if (longSide <= maxDim)
             {
-                _fs.CopyFile(input, output, true);   // 替换 File.Copy
+                _fs.CopyFileAtomic(input, output, true);
                 return;
             }
 
