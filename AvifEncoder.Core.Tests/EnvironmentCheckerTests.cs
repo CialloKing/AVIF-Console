@@ -32,5 +32,39 @@ namespace AvifEncoder.Core.Tests
             Assert.AreSame(result, AvifEnvironmentChecker.LastResult);
             Assert.IsFalse(Directory.Exists(tempDir));
         }
+
+        [TestMethod]
+        public void TryDeleteFile_DeletesExistingFileAndIgnoresMissingFile()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"env_delete_{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(path, "temp");
+
+            Assert.IsTrue(AvifEnvironmentChecker.TryDeleteFile(path));
+            Assert.IsFalse(File.Exists(path));
+            Assert.IsTrue(AvifEnvironmentChecker.TryDeleteFile(path));
+        }
+
+        [TestMethod]
+        public void TryDeleteFile_DoesNotThrowWhenFileIsLocked()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"env_delete_locked_{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(path, "temp");
+            try
+            {
+                using var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+                bool deleted = AvifEnvironmentChecker.TryDeleteFile(path);
+
+                if (OperatingSystem.IsWindows())
+                {
+                    Assert.IsFalse(deleted);
+                    Assert.IsTrue(File.Exists(path));
+                }
+            }
+            finally
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
     }
 }

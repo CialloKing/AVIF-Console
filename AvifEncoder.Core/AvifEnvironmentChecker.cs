@@ -146,7 +146,7 @@ namespace AvifEncoder
             }
             finally
             {
-                if (File.Exists(testBmpPath)) try { File.Delete(testBmpPath); } catch { }
+                TryDeleteFile(testBmpPath);
                 if (Directory.Exists(workDir))
                 {
                     try
@@ -256,9 +256,25 @@ namespace AvifEncoder
             }
             finally
             {
-                if (File.Exists(outFile)) File.Delete(outFile);
+                TryDeleteFile(outFile);
             }
             return new EncoderStatus { Name = enc, Available = ok, Note = note };
+        }
+
+        internal static bool TryDeleteFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string ParseError(string stderr)
