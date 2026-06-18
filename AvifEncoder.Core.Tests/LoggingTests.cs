@@ -51,6 +51,32 @@ namespace AvifEncoder.Core.Tests
             }
         }
 
+        [TestMethod]
+        public void FileLogger_AllowsTwoInstancesToAppendSameLogDirectory()
+        {
+            string root = Path.Combine(Path.GetTempPath(), $"avif_logger_multi_{Guid.NewGuid():N}");
+            try
+            {
+                using (var first = new FileLogger(root))
+                using (var second = new FileLogger(root))
+                {
+                    first.LogInfo("from first");
+                    second.LogInfo("from second");
+                }
+
+                string runLog = Directory
+                    .GetFiles(Path.Combine(root, "log"), "run_*.log")
+                    .Single();
+                string text = File.ReadAllText(runLog);
+                Assert.Contains("from first", text);
+                Assert.Contains("from second", text);
+            }
+            finally
+            {
+                try { Directory.Delete(root, true); } catch { }
+            }
+        }
+
         private static EventHandler? GetProcessExitHandler(FileLogger logger)
             => (EventHandler?)typeof(FileLogger)
                 .GetField("_processExitHandler", BindingFlags.Instance | BindingFlags.NonPublic)!

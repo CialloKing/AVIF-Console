@@ -87,7 +87,12 @@ namespace AvifEncoder
             if (!_writers.TryGetValue(fileName, out var writer))
             {
                 string path = Path.Combine(_logDir, fileName);
-                writer = new StreamWriter(path, append: true, Encoding.UTF8) { AutoFlush = true };
+                var stream = new FileStream(
+                    path,
+                    FileMode.Append,
+                    FileAccess.Write,
+                    FileShare.ReadWrite);
+                writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
                 _writers[fileName] = writer;
             }
             return writer;
