@@ -213,11 +213,14 @@ namespace AvifEncoder.GuiLakeUI
         {
             try
             {
+                if (!CanUpdateUi()) return;
                 btnCheckUpdate.Enabled = false;
                 btnCheckUpdate.Text = "正在检查...";
                 var manager = new UpdateManager();
                 var release =
                     await manager.CheckForUpdateAsync();
+
+                if (!CanUpdateUi()) return;
 
                 if (release == null || !release.Success)
                 {
@@ -242,16 +245,22 @@ namespace AvifEncoder.GuiLakeUI
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"检查更新失败：{ex.Message}",
-                    "检查更新",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                if (CanUpdateUi())
+                {
+                    MessageBox.Show(
+                        $"检查更新失败：{ex.Message}",
+                        "检查更新",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
             }
             finally
             {
-                btnCheckUpdate.Enabled = true;
-                btnCheckUpdate.Text = "检查更新";
+                if (CanUpdateUi())
+                {
+                    btnCheckUpdate.Enabled = true;
+                    btnCheckUpdate.Text = "检查更新";
+                }
             }
         }
 
@@ -290,6 +299,7 @@ namespace AvifEncoder.GuiLakeUI
             if (ffmpeg != null)
             {
                 var v = await AvifEnvironmentChecker.GetEncoderVersionInfoAsync(ffmpeg);
+                if (!CanUpdateUi()) return;
                 sb.AppendLine($"  ffmpeg 版本: {v.FfmpegVersion}");
                 foreach (var kv in v.EncoderVersions)
                     sb.AppendLine($"  {kv.Key}: {kv.Value}");
@@ -302,8 +312,15 @@ namespace AvifEncoder.GuiLakeUI
             MessageBox.Show(sb.ToString(), "系统信息",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex) { MessageBox.Show($"获取系统信息失败: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                if (CanUpdateUi())
+                    MessageBox.Show($"获取系统信息失败: {ex.Message}");
+            }
         }
+
+        private bool CanUpdateUi()
+            => !IsDisposed && !Disposing && IsHandleCreated;
 
         private void BtnResetDefault_Click(object? sender, EventArgs e)
         {
