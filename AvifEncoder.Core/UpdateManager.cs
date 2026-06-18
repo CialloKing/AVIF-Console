@@ -239,7 +239,7 @@ namespace AvifEncoder
     CancellationToken ct = default)
         {
             string exePath = GetExecutablePath();
-            string newPath = exePath + ".new";
+            string newPath = GetDownloadTempPath(exePath);
 
             try
             {
@@ -295,6 +295,12 @@ namespace AvifEncoder
                     }
                 }
 
+                if (total > 0 && downloaded != total)
+                {
+                    throw new IOException(
+                        $"下载大小不完整：期望 {total} 字节，实际 {downloaded} 字节");
+                }
+
                 return newPath;
             }
             catch
@@ -348,6 +354,9 @@ namespace AvifEncoder
         internal static string GetExecutablePath()
             => Environment.ProcessPath
                ?? Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
+
+        internal static string GetDownloadTempPath(string exePath)
+            => exePath + "." + Guid.NewGuid().ToString("N") + ".new";
 
         /// <summary>
         /// 通过当前加载的程序集判断进程类型。

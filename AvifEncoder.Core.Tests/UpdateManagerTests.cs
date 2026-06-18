@@ -13,7 +13,21 @@ namespace AvifEncoder.Core.Tests
 
             Assert.Contains(Path.GetFullPath(newPath), script);
             Assert.Contains(Path.GetFullPath(exePath), script);
-            Assert.IsFalse(script.Contains("\"AvifEncoder.GuiLakeUI.exe.new\""));
+            Assert.DoesNotContain("\"AvifEncoder.GuiLakeUI.exe.new\"", script);
+        }
+
+        [TestMethod]
+        public void GetDownloadTempPath_UsesUniqueSiblingNewFile()
+        {
+            string exePath = Path.Combine("C:\\Apps\\Avif Encoder", "AvifEncoder.GuiLakeUI.exe");
+
+            string first = UpdateManager.GetDownloadTempPath(exePath);
+            string second = UpdateManager.GetDownloadTempPath(exePath);
+
+            Assert.AreNotEqual(first, second);
+            Assert.StartsWith(exePath + ".", first);
+            Assert.EndsWith(".new", first);
+            Assert.AreNotEqual(exePath + ".new", first);
         }
     }
 }
