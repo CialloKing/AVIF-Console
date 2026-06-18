@@ -477,31 +477,11 @@ namespace AvifEncoder
                 string midDisplay = FormatScore(displayMid, cfg.MetricMode);
                 SafeWriteLine($"  [{name}] [BIN] CRF={mid} → {midDisplay}");
 
-                // ★ NaN（评估失败）既不 >= target 也不 < target，必须跳过该点。
-                //    IEEE 754 中 NaN >= x 和 NaN < x 均为 false，旧代码将 NaN 当"不达标"
-                //    向左搜索（降低 CRF），方向错误。应跳过保持区间不变。
+                // ★ NaN（评估失败）跳过该点并向两侧各尝试一步，避免 O(2^n) 递归
                 if (double.IsNaN(score))
                 {
-                    if (mid < r)
-                    {
-                        var (rightBest, rightEval) = await StandardBinarySearch(
-                            input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                            mid + 1, r, knownLoScore: null, lowerIsBetter: lowerIsBetter);
-                        evalCount += rightEval;
-                        if (rightBest >= 0)
-                            return (Math.Max(bestCrf, rightBest), evalCount);
-                    }
-
-                    if (mid > l)
-                    {
-                        var (leftBest, leftEval) = await StandardBinarySearch(
-                            input, tileCols, cfg, pixFmt, jpeg, name, target, getScore, token,
-                            l, mid - 1, knownLoScore: null, lowerIsBetter: lowerIsBetter);
-                        evalCount += leftEval;
-                        return (Math.Max(bestCrf, leftBest), evalCount);
-                    }
-
-                    return (bestCrf, evalCount);
+                    l++;     // 跳过当前点，向右收缩左边界
+                    continue;
                 }
                 else if (score >= target)
                 {
@@ -783,8 +763,8 @@ namespace AvifEncoder
             {
                 _csvBuffer.AppendLine(GetCsvRow(r));
                 _csvBufferCount++;
-                // ★ 每 50 行批量刷盘，session 结束时 FlushCsvBuffer() 兜底
-                if (_csvBufferCount >= 50)
+                // ★ 每 10 行批量刷盘（从 50 降低以减少崩溃丢失窗口），session 结束时 FlushCsvBuffer() 兜底
+                if (_csvBufferCount >= 10)
                     FlushCsvBuffer();
             }
         }
