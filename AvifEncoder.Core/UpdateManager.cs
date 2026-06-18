@@ -312,14 +312,14 @@ namespace AvifEncoder
         }
 
         /// <summary>
-        /// 生成 _update.bat 并启动它，然后退出应用。
+        /// 生成唯一更新脚本并启动它，然后退出应用。
         /// </summary>
         public void InstallAndRestart(string newPath)
         {
             string exePath = GetExecutablePath();
-            string exeDir = Path.GetDirectoryName(exePath)
+            string exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath))
                 ?? AppContext.BaseDirectory;
-            string batPath = Path.Combine(exeDir, "_update.bat");
+            string batPath = GetUpdateScriptPath(exePath);
             string fullNewPath = Path.GetFullPath(newPath);
 
             File.WriteAllText(batPath, BuildUpdateScript(exePath, fullNewPath));
@@ -357,6 +357,16 @@ namespace AvifEncoder
 
         internal static string GetDownloadTempPath(string exePath)
             => exePath + "." + Guid.NewGuid().ToString("N") + ".new";
+
+        internal static string GetUpdateScriptPath(string exePath)
+        {
+            string fullExePath = Path.GetFullPath(exePath);
+            string exeDir = Path.GetDirectoryName(fullExePath)
+                ?? AppContext.BaseDirectory;
+            return Path.Combine(
+                exeDir,
+                "_update." + Guid.NewGuid().ToString("N") + ".bat");
+        }
 
         /// <summary>
         /// 通过当前加载的程序集判断进程类型。

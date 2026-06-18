@@ -29,5 +29,20 @@ namespace AvifEncoder.Core.Tests
             Assert.EndsWith(".new", first);
             Assert.AreNotEqual(exePath + ".new", first);
         }
+
+        [TestMethod]
+        public void GetUpdateScriptPath_UsesUniqueSiblingBatFile()
+        {
+            string exePath = Path.Combine("C:\\Apps\\Avif Encoder", "AvifEncoder.GuiLakeUI.exe");
+            string exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath))!;
+
+            string first = UpdateManager.GetUpdateScriptPath(exePath);
+            string second = UpdateManager.GetUpdateScriptPath(exePath);
+
+            Assert.AreNotEqual(first, second);
+            Assert.StartsWith(Path.Combine(exeDir, "_update."), first);
+            Assert.EndsWith(".bat", first);
+            Assert.AreNotEqual(Path.Combine(exeDir, "_update.bat"), first);
+        }
     }
 }
