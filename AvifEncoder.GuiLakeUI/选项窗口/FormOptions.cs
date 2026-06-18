@@ -146,8 +146,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// <summary>从逗号分隔字符串恢复复选框状态（勾选=计算，取消=跳过）</summary>
         public void LoadSkippedMetrics(string csv)
         {
-            if (string.IsNullOrWhiteSpace(csv) || chkMetricXpsnr == null) return;
-            var set = new HashSet<string>(csv.Split(',').Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
+            if (chkMetricXpsnr == null) return;
+            var set = PresetConfig.ParseSkippedMetricsCsv(csv);
             chkMetricXpsnr.Checked       = !set.Contains("xpsnr");
             chkMetricSsimu2.Checked      = !set.Contains("ssimu2");
             chkMetricButter3.Checked     = !set.Contains("butter3");
@@ -235,7 +235,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private ModernCheckBox chkMetricButter3;
         private ModernCheckBox chkMetricGmsd;
         private ModernCheckBox chkMetricPsnrUncapped;
-        private Label label3;
+        private Label label3 = null!;
         private FormCommands? _commandsPage;
 
         /// <summary>由 Form1 调用，注入编码页引用。</summary>

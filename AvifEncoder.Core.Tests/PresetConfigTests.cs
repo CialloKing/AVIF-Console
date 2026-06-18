@@ -127,5 +127,23 @@ namespace AvifEncoder.Core.Tests
             Assert.IsFalse(PresetConfig.IsMetricLowerBetter("vmaf"));
             Assert.IsFalse(PresetConfig.IsMetricLowerBetter("ssim"));
         }
+
+        [TestMethod]
+        public void ParseSkippedMetricsCsv_Blank_ReturnsEmptySet()
+        {
+            var skipped = PresetConfig.ParseSkippedMetricsCsv("");
+
+            Assert.IsEmpty(skipped);
+        }
+
+        [TestMethod]
+        public void ParseSkippedMetricsCsv_IgnoresEmptyTokensAndTrimsValues()
+        {
+            var skipped = PresetConfig.ParseSkippedMetricsCsv(" xpsnr, ,ssimu2,, ");
+
+            Assert.HasCount(2, skipped);
+            Assert.Contains("xpsnr", skipped);
+            Assert.Contains("ssimu2", skipped);
+        }
     }
 }

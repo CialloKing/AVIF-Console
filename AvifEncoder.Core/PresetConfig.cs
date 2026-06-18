@@ -172,6 +172,13 @@ namespace AvifEncoder
             "xpsnr", "ssimu2", "butter3", "gmsd", "psnr_uncapped", "all_advanced"
         };
 
+        public static HashSet<string> ParseSkippedMetricsCsv(string? csv)
+            => string.IsNullOrWhiteSpace(csv)
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(
+                    csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// 判断指定指标是否被跳过。
         /// SkippedMetrics 为 null 时视为全部计算（保持向后兼容）。

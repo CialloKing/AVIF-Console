@@ -1406,7 +1406,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                         OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
                     if (!string.IsNullOrWhiteSpace(cfg.EncodeAnimatedCommand))
                         optsPage.SetAnimatedCommand(cfg.EncodeAnimatedCommand);
-                    if (!string.IsNullOrWhiteSpace(cfg.EncodeSkippedMetrics))
+                    if (cfg.EncodeSkippedMetrics != null)
                         optsPage.LoadSkippedMetrics(cfg.EncodeSkippedMetrics);
                 }
             }
