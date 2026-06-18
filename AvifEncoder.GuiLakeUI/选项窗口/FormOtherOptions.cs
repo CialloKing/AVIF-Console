@@ -21,7 +21,17 @@ namespace AvifEncoder.GuiLakeUI
             this.btnCheckUpdate.Click += btnCheckUpdate_Click;
             // 默认与主窗口字体一致
             if (Application.OpenForms["Form1"] is Form1 mainForm && mainForm.Font != null)
-                _currentFont = mainForm.Font;
+                ReplaceCurrentFont(mainForm.Font);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _currentFont?.Dispose();
+                _currentFont = null;
+            }
+            base.Dispose(disposing);
         }
 
 
@@ -38,10 +48,7 @@ namespace AvifEncoder.GuiLakeUI
             if (fontDlg.ShowDialog(this) == DialogResult.OK)
             {
                 Font selectedFont = fontDlg.SelectedFont;
-                _currentFont?.Dispose();
-                _currentFont = selectedFont;
-                btnSelectFont.Font?.Dispose();
-                btnSelectFont.Font = selectedFont;
+                ReplaceCurrentFont(selectedFont);
                 btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
                 ApplyFontToApp(selectedFont);
             }
@@ -56,10 +63,7 @@ namespace AvifEncoder.GuiLakeUI
             if (fontDlg.ShowDialog(this) == DialogResult.OK)
             {
                 Font selectedFont = fontDlg.Font;
-                _currentFont?.Dispose();
-                _currentFont = selectedFont;
-                btnSelectFont.Font?.Dispose();
-                btnSelectFont.Font = selectedFont;
+                ReplaceCurrentFont(selectedFont);
                 btnSelectFont.Text = $"{selectedFont.Name}, {selectedFont.Size}pt";
                 ApplyFontToApp(selectedFont);
             }
@@ -134,13 +138,10 @@ namespace AvifEncoder.GuiLakeUI
             try
             {
                 var font = new Font(config.FontFamily, config.FontSize);
-                // ★ 先释放旧字体，避免 GDI 句柄泄露
-                _currentFont?.Dispose();
-                _currentFont = font;
+                ReplaceCurrentFont(font);
                 ApplyFontToApp(font);
-                btnSelectFont.Font?.Dispose();
-                btnSelectFont.Font = font;
                 btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
+                font.Dispose();
             }
             catch { /* 忽略无效字体 */ }
             // 窗口状态 + 编码设置
@@ -191,7 +192,7 @@ namespace AvifEncoder.GuiLakeUI
         private void ApplyFontToApp(Font font)
         {
             if (Application.OpenForms["Form1"] is Form1 mainForm)
-                mainForm.ApplyGlobalFont(font);
+                mainForm.ApplyGlobalFont((Font)font.Clone());
         }
 
         /// <summary>
@@ -203,9 +204,20 @@ namespace AvifEncoder.GuiLakeUI
             {
                 return;
             }
-            _currentFont = font;
-            btnSelectFont.Font = font;
+            ReplaceCurrentFont(font);
             btnSelectFont.Text = $"{font.Name}, {font.Size}pt";
+        }
+
+        private void ReplaceCurrentFont(Font font)
+        {
+            Font cloned = (Font)font.Clone();
+            Font? old = _currentFont;
+            _currentFont = cloned;
+            btnSelectFont.Font = cloned;
+            if (old != null && !ReferenceEquals(old, cloned))
+            {
+                old.Dispose();
+            }
         }
 
         private async void btnCheckUpdate_Click(object? sender,
