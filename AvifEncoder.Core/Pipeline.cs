@@ -1797,10 +1797,20 @@ namespace AvifEncoder
                         SkippedMetrics = _config.SkippedMetrics?.ToArray()
                     }
                 };
-                string tmp = _snapshotPath + ".tmp";
-                File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(snapshot), Encoding.UTF8);
-                // ★ 原子替换：Delete+Move有崩溃窗口，File.Move(overwrite:true)是原子操作
-                File.Move(tmp, _snapshotPath, true);
+                string tmp = _snapshotPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(snapshot), Encoding.UTF8);
+                    // ★ 原子替换：Delete+Move有崩溃窗口，File.Move(overwrite:true)是原子操作
+                    File.Move(tmp, _snapshotPath, true);
+                }
+                finally
+                {
+                    if (File.Exists(tmp))
+                    {
+                        try { File.Delete(tmp); } catch { }
+                    }
+                }
                 _journalCountSinceSnapshot = 0;
                 _lastSnapshotTime = DateTime.UtcNow;
 
