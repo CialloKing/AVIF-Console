@@ -147,15 +147,41 @@ namespace AvifEncoder.GuiLakeUI
             if (Application.OpenForms["Form1"] is Form1 mainForm)
             {
                 mainForm.SuspendLayout();
-                mainForm.WindowState = config.Maximized ? FormWindowState.Maximized : FormWindowState.Normal;
-                if (!config.Maximized)
+                try
                 {
-                    mainForm.Left = Math.Max(0, config.WindowLeft);
-                    mainForm.Top = Math.Max(0, config.WindowTop);
-                    mainForm.Width = Math.Max(100, config.WindowWidth);
-                    mainForm.Height = Math.Max(100, config.WindowHeight);
+                    bool hasMaximized = config.ShouldApplyField(nameof(AppConfig.Maximized));
+                    bool hasPosition =
+                        config.ShouldApplyField(nameof(AppConfig.WindowLeft))
+                        && config.ShouldApplyField(nameof(AppConfig.WindowTop));
+                    bool hasSize =
+                        config.ShouldApplyField(nameof(AppConfig.WindowWidth))
+                        && config.ShouldApplyField(nameof(AppConfig.WindowHeight));
+
+                    if (hasMaximized && config.Maximized)
+                    {
+                        mainForm.WindowState = FormWindowState.Maximized;
+                    }
+                    else if (hasMaximized || hasPosition || hasSize)
+                    {
+                        mainForm.WindowState = FormWindowState.Normal;
+                        if (hasPosition)
+                        {
+                            mainForm.Left = Math.Max(0, config.WindowLeft);
+                            mainForm.Top = Math.Max(0, config.WindowTop);
+                        }
+                        if (hasSize
+                            && config.WindowWidth > 0
+                            && config.WindowHeight > 0)
+                        {
+                            mainForm.Width = Math.Max(100, config.WindowWidth);
+                            mainForm.Height = Math.Max(100, config.WindowHeight);
+                        }
+                    }
                 }
-                mainForm.ResumeLayout();
+                finally
+                {
+                    mainForm.ResumeLayout();
+                }
 
                 // ★ 同步恢复编码设置
                 mainForm.ApplyEncodeConfig(config);

@@ -374,19 +374,31 @@ namespace AvifEncoder.GuiLakeUI
             // 窗口状态
             try
             {
-                if (config.Maximized)
+                bool hasMaximized = config.ShouldApplyField(nameof(AppConfig.Maximized));
+                bool hasPosition =
+                    config.ShouldApplyField(nameof(AppConfig.WindowLeft))
+                    && config.ShouldApplyField(nameof(AppConfig.WindowTop));
+                bool hasSize =
+                    config.ShouldApplyField(nameof(AppConfig.WindowWidth))
+                    && config.ShouldApplyField(nameof(AppConfig.WindowHeight));
+
+                if (hasMaximized && config.Maximized)
                 {
                     WindowState = FormWindowState.Maximized;
                 }
-                else
+                else if (hasMaximized || hasPosition || hasSize)
                 {
                     WindowState = FormWindowState.Normal;
-                    if (config.WindowLeft >= 0 && config.WindowTop >= 0)
+                    if (hasPosition
+                        && config.WindowLeft >= 0
+                        && config.WindowTop >= 0)
                     {
                         Left = config.WindowLeft;
                         Top = config.WindowTop;
                     }
-                    if (config.WindowWidth > 0 && config.WindowHeight > 0)
+                    if (hasSize
+                        && config.WindowWidth > 0
+                        && config.WindowHeight > 0)
                     {
                         Width = config.WindowWidth;
                         Height = config.WindowHeight;
