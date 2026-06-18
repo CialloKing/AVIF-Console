@@ -436,6 +436,7 @@ namespace AvifEncoder
             string[] GetFiles(string path, string searchPattern);
             DateTime GetCreationTime(string path);
             void AppendAllText(string path, string contents);
+            void AppendAllTextWithHeader(string path, string header, string contents, Encoding encoding);
             void WriteAllText(string path, string contents, Encoding encoding);
             void WriteAllTextAtomic(string path, string contents, Encoding encoding);
             Task<string> ReadAllTextAsync(string path);
@@ -458,6 +459,51 @@ namespace AvifEncoder
             public string[] GetFiles(string path, string searchPattern) => Directory.GetFiles(path, searchPattern);
             public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
             public void AppendAllText(string path, string contents) => File.AppendAllText(path, contents);
+            public void AppendAllTextWithHeader(string path, string header, string contents, Encoding encoding)
+            {
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                using var stream = new FileStream(
+                    path,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.ReadWrite);
+                bool locked = false;
+                try
+                {
+                    locked = TryLockFileRegion(stream);
+
+                    bool isNewFile = stream.Length == 0;
+                    if (!isNewFile && !FileEndsWithLineFeed(stream))
+                    {
+                        stream.Seek(0, SeekOrigin.End);
+                        stream.WriteByte((byte)'\n');
+                    }
+
+                    stream.Seek(0, SeekOrigin.End);
+                    using var writer = new StreamWriter(stream, encoding, bufferSize: 1024, leaveOpen: true);
+                    if (isNewFile)
+                    {
+                        writer.Write(header);
+                        if (!header.EndsWith('\n'))
+                        {
+                            writer.WriteLine();
+                        }
+                    }
+                    writer.Write(contents);
+                }
+                finally
+                {
+                    if (locked && !OperatingSystem.IsMacOS())
+                    {
+                        try { stream.Unlock(0, long.MaxValue); } catch { }
+                    }
+                }
+            }
             public void WriteAllText(string path, string contents, Encoding encoding) => File.WriteAllText(path, contents, encoding);
             public void WriteAllTextAtomic(string path, string contents, Encoding encoding)
             {
@@ -493,6 +539,40 @@ namespace AvifEncoder
                 await File.WriteAllBytesAsync(path, bytes);
             public async Task WriteAllTextAsync(string path, string contents) =>
                 await File.WriteAllTextAsync(path, contents, Encoding.UTF8);
+
+            private static bool TryLockFileRegion(FileStream stream)
+            {
+                if (OperatingSystem.IsMacOS())
+                {
+                    return false;
+                }
+
+                const int attempts = 40;
+                for (int i = 0; ; i++)
+                {
+                    try
+                    {
+                        stream.Lock(0, long.MaxValue);
+                        return true;
+                    }
+                    catch (IOException) when (i < attempts - 1)
+                    {
+                        System.Threading.Thread.Sleep(50);
+                    }
+                }
+            }
+
+            private static bool FileEndsWithLineFeed(FileStream stream)
+            {
+                if (stream.Length == 0)
+                {
+                    return true;
+                }
+
+                stream.Seek(-1, SeekOrigin.End);
+                int last = stream.ReadByte();
+                return last == '\n';
+            }
         }
 
         public static PresetConfig CreateFromPreset(CliPreset preset)

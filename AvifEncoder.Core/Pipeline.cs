@@ -3371,19 +3371,14 @@ namespace AvifEncoder
         {
             lock (_failedCsvLock)
             {
-                bool writeHeader = !_fs.FileExists(_failedCsvPath);
-                if (writeHeader)
-                {
-                    string header =
-                        "SourceFile,FailedOutput,Encoder,EncoderVersion," +
-                        "PixelFormat,BitDepth,Width,Height," +
-                        "FailureType,MismatchCount,MaxDelta," +
-                        "FirstMismatchX,FirstMismatchY,FirstMismatchChannel," +
-                        "RefValue,OutValue," +
-                        "RMismatches,GMismatches,BMismatches,AMismatches," +
-                        "EncodeCommand,Timestamp";
-                    _fs.WriteAllText(_failedCsvPath, header + "\n", System.Text.Encoding.UTF8);
-                }
+                string header =
+                    "SourceFile,FailedOutput,Encoder,EncoderVersion," +
+                    "PixelFormat,BitDepth,Width,Height," +
+                    "FailureType,MismatchCount,MaxDelta," +
+                    "FirstMismatchX,FirstMismatchY,FirstMismatchChannel," +
+                    "RefValue,OutValue," +
+                    "RMismatches,GMismatches,BMismatches,AMismatches," +
+                    "EncodeCommand,Timestamp";
 
                 string csvEscape(string? s) =>
                     "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
@@ -3412,7 +3407,11 @@ namespace AvifEncoder
                     csvEscape(info.EncodeCommand),
                     info.Timestamp
                 );
-                _fs.AppendAllText(_failedCsvPath, line + "\n");
+                _fs.AppendAllTextWithHeader(
+                    _failedCsvPath,
+                    header,
+                    line + "\n",
+                    System.Text.Encoding.UTF8);
             }
         }
 

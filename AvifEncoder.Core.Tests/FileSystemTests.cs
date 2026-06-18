@@ -30,5 +30,54 @@ namespace AvifEncoder.Core.Tests
                 }
             }
         }
+
+        [TestMethod]
+        public void AppendAllTextWithHeader_WritesHeaderOnceAndAppendsRows()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), $"fs_append_header_{Guid.NewGuid():N}");
+            string path = Path.Combine(dir, "failed_verification.csv");
+            try
+            {
+                var fs = new PresetConfig.RealFileSystem();
+
+                fs.AppendAllTextWithHeader(path, "A,B", "1,2\n", Encoding.UTF8);
+                fs.AppendAllTextWithHeader(path, "A,B", "3,4\n", Encoding.UTF8);
+
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                CollectionAssert.AreEqual(new[] { "A,B", "1,2", "3,4" }, lines);
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
+
+        [TestMethod]
+        public void AppendAllTextWithHeader_SeparatesExistingFileWithoutTrailingNewline()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), $"fs_append_newline_{Guid.NewGuid():N}");
+            string path = Path.Combine(dir, "failed_verification.csv");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(path, "A,B\n1,2", Encoding.UTF8);
+
+                var fs = new PresetConfig.RealFileSystem();
+                fs.AppendAllTextWithHeader(path, "A,B", "3,4\n", Encoding.UTF8);
+
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                CollectionAssert.AreEqual(new[] { "A,B", "1,2", "3,4" }, lines);
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
     }
 }
