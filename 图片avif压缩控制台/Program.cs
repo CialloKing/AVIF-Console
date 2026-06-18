@@ -713,7 +713,8 @@ namespace AvifEncoder
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[FAIL] 错误: {ex.Message}"); try { string logDir = Path.Combine(opts.OutputDir, "log"); Directory.CreateDirectory(logDir); File.AppendAllText(Path.Combine(logDir, "crash.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}\n"); } catch { }
+                Console.WriteLine($"[FAIL] 错误: {ex.Message}");
+                AppendCrashLog(opts.OutputDir, ex);
             }
             finally
             {
@@ -726,6 +727,24 @@ namespace AvifEncoder
                 Console.WriteLine("按任意键退出...");
                 if (!Console.IsInputRedirected) Console.ReadKey();
             }
+        }
+
+        internal static void AppendCrashLog(string outputDir, Exception ex)
+        {
+            try
+            {
+                string logDir = Path.Combine(outputDir, "log");
+                Directory.CreateDirectory(logDir);
+                string path = Path.Combine(logDir, "crash.log");
+                using var stream = new FileStream(
+                    path,
+                    FileMode.Append,
+                    FileAccess.Write,
+                    FileShare.ReadWrite);
+                using var writer = new StreamWriter(stream, Encoding.UTF8);
+                writer.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] {ex}");
+            }
+            catch { }
         }
 
         private static string[] ParseCommandLineInteractive(string line)

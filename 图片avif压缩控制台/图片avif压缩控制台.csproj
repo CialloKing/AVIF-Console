@@ -11,4 +11,8 @@
     <ProjectReference Include="..\AvifEncoder.Core\AvifEncoder.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AvifEncoder.Core.Tests" />
+  </ItemGroup>
+
 </Project>
