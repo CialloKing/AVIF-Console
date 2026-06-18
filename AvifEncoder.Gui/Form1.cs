@@ -17,6 +17,8 @@ namespace AvifEncoder.Gui
         private const string CustomPresetName = "自定义";
         private AvifPipeline? _pipeline;
         private CancellationTokenSource? _globalCts;
+        private Task? _runTask;
+        private bool _closingAfterCancel;
         private readonly Dictionary<string, CliPreset?> _presetMap = new()
         {
             { CustomPresetName, null },
@@ -110,9 +112,37 @@ namespace AvifEncoder.Gui
         }
         private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
         {
+            if (_pipeline != null && _runTask != null && !_runTask.IsCompleted && !_closingAfterCancel)
+            {
+                e.Cancel = true;
+                _closingAfterCancel = true;
+                AppendLog("正在安全停止编码...");
+                try { _globalCts?.Cancel(); } catch { }
+                try { _pipeline.KillTrackedProcesses(); } catch { }
+                _ = CloseAfterPipelineAsync();
+                return;
+            }
+
             try { _globalCts?.Cancel(); } catch { }
-            try { _globalCts?.Dispose(); } catch { }
-            _pipeline?.Dispose();
+        }
+
+        private async Task CloseAfterPipelineAsync()
+        {
+            try
+            {
+                if (_runTask != null)
+                    await Task.WhenAny(_runTask, Task.Delay(TimeSpan.FromSeconds(60)));
+            }
+            catch { }
+
+            if (IsDisposed || !IsHandleCreated)
+                return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action(Close)); } catch { }
+            }
+            else
+                Close();
         }
         private void ApplyPresetToUI(CliPreset preset)
         {
@@ -467,24 +497,10 @@ namespace AvifEncoder.Gui
             if (_pipeline != null)
             {
                 _globalCts?.Cancel();
+                try { _pipeline.KillTrackedProcesses(); } catch { }
                 AppendLog("正在请求取消编码...");
                 btnStart.Enabled = false;
                 btnStart.Text = "正在停止...";
-                // ★ 取消后异步恢复按钮状态，避免永久禁用
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        _globalCts?.Cancel();
-                        await Task.Delay(2000);  // 给管道2秒清理时间
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            btnStart.Enabled = true;
-                            btnStart.Text = "开始转换";
-                        }));
-                    }
-                    catch { }
-                });
                 return;
             }
 
@@ -501,10 +517,23 @@ namespace AvifEncoder.Gui
 
                 IProgress<int> progress = new Progress<int>(percent =>
                 {
+                    if (progressBar1.IsDisposed || !progressBar1.IsHandleCreated) return;
                     if (progressBar1.InvokeRequired)
-                        progressBar1.Invoke((Action)(() => UpdateProgress(percent)));
+                    {
+                        try
+                        {
+                            progressBar1.Invoke((Action)(() =>
+                            {
+                                if (!progressBar1.IsDisposed && progressBar1.IsHandleCreated)
+                                    UpdateProgress(percent);
+                            }));
+                        }
+                        catch { }
+                    }
                     else
+                    {
                         UpdateProgress(percent);
+                    }
                 });
 
                 // 创建取消令牌供外部使用
@@ -523,7 +552,8 @@ namespace AvifEncoder.Gui
 
                 try
                 {
-                    await _pipeline.RunAsync(_globalCts.Token);
+                    _runTask = _pipeline.RunAsync(_globalCts.Token);
+                    await _runTask;
                 }
                 catch (OperationCanceledException)
                 {
@@ -534,6 +564,9 @@ namespace AvifEncoder.Gui
                 {
                     _pipeline?.Dispose();
                     _pipeline = null;
+                    _runTask = null;
+                    _globalCts?.Dispose();
+                    _globalCts = null;
                 }
 
                 AppendLog("===== 全部完成 =====");
