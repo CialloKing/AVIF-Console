@@ -1023,6 +1023,9 @@ namespace AvifEncoder
                     }
                 };
                 process.Start();
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+                _spawnedProcesses.Add(process);
+                if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
                 using var ms = new System.IO.MemoryStream(estimatedCapacity);  // ★ 预分配，避免多次扩容
                 var copyTask = process.StandardOutput.BaseStream
