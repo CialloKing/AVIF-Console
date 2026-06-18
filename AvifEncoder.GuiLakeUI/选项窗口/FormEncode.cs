@@ -175,7 +175,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         private static void SetComboBoxItem(ModernComboBox combo, string item)
         {
             int idx = combo.Items.IndexOf(item);
-            combo.SelectedIndex = idx >= 0 ? idx : -1;
+            if (idx >= 0)
+            {
+                combo.SelectedIndex = idx;
+            }
         }
 
         private static string ResolveMetricDisplayName(JsonElement cfg, string fallback = "VMAF")
