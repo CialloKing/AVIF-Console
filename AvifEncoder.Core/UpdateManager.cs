@@ -341,12 +341,24 @@ namespace AvifEncoder
         {
             string fullExePath = Path.GetFullPath(exePath);
             string fullNewPath = Path.GetFullPath(newPath);
+            string fullBackup = fullExePath + ".bak";
             return $"""
                 @echo off
                 timeout /t 2 /nobreak > nul
-                del "{fullExePath}"
-                move /y "{fullNewPath}" "{fullExePath}"
-                start "" "{fullExePath}"
+                rem ★ 备份当前 exe（改名而非删除，失败可回滚）
+                move /y "{fullExePath}" "{fullBackup}" > nul 2>&1
+                if not exist "{fullBackup}" exit /b 1
+                rem ★ 移动新版本到正式路径
+                move /y "{fullNewPath}" "{fullExePath}" > nul 2>&1
+                if exist "{fullExePath}" (
+                    rem ★ 替换成功 → 清理备份并启动
+                    del "{fullBackup}" > nul 2>&1
+                    start "" "{fullExePath}"
+                )
+                if not exist "{fullExePath}" (
+                    rem ★ 替换失败 → 恢复备份
+                    move /y "{fullBackup}" "{fullExePath}" > nul 2>&1
+                )
                 del "%~f0"
                 """;
         }
