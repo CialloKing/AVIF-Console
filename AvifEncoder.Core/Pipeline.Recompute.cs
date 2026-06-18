@@ -65,6 +65,43 @@ namespace AvifEncoder
             return [.. result];
         }
 
+        internal static async Task ForEachBoundedAsync<T>(
+            IReadOnlyList<T> items,
+            int maxConcurrency,
+            Func<T, CancellationToken, Task> handler,
+            CancellationToken token = default)
+        {
+            if (items.Count == 0)
+                return;
+
+            maxConcurrency = Math.Max(1, Math.Min(maxConcurrency, items.Count));
+            int nextIndex = 0;
+            object sync = new();
+
+            async Task WorkerAsync()
+            {
+                while (true)
+                {
+                    T item;
+                    lock (sync)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (nextIndex >= items.Count)
+                            return;
+                        item = items[nextIndex++];
+                    }
+
+                    await handler(item, token).ConfigureAwait(false);
+                }
+            }
+
+            var workers = new Task[maxConcurrency];
+            for (int i = 0; i < workers.Length; i++)
+                workers[i] = WorkerAsync();
+
+            await Task.WhenAll(workers).ConfigureAwait(false);
+        }
+
         /// <summary>
         /// 重算模式：读取已有 avif_stats.csv，对缺失 SSIMULACRA2/Butteraugli/GMSD
         /// 的行补算高级指标，不重新编码。完成后写回 CSV。
@@ -177,17 +214,11 @@ namespace AvifEncoder
                     (double? ssimu2, double? butterRaw,
                      double? butter3, double? gmsd)>();
 
-                using var semaphore = new SemaphoreSlim(
-                    Math.Max(1, Environment.ProcessorCount / 2));
+                int workerCount = Math.Max(1, Environment.ProcessorCount / 2);
 
-                var tasks = entries.Select(async entry =>
+                async Task ProcessEntryAsync(CsvEntry entry, CancellationToken token)
                 {
-                    // ★ WaitAsync 被取消时抛异常但信号量未获取，finally 中无条件 Release()
-                    //    会导致计数超过上限（SemaphoreSlim 构造函数以初始值同时设上限）。
-                    //    用 acquired 标志跟踪是否真正获取，仅在获取后释放。
-                    bool acquired = false;
-                    try { await semaphore.WaitAsync(_globalCts.Token); acquired = true; } catch { }
-                    if (!acquired) return;
+                    token.ThrowIfCancellationRequested();
                     try
                     {
                         if (!srcIndex.TryGetValue(entry.SourceFile,
@@ -225,6 +256,7 @@ namespace AvifEncoder
 
                             string refClean = await SanitizePngIfNeededAsync(
                                 srcPath, tempDir);
+                            token.ThrowIfCancellationRequested();
                             string? refPng = Path.GetExtension(refClean).ToLower() == ".png"
                                 ? refClean
                                 : await ConvertToPngAsync(refClean, tempDir);
@@ -236,12 +268,14 @@ namespace AvifEncoder
                                 {
                                     string? distPng = await ConvertToPngAsync(
                                         avifPath, tempDir);
+                                    token.ThrowIfCancellationRequested();
                                     if (distPng != null)
                                     {
                                         ssimu2 = await ComputeSSIMULACRA2Async(
                                             refPng, distPng);
                                     }
                                 }
+                                catch (OperationCanceledException) { throw; }
                                 catch (Exception ex)
                                 {
                                     _logger.LogInfo($"SSIMULACRA2: {ex.Message}");
@@ -255,6 +289,7 @@ namespace AvifEncoder
                                 {
                                     string? distPng = await ConvertToPngAsync(
                                         avifPath, tempDir);
+                                    token.ThrowIfCancellationRequested();
                                     if (distPng != null)
                                     {
                                         var (raw, p3) = await ComputeButteraugliAsync(
@@ -263,6 +298,7 @@ namespace AvifEncoder
                                         butter3 = p3;
                                     }
                                 }
+                                catch (OperationCanceledException) { throw; }
                                 catch (Exception ex)
                                 {
                                     _logger.LogInfo($"Butteraugli: {ex.Message}");
@@ -271,8 +307,10 @@ namespace AvifEncoder
 
                             try
                             {
+                                token.ThrowIfCancellationRequested();
                                 gmsd = await ComputeGMSDAsync(refClean, avifPath);
                             }
+                            catch (OperationCanceledException) { throw; }
                             catch (Exception ex)
                             {
                                 _logger.LogInfo($"GMSD: {ex.Message}");
@@ -303,19 +341,24 @@ namespace AvifEncoder
                             catch { }
                         }
                     }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
                         SafeWriteLine($"  [ERROR] {entry.SourceFile}: {ex.Message}");
                         Interlocked.Increment(ref failed);
                     }
-                    finally
-                    {
-                        if (acquired) semaphore.Release();
-                    }
-                });
+                }
 
-                await Task.WhenAll(tasks);
+                try
+                {
+                    await ForEachBoundedAsync(entries, workerCount, ProcessEntryAsync,
+                        _globalCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    SafeWriteLine("[WARN] 高级指标重算已取消");
+                    return;
+                }
 
                 if (updatedFields.Count > 0)
                 {
