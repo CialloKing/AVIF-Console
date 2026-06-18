@@ -316,10 +316,20 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
 
                         // 成功，保存缓存（也用原子写入）
                         _fs.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
-                        string tmpCache = cacheFile + ".tmp";
-                        _fs.CopyFile(output, tmpCache, true);
-                        // ★ 用 overwrite:true 直接原子替换，避免 Delete→Move 之间崩溃导致缓存永久丢失
-                        File.Move(tmpCache, cacheFile, true);
+                        string tmpCache = cacheFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                        try
+                        {
+                            _fs.CopyFile(output, tmpCache, true);
+                            // ★ 用 overwrite:true 直接原子替换，避免 Delete→Move 之间崩溃导致缓存永久丢失
+                            File.Move(tmpCache, cacheFile, true);
+                        }
+                        finally
+                        {
+                            if (_fs.FileExists(tmpCache))
+                            {
+                                try { _fs.DeleteFile(tmpCache); } catch { }
+                            }
+                        }
                         _cache.SetEncode(cacheKey, cacheFile, sw.Elapsed, ffArgs);
                         _logger.LogSearch($"[OK] 编码成功: {input} CRF={crf} 耗时={sw.Elapsed.TotalSeconds:F4}s");
                         return (true, sw.Elapsed, attempt, "", false, param.aomParams, ffArgs);
