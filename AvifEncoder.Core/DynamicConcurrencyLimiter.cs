@@ -1,82 +1,243 @@
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace AvifEncoder
 {
     /// <summary>
-    /// 动态并发限制器：支持运行时增减并发数。
-    /// 扩缩容通过调整 _currentMax + Release 中吞噬超额槽位实现逐步收敛。
+    /// Runtime-adjustable concurrency limiter. Expansion wakes waiters immediately;
+    /// shrinkage lets already-running work drain before new waiters are granted slots.
     /// </summary>
     public class DynamicConcurrencyLimiter : IDisposable
     {
-        private readonly SemaphoreSlim _semaphore;
-        private int _currentMax;
-        private int _currentCount;  // ★ 手动追踪释放计数，避免 maxCount=int.MaxValue 使吞噬失效
         private readonly object _lock = new();
+        private readonly Queue<Waiter> _waiters = new();
+        private int _currentMax;
+        private int _inUse;
+        private bool _disposed;
 
         public int CurrentMax { get { lock (_lock) return _currentMax; } }
 
         public DynamicConcurrencyLimiter(int initialMax)
         {
-            _currentMax = initialMax;
-            _currentCount = initialMax;
-            _semaphore = new SemaphoreSlim(initialMax);
+            _currentMax = Math.Max(1, initialMax);
         }
 
-        public async Task<bool> WaitAsync(TimeSpan timeout, CancellationToken token = default)
+        public Task<bool> WaitAsync(TimeSpan timeout, CancellationToken token = default)
         {
-            var result = await _semaphore.WaitAsync(timeout, token);
-            if (result) { lock (_lock) { _currentCount--; } }
-            return result;
+            if (timeout < Timeout.InfiniteTimeSpan)
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            if (token.IsCancellationRequested)
+                return Task.FromCanceled<bool>(token);
+
+            Waiter? waiter = null;
+            List<Waiter>? grants = null;
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+                if (_waiters.Count == 0 && _inUse < _currentMax)
+                {
+                    _inUse++;
+                    return Task.FromResult(true);
+                }
+
+                if (timeout == TimeSpan.Zero)
+                    return Task.FromResult(false);
+
+                waiter = new Waiter();
+                _waiters.Enqueue(waiter);
+                grants = GrantWaitersLocked();
+            }
+
+            CompleteGrantedWaiters(grants);
+            if (!waiter.IsCompleted)
+                waiter.AttachTimeoutAndCancellation(this, timeout, token);
+            return waiter.Task;
         }
 
         public async Task WaitAsync(CancellationToken token = default)
         {
-            await _semaphore.WaitAsync(token);
-            lock (_lock) { _currentCount--; }
+            await WaitAsync(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// 释放槽位。如果当前并发数已超目标上限（缩容后），吞噬本次释放不增加可用计数，
-        /// 等待运行中的任务逐步完成，并发数自然收敛到目标值。
-        /// </summary>
         public void Release()
         {
-            // ★ 手动追踪：缩容后如已超 _currentMax，吞噬本次释放不增加槽位
+            List<Waiter>? grants = null;
             lock (_lock)
             {
-                if (_currentCount < _currentMax)
+                if (_disposed || _inUse <= 0)
+                    return;
+
+                _inUse--;
+                grants = GrantWaitersLocked();
+            }
+
+            CompleteGrantedWaiters(grants);
+        }
+
+        public int SetMax(int newMax)
+        {
+            int result;
+            List<Waiter>? grants = null;
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+                _currentMax = Math.Max(1, newMax);
+                grants = GrantWaitersLocked();
+                result = _currentMax;
+            }
+
+            CompleteGrantedWaiters(grants);
+            return result;
+        }
+
+        public void Dispose()
+        {
+            List<Waiter> pending = new();
+            lock (_lock)
+            {
+                if (_disposed)
+                    return;
+
+                _disposed = true;
+                while (_waiters.Count > 0)
                 {
-                    _currentCount++;
-                    _semaphore.Release();
+                    var waiter = _waiters.Dequeue();
+                    if (!waiter.IsCompleted)
+                    {
+                        waiter.MarkCompleted();
+                        pending.Add(waiter);
+                    }
                 }
+            }
+
+            foreach (var waiter in pending)
+            {
+                waiter.DisposeRegistrations();
+                waiter.TrySetException(new ObjectDisposedException(nameof(DynamicConcurrencyLimiter)));
             }
         }
 
-        /// <summary>动态设置为指定最大并发数。扩容立即生效；缩容通过 Release 吞噬逐步收敛。</summary>
-        public int SetMax(int newMax)
+        private List<Waiter>? GrantWaitersLocked()
+        {
+            List<Waiter>? grants = null;
+            while (_inUse < _currentMax && _waiters.Count > 0)
+            {
+                var waiter = _waiters.Dequeue();
+                if (waiter.IsCompleted)
+                    continue;
+
+                waiter.MarkCompleted();
+                _inUse++;
+                (grants ??= new List<Waiter>()).Add(waiter);
+            }
+            return grants;
+        }
+
+        private static void CompleteGrantedWaiters(List<Waiter>? grants)
+        {
+            if (grants == null)
+                return;
+
+            foreach (var waiter in grants)
+            {
+                waiter.DisposeRegistrations();
+                waiter.TrySetResult(true);
+            }
+        }
+
+        private void CompleteTimedOut(Waiter waiter)
+        {
+            if (!TryCompletePending(waiter))
+                return;
+
+            waiter.DisposeRegistrations();
+            waiter.TrySetResult(false);
+        }
+
+        private void CompleteCanceled(Waiter waiter, CancellationToken token)
+        {
+            if (!TryCompletePending(waiter))
+                return;
+
+            waiter.DisposeRegistrations();
+            waiter.TrySetCanceled(token);
+        }
+
+        private bool TryCompletePending(Waiter waiter)
         {
             lock (_lock)
             {
-                newMax = Math.Max(1, newMax);
-                int oldMax = _currentMax;
-                _currentMax = newMax;
-                int diff = newMax - oldMax;
-                if (diff > 0)
-                {
-                    _semaphore.Release(diff);
-                    _currentCount += diff;
-                }
-                else if (diff < 0)
-                {
-                    // 缩容：回收空闲槽位 + 重置计数上限
-                    for (int i = 0; i < -diff; i++)
-                    {
-                        if (!_semaphore.Wait(0)) break;
-                        _currentCount--;
-                    }
-                }
-                return _currentMax;
+                if (waiter.IsCompleted)
+                    return false;
+
+                waiter.MarkCompleted();
+                return true;
             }
         }
 
-        public void Dispose() => _semaphore?.Dispose();
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(DynamicConcurrencyLimiter));
+        }
+
+        private sealed class Waiter
+        {
+            private readonly TaskCompletionSource<bool> _tcs =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+            private CancellationTokenRegistration _cancellationRegistration;
+            private Timer? _timeoutTimer;
+
+            public bool IsCompleted { get; private set; }
+            public Task<bool> Task => _tcs.Task;
+
+            public void MarkCompleted() => IsCompleted = true;
+
+            public void AttachTimeoutAndCancellation(
+                DynamicConcurrencyLimiter owner,
+                TimeSpan timeout,
+                CancellationToken token)
+            {
+                if (token.CanBeCanceled)
+                {
+                    _cancellationRegistration = token.Register(
+                        static state =>
+                        {
+                            var (limiter, waiter, cancellationToken) =
+                                ((DynamicConcurrencyLimiter, Waiter, CancellationToken))state!;
+                            limiter.CompleteCanceled(waiter, cancellationToken);
+                        },
+                        (owner, this, token));
+                }
+
+                if (timeout != Timeout.InfiniteTimeSpan)
+                {
+                    _timeoutTimer = new Timer(
+                        static state =>
+                        {
+                            var (limiter, waiter) = ((DynamicConcurrencyLimiter, Waiter))state!;
+                            limiter.CompleteTimedOut(waiter);
+                        },
+                        (owner, this),
+                        timeout,
+                        Timeout.InfiniteTimeSpan);
+                }
+
+                if (IsCompleted)
+                    DisposeRegistrations();
+            }
+
+            public void DisposeRegistrations()
+            {
+                try { _timeoutTimer?.Dispose(); } catch { }
+                _timeoutTimer = null;
+                try { _cancellationRegistration.Dispose(); } catch { }
+            }
+
+            public void TrySetResult(bool value) => _tcs.TrySetResult(value);
+            public void TrySetCanceled(CancellationToken token) => _tcs.TrySetCanceled(token);
+            public void TrySetException(Exception exception) => _tcs.TrySetException(exception);
+        }
     }
 }
