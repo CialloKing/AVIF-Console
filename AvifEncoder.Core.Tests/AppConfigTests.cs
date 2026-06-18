@@ -171,6 +171,24 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void LoadFromFile_TracksWhetherFieldsWerePresent()
+        {
+            File.WriteAllText(_tempFile, """
+            {
+              "EncodeTimeoutEncode": 0,
+              "EncodeEncoder": "libaom-av1"
+            }
+            """);
+
+            var loaded = AppConfigHelper.LoadFromFile(_tempFile);
+
+            Assert.IsNotNull(loaded);
+            Assert.IsTrue(loaded!.HasField(nameof(AppConfig.EncodeTimeoutEncode)));
+            Assert.IsFalse(loaded.HasField(nameof(AppConfig.EncodeTimeoutSearch)));
+            Assert.IsTrue(loaded.HasField(nameof(AppConfig.EncodeEncoder)));
+        }
+
+        [TestMethod]
         public void Serialize_IncludesEncodingFields()
         {
             var cfg = new AppConfig

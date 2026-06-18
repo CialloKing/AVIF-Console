@@ -1392,10 +1392,14 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     if (cfg.EncodeExtensions != null)
                         optsPage.SetExtensions(cfg.EncodeExtensions);
-                    optsPage.SetEncodeTimeout(cfg.EncodeTimeoutEncode);
-                    optsPage.SetSearchTimeout(cfg.EncodeTimeoutSearch);
-                    optsPage.SetSafeTimeout(cfg.EncodeTimeoutSafe);
-                    optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
+                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutEncode)))
+                        optsPage.SetEncodeTimeout(cfg.EncodeTimeoutEncode);
+                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSearch)))
+                        optsPage.SetSearchTimeout(cfg.EncodeTimeoutSearch);
+                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSafe)))
+                        optsPage.SetSafeTimeout(cfg.EncodeTimeoutSafe);
+                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSsim)))
+                        optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
                     optsPage.SetDryRun(cfg.EncodeDryRun);
                     optsPage.SetVerboseOutput(cfg.EncodeVerbose);
                     if (cfg.EncodeEncoderParams != null)

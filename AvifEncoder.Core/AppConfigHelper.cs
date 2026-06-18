@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -69,6 +70,15 @@ namespace AvifEncoder
         public int EncodeTimeoutSsim { get; set; }
         public bool EncodeDryRun { get; set; }
         public bool EncodeVerbose { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        private HashSet<string>? _loadedFields;
+
+        public bool HasField(string name)
+            => _loadedFields?.Contains(name) == true;
+
+        internal void SetLoadedFields(IEnumerable<string> names)
+            => _loadedFields = new HashSet<string>(names, StringComparer.Ordinal);
     }
 
     public static class AppConfigHelper
@@ -82,7 +92,17 @@ namespace AvifEncoder
                     return null;
                 }
                 string json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<AppConfig>(json);
+                var config = JsonSerializer.Deserialize<AppConfig>(json);
+                if (config != null)
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                    {
+                        config.SetLoadedFields(
+                            doc.RootElement.EnumerateObject().Select(p => p.Name));
+                    }
+                }
+                return config;
             }
             catch
             {
