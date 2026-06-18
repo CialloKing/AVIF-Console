@@ -894,7 +894,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
 
 
                 var fileLogger = new FileLogger(outputDir);
-                var logger = new CompositeLogger(guiLogger, fileLogger);
+                using var logger = new CompositeLogger(guiLogger, fileLogger);
 
                 var progress = new Progress<int>(p =>
                 {

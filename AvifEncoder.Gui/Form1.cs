@@ -497,7 +497,7 @@ namespace AvifEncoder.Gui
             {
                 ILogger fileLogger = new FileLogger(txtOutput.Text, new PresetConfig.RealFileSystem());
                 ILogger guiLogger = new GuiLogger(rtbLog);          // GuiLogger 应在单独文件中定义
-                ILogger logger = new CompositeLogger(fileLogger, guiLogger);
+                using var logger = new CompositeLogger(fileLogger, guiLogger);
 
                 IProgress<int> progress = new Progress<int>(percent =>
                 {

@@ -2,23 +2,32 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace AvifEncoder
 {
     public static class Logger
     {
         private static volatile ILogger? _instance;
+        private static readonly object _instanceLock = new();
 
         /// <summary>初始化默认文件日志器（控制台/批处理场景）</summary>
         public static void Init(string outputDir)
         {
-            _instance = new FileLogger(outputDir);
+            SetInstance(new FileLogger(outputDir));
         }
 
         /// <summary>注入自定义日志器（如 GuiLogger）</summary>
         public static void SetInstance(ILogger logger)
         {
-            _instance = logger;
+            ILogger? previous;
+            lock (_instanceLock)
+            {
+                previous = _instance;
+                _instance = logger;
+            }
+            if (!ReferenceEquals(previous, logger) && previous is IDisposable disposable)
+                disposable.Dispose();
         }
 
         // 静态方法全部委托给 ILogger 实例
@@ -45,6 +54,8 @@ namespace AvifEncoder
         private readonly object _lock = new();
         private readonly string _logDir;
         private readonly ConcurrentDictionary<string, StreamWriter> _writers = new();
+        private EventHandler? _processExitHandler;
+        private int _disposed;
 
         public FileLogger(string outputDir, PresetConfig.IFileSystem? fileSystem = null)
         {
@@ -67,7 +78,8 @@ namespace AvifEncoder
             LogInfo($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 
             // ★ 进程退出时确保释放所有 StreamWriter
-            AppDomain.CurrentDomain.ProcessExit += (_, _) => Dispose();
+            _processExitHandler = (_, _) => Dispose();
+            AppDomain.CurrentDomain.ProcessExit += _processExitHandler;
         }
 
         private StreamWriter GetWriter(string fileName)
@@ -83,15 +95,21 @@ namespace AvifEncoder
 
         public void LogInfo(string msg)
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             lock (_lock)
+            {
+                if (_disposed != 0) return;
                 GetWriter($"run_{DateTime.Now:yyyy-MM-dd}.log")
                     .WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
+            }
         }
 
         public void LogError(string msg)
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             lock (_lock)
             {
+                if (_disposed != 0) return;
                 string line = $"[{DateTime.Now:HH:mm:ss}] [ERROR] {msg}";
                 GetWriter($"run_{DateTime.Now:yyyy-MM-dd}.log").WriteLine(line);
                 GetWriter("error.log").WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
@@ -100,6 +118,7 @@ namespace AvifEncoder
 
         public void LogMetric(string metricName, string msg)
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             string fileName = metricName.ToLower() switch
             {
                 "ssim" => "ssim_trace.log",
@@ -107,7 +126,10 @@ namespace AvifEncoder
                 _ => $"metric_{metricName}.log"
             };
             lock (_lock)
+            {
+                if (_disposed != 0) return;
                 GetWriter(fileName).WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}");
+            }
         }
 
         public void LogSearch(string msg)
@@ -117,6 +139,13 @@ namespace AvifEncoder
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+            if (_processExitHandler != null)
+            {
+                AppDomain.CurrentDomain.ProcessExit -= _processExitHandler;
+                _processExitHandler = null;
+            }
             lock (_lock)
             {
                 foreach (var w in _writers.Values)
@@ -127,7 +156,7 @@ namespace AvifEncoder
     }
 
     /// <summary>组合日志器，将消息广播到多个 ILogger 实例。</summary>
-    public class CompositeLogger : ILogger
+    public class CompositeLogger : ILogger, IDisposable
     {
         private readonly ILogger[] _loggers;
         public CompositeLogger(params ILogger[] loggers)
@@ -160,6 +189,17 @@ namespace AvifEncoder
             foreach (var l in _loggers)
             {
                 try { l.LogSearch(m); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Logger] LogSearch 异常: {ex.Message}"); }
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (var l in _loggers)
+            {
+                if (l is IDisposable disposable)
+                {
+                    try { disposable.Dispose(); } catch { }
+                }
             }
         }
     }

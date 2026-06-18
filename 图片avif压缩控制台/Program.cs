@@ -690,9 +690,10 @@ namespace AvifEncoder
                 catch { }
             }
             AvifPipeline? pipeline = null;
+            FileLogger? fileLogger = null;
             try
             {
-                var fileLogger = new FileLogger(opts.OutputDir);
+                fileLogger = new FileLogger(opts.OutputDir);
                 Logger.SetInstance(fileLogger);
                 var cache = new CacheManager();
                 pipeline = new AvifPipeline(opts.InputDir, opts.OutputDir, config,
@@ -717,6 +718,7 @@ namespace AvifEncoder
             finally
             {
                 pipeline?.Dispose();
+                fileLogger?.Dispose();
                 if (quickEditDisabled && consoleHandle != IntPtr.Zero)
                 {
                     try { SetConsoleMode(consoleHandle, originalMode); } catch { }
