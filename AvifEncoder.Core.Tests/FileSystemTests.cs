@@ -32,6 +32,33 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void CopyFileAtomic_ReplacesExistingFileAndCleansTempFile()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), $"fs_copy_atomic_{Guid.NewGuid():N}");
+            string source = Path.Combine(dir, "cache.avif");
+            string dest = Path.Combine(dir, "output.avif");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(source, "cached", Encoding.UTF8);
+                File.WriteAllText(dest, "old", Encoding.UTF8);
+
+                var fs = new PresetConfig.RealFileSystem();
+                fs.CopyFileAtomic(source, dest, overwrite: true);
+
+                Assert.AreEqual("cached", File.ReadAllText(dest, Encoding.UTF8));
+                Assert.IsEmpty(Directory.GetFiles(dir, "output.avif.*.tmp"));
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
+
+        [TestMethod]
         public void AppendAllTextWithHeader_WritesHeaderOnceAndAppendsRows()
         {
             string dir = Path.Combine(Path.GetTempPath(), $"fs_append_header_{Guid.NewGuid():N}");

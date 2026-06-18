@@ -431,6 +431,7 @@ namespace AvifEncoder
             long GetFileLength(string path);
             void DeleteFile(string path);
             void CopyFile(string source, string dest, bool overwrite);
+            void CopyFileAtomic(string source, string dest, bool overwrite);
             void CreateDirectory(string path);
             void DeleteDirectory(string path, bool recursive);
             string[] GetFiles(string path, string searchPattern);
@@ -454,6 +455,28 @@ namespace AvifEncoder
             public long GetFileLength(string path) => new FileInfo(path).Length;
             public void DeleteFile(string path) => File.Delete(path);
             public void CopyFile(string source, string dest, bool overwrite) => File.Copy(source, dest, overwrite);
+            public void CopyFileAtomic(string source, string dest, bool overwrite)
+            {
+                string? dir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                string tmpPath = dest + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    File.Copy(source, tmpPath, overwrite: true);
+                    File.Move(tmpPath, dest, overwrite);
+                }
+                finally
+                {
+                    if (File.Exists(tmpPath))
+                    {
+                        try { File.Delete(tmpPath); } catch { }
+                    }
+                }
+            }
             public void CreateDirectory(string path) => Directory.CreateDirectory(path);
             public void DeleteDirectory(string path, bool recursive) => Directory.Delete(path, recursive);
             public string[] GetFiles(string path, string searchPattern) => Directory.GetFiles(path, searchPattern);

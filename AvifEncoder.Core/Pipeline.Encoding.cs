@@ -253,7 +253,7 @@ TryEncodeWithParamSet(string input, string output, int crf, string currentPixFmt
             if (_cache.TryGetEncode(cacheKey, out var cached) && File.Exists(cached.file))
             {
                 _fs.CreateDirectory(Path.GetDirectoryName(output)!);
-                _fs.CopyFile(cached.file!, output, true);
+                _fs.CopyFileAtomic(cached.file!, output, true);
                 _logger.LogInfo($"复用编码缓存: {input} CRF={crf} pix={currentPixFmt} 原耗时={cached.encodeTime.TotalSeconds:F4}s");
                 return (true, cached.encodeTime, 0, "", true, param.aomParams, cached.commandLine);
             }
