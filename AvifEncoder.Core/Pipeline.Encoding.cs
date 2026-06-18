@@ -172,12 +172,12 @@ TryEncodeWithPixelFormatFallback(string input, string output, int crf, int tileC
         /// <summary> 构建参数集尝试列表 </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
         /// <summary> 构建参数集尝试列表（已优化降级顺序，优先保留 AOM 参数） </summary>
-        internal static List<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
+        internal static HashSet<(string aomParams, string tilePart, int actualCpu, string rowMt)> BuildParamSets(
     PresetConfig cfg, string currentPixFmt, bool isTrueLossless, int tileCols, int cpuUsed,
     bool allowParamDegrade, int imageWidth)
         {
             string effectiveAom = cfg.GetEffectiveAomParams();
-            var sets = new List<(string, string, int, string)>();
+            var sets = new HashSet<(string, string, int, string)>();
             bool isHighChroma = currentPixFmt.Contains("444") || currentPixFmt.Contains("422");
             string rowMt;
 
