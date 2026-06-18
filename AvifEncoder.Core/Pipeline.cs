@@ -1923,8 +1923,8 @@ namespace AvifEncoder
             lock (_fileWorkers) { workerTokens = _fileWorkerTokens.ToArray(); }
             foreach (var cts in workerTokens)
                 try { cts.Cancel(); } catch { }
-            Task[] workers; lock (_fileWorkers) { workers = _fileWorkers.ToArray(); }
-            try { Task.WaitAll(workers, TimeSpan.FromSeconds(10)); } catch { }
+            // ★ 不阻塞 Dispose：worker 已收到 cancel 信号，FinalCleanup 会 kill 残留外部进程
+            //    同步 WaitAll 在 UI 线程 Dispose 时会卡住最多 10 秒
             try { FinalCleanup(); } catch { }
             try { _globalCts?.Dispose(); } catch { }
             _globalCts = null;
@@ -2056,7 +2056,7 @@ namespace AvifEncoder
                 };
                 return info;
             }
-            catch { return null; }
+            catch (Exception ex) { _logger?.LogInfo($"[PROBE] 探测失败 {Path.GetFileName(filePath)}: {ex.Message}"); return null; }
         }
 
         static string? TryGetStringProperty(JsonElement element, string propertyName)

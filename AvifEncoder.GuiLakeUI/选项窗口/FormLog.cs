@@ -20,7 +20,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             string line = $"{DateTime.Now:HH:mm:ss} {message}";
             if (txtLog.InvokeRequired)
             {
-                try { txtLog.BeginInvoke(new Action(() => AppendLog(message))); } catch { }
+                try { txtLog.BeginInvoke(new Action(() => AppendLog(message))); }
+                catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Log] BeginInvoke failed: {ex.Message} — {message}"); }
             }
             else
             {

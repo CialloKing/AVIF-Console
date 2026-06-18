@@ -834,24 +834,37 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 ? customExts.Split(',').Select(e => e.Trim().ToLower()).Where(e => e.Length > 0).ToArray()
                 : new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
             var searchOption = chkRecursive.Checked ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            var files = Directory.EnumerateFiles(inputDir, "*.*", searchOption)
-                                 .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
-                                 .ToList();
+            // ★ 文件枚举移到后台线程，避免大目录递归时阻塞 UI
+            List<string> files;
+            try
+            {
+                files = await Task.Run(() =>
+                    Directory.EnumerateFiles(inputDir, "*.*", searchOption)
+                             .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
+                             .ToList());
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"枚举输入文件时出错:\n{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
             if (files.Count == 0)
             {
                 MessageBox.Show($"输入目录中没有支持的图片文件:\n{inputDir}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            // 防呆：输出目录已有 avif 文件时确认
+            // 防呆：输出目录已有 avif 文件时确认（后台线程避免阻塞 UI）
             try
             {
-                var existingAvif = Directory.EnumerateFiles(outputDir, "*.avif",
-                    SearchOption.TopDirectoryOnly).Take(1).ToList();
+                var existingAvif = await Task.Run(() =>
+                    Directory.EnumerateFiles(outputDir, "*.avif",
+                        SearchOption.TopDirectoryOnly).Take(1).ToList());
                 if (existingAvif.Count > 0)
                 {
-                    var existingCount = Directory.EnumerateFiles(outputDir, "*.avif",
-                        SearchOption.TopDirectoryOnly).Count();
+                    var existingCount = await Task.Run(() =>
+                        Directory.EnumerateFiles(outputDir, "*.avif",
+                            SearchOption.TopDirectoryOnly).Count());
                     var confirm = MessageBox.Show(
                         $"输出目录中已有 {existingCount} 个 avif 文件，\n" +
                         "继续编码可能会覆盖同名文件。\n\n是否继续？",
@@ -1016,12 +1029,12 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 req.SuppressDisplay = false;
                 LakeUI.Notifications.LakeNotificationManager.Show(req);
             }
-            catch { }
+            catch (Exception ex) { LogPage?.AppendLog($"[Toast] 进度通知失败: {ex.Message}"); }
         }
 
         private async void UpdateProgressToast(int percent)
         {
-            if (!Form1.ToastAvailable) return;  // ★ Runtime 未安装时跳过
+            if (!Form1.ToastAvailable) return;
             try
             {
                 await LakeUI.Notifications.LakeNotificationManager.UpdateProgressAsync("avif-encode", "avif-encode",
@@ -1051,7 +1064,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 req.ExpiresOnReboot = true;
                 LakeUI.Notifications.LakeNotificationManager.Show(req);
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Toast] 完成通知失败: {ex.Message}"); }
         }
 
         private void FormEncode_FormClosing(object? sender, FormClosingEventArgs e)
@@ -1086,7 +1099,7 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
             _isEncoding = false;
             if (IsDisposed || !IsHandleCreated) return;
             if (InvokeRequired)
-                Invoke(new Action(() => { if (!IsDisposed && IsHandleCreated) this.Close(); }));
+                BeginInvoke(new Action(() => { if (!IsDisposed && IsHandleCreated) this.Close(); }));
             else
                 this.Close();
         }

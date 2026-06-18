@@ -474,7 +474,9 @@ namespace AvifEncoder
                                 _fs.CopyFileAtomic(outputPath, failedDest, true);
                             }
                             catch { }
-                            try { _fs.DeleteFile(outputPath); } catch { }
+                            // ★ 只在复制成功时才删除原文件，避免 Copy 失败 + Delete 成功导致文件丢失
+                            if (failedDest != null && _fs.FileExists(failedDest))
+                                try { _fs.DeleteFile(outputPath); } catch { }
                         }
 
                         _logger.LogInfo(
