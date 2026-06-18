@@ -95,6 +95,20 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void SaveToFile_ReplacesExistingFileAndCleansTempFile()
+        {
+            File.WriteAllText(_tempFile, "old");
+
+            AppConfigHelper.SaveToFile(new AppConfig { EncodeEncoder = "libaom-av1" }, _tempFile);
+
+            string json = File.ReadAllText(_tempFile);
+            Assert.Contains("libaom-av1", json);
+            string dir = Path.GetDirectoryName(_tempFile)!;
+            string fileName = Path.GetFileName(_tempFile);
+            Assert.IsEmpty(Directory.GetFiles(dir, fileName + ".*.tmp"));
+        }
+
+        [TestMethod]
         public void SaveAndLoad_EncodingFields_RoundTrip()
         {
             var original = new AppConfig

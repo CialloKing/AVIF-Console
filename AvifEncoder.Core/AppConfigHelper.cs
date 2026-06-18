@@ -127,16 +127,7 @@ namespace AvifEncoder
             try
             {
                 File.WriteAllText(tmpPath, json);
-                try
-                {
-                    File.Move(tmpPath, path, overwrite: true);
-                }
-                catch (IOException)
-                {
-                    // 跨卷移动失败时退化为拷贝+删除
-                    File.Copy(tmpPath, path, overwrite: true);
-                    File.Delete(tmpPath);
-                }
+                File.Move(tmpPath, path, overwrite: true);
             }
             finally
             {
