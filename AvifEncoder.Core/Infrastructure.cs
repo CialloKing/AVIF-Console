@@ -42,6 +42,7 @@ namespace AvifEncoder
 
             process.Start();
             try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+            if (OperatingSystem.IsWindows()) { JobObjectHelper.AssignProcess(process); }
 
             var stdoutTask = process.StandardOutput.ReadToEndAsync();
             var stderrTask = process.StandardError.ReadToEndAsync();
