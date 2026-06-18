@@ -579,19 +579,26 @@ namespace AvifEncoder.Gui
             }
             finally
             {
-                SetControlsEnabled(true);
-                progressBar1.Style = ProgressBarStyle.Blocks;
-                btnStart.Text = "开始转换";
-                btnStart.Enabled = true;
+                if (CanUpdateUi())
+                {
+                    SetControlsEnabled(true);
+                    progressBar1.Style = ProgressBarStyle.Blocks;
+                    btnStart.Text = "开始转换";
+                    btnStart.Enabled = true;
+                }
             }
         }
 
         private void SetControlsEnabled(bool enabled)
         {
+            if (!CanUpdateUi()) return;
             btnStart.Enabled = enabled;
             cmbPreset.Enabled = enabled;
             cmbEncoder.Enabled = enabled;
         }
+
+        private bool CanUpdateUi()
+            => !IsDisposed && !Disposing && IsHandleCreated;
 
         private void AppendLog(string message)
         {
@@ -606,9 +613,10 @@ namespace AvifEncoder.Gui
 
         private void UpdateProgress(int percent)
         {
+            if (progressBar1.IsDisposed || !progressBar1.IsHandleCreated) return;
             if (progressBar1.Style != ProgressBarStyle.Blocks)
                 progressBar1.Style = ProgressBarStyle.Blocks;
-            progressBar1.Value = Math.Min(percent, 100);
+            progressBar1.Value = Math.Max(0, Math.Min(percent, 100));
         }
 
         private void cmbPreset_SelectedIndexChanged(object? sender, EventArgs e)
