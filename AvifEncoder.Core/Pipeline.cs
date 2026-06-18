@@ -3417,7 +3417,7 @@ namespace AvifEncoder
         }
 
         /// <summary> 写入单文件 JSON 验证报告 </summary>
-        private async Task WriteVerificationReportJsonAsync(FailedVerificationInfo info)
+        private Task WriteVerificationReportJsonAsync(FailedVerificationInfo info)
         {
             string jsonPath = Path.Combine(
                 _failedVerificationDir,
@@ -3428,7 +3428,8 @@ namespace AvifEncoder
                     WriteIndented = true,
                     Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 });
-            await _fs.WriteAllTextAsync(jsonPath, json);
+            _fs.WriteAllTextAtomic(jsonPath, json, System.Text.Encoding.UTF8);
+            return Task.CompletedTask;
         }
 
         /// <summary>
