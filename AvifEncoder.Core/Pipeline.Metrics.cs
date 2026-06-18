@@ -247,7 +247,13 @@ namespace AvifEncoder
             if (!isOwner)
             {
                 try { return await task.WaitAsync(TimeSpan.FromMinutes(30)); }
-                catch (Exception ex) { _logger.LogError($"GetOrComputeMetrics 指标计算异常: {ex.Message}"); return null; }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"GetOrComputeMetrics 指标计算异常: {ex.Message}");
+                    // ★ 超时或异常后清理残留条目，避免后续查询持续等待 30 分钟
+                    _metricsTasks.TryRemove(key, out _);
+                    return null;
+                }
             }
 
             try

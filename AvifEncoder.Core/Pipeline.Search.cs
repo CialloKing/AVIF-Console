@@ -636,6 +636,7 @@ namespace AvifEncoder
                     {
                         // 当前格式就是 yuv420p 或已被致命标记，尝试降速
                         eval = await EvaluateSingleCrfAsync(input, crf, tileCols, 0, cfg, jpeg, pixFmt);
+                        // ★ 降级成功→重置计数器，下一次 CRF 恢复正常参数尝试
                         if (eval.Success) { consecutiveFailures = 0; return eval.Score; }
                     }
 
