@@ -123,7 +123,7 @@ namespace AvifEncoder
             string json = JsonSerializer.Serialize(
                 config, new JsonSerializerOptions { WriteIndented = true });
             // 先写入临时文件再原子替换，防止断电/崩溃导致配置文件损坏
-            string tmpPath = path + ".tmp";
+            string tmpPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 File.WriteAllText(tmpPath, json);
