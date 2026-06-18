@@ -2642,7 +2642,7 @@ namespace AvifEncoder
                         if (completed.Contains(path)) continue;
                         if (_fileIdCache.TryGetValue(path, out var fid) &&
                             fileIdToPath.TryGetValue(fid, out var matchedPath) &&
-                            completed.Contains(matchedPath))
+                            (completed.Contains(matchedPath) || snapshotDone.Contains(matchedPath)))
                         {
                             completedById.Add(path);
                             _logger.LogInfo($"[RESUME] FileId 匹配: {Path.GetFileName(path)} ↔ {Path.GetFileName(matchedPath)}");
