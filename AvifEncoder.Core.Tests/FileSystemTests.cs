@@ -59,6 +59,31 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public async Task WriteAllBytesAtomicAsync_ReplacesExistingFileAndCleansTempFile()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), $"fs_bytes_atomic_{Guid.NewGuid():N}");
+            string path = Path.Combine(dir, "frame_metrics.csv");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes("old"));
+
+                var fs = new PresetConfig.RealFileSystem();
+                await fs.WriteAllBytesAtomicAsync(path, Encoding.UTF8.GetBytes("new"));
+
+                Assert.AreEqual("new", await File.ReadAllTextAsync(path, Encoding.UTF8));
+                Assert.IsEmpty(Directory.GetFiles(dir, "frame_metrics.csv.*.tmp"));
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
+
+        [TestMethod]
         public void AppendAllTextWithHeader_WritesHeaderOnceAndAppendsRows()
         {
             string dir = Path.Combine(Path.GetTempPath(), $"fs_append_header_{Guid.NewGuid():N}");

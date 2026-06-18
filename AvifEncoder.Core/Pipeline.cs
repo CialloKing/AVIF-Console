@@ -577,7 +577,7 @@ namespace AvifEncoder
 
                         // ★ 保存逐帧 CSV（UTF-8 + BOM）
                         string csvContent = "\uFEFF" + string.Join("\n", csvLines) + "\n";
-                        await _fs.WriteAllBytesAsync(csvPath, System.Text.Encoding.UTF8.GetBytes(csvContent));
+                        await _fs.WriteAllBytesAtomicAsync(csvPath, System.Text.Encoding.UTF8.GetBytes(csvContent));
                         _logger.LogInfo($"[ADV] 逐帧 CSV 已保存: {csvPath} ({frameCount}行)");
 
                         int ssimu2Count = bagSsimu2.Count, butterCount = bagButter3.Count, gmsdCount = bagGmsd.Count, xpsnrCount = bagXpsnrY.Count;

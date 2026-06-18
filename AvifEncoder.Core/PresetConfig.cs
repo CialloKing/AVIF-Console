@@ -446,6 +446,7 @@ namespace AvifEncoder
             // ★ 新增：字节数组读写（用于 PNG 清洗）
             Task<byte[]> ReadAllBytesAsync(string path);
             Task WriteAllBytesAsync(string path, byte[] bytes);
+            Task WriteAllBytesAtomicAsync(string path, byte[] bytes);
             Task WriteAllTextAsync(string path, string contents);
         }
 
@@ -560,6 +561,28 @@ namespace AvifEncoder
 
             public async Task WriteAllBytesAsync(string path, byte[] bytes) =>
                 await File.WriteAllBytesAsync(path, bytes);
+            public async Task WriteAllBytesAtomicAsync(string path, byte[] bytes)
+            {
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                string tmpPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    await File.WriteAllBytesAsync(tmpPath, bytes);
+                    File.Move(tmpPath, path, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(tmpPath))
+                    {
+                        try { File.Delete(tmpPath); } catch { }
+                    }
+                }
+            }
             public async Task WriteAllTextAsync(string path, string contents) =>
                 await File.WriteAllTextAsync(path, contents, Encoding.UTF8);
 
