@@ -1402,9 +1402,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                         optsPage.SetEncoderCustomParams(cfg.EncodeEncoderParams);
                     optsPage.SetDenoise(cfg.EncodeDenoise);
                     optsPage.SetArNrUseMaxFrames(cfg.EncodeArNrUseMaxFrames);
-                    if (cfg.EncodeRgbMode != null)
-                        OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
-                    if (!string.IsNullOrWhiteSpace(cfg.EncodeAnimatedCommand))
+                    OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
+                    if (cfg.EncodeAnimatedCommand != null)
                         optsPage.SetAnimatedCommand(cfg.EncodeAnimatedCommand);
                     if (cfg.EncodeSkippedMetrics != null)
                         optsPage.LoadSkippedMetrics(cfg.EncodeSkippedMetrics);
@@ -1690,8 +1689,10 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                             optsPage.SetDenoise(dn.GetInt32());
                         if (cfg.TryGetProperty("ArNrUseMaxFrames", out var auf) && auf.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetArNrUseMaxFrames(auf.GetBoolean());
-                        if (cfg.TryGetProperty("RgbMode", out var rgb) && rgb.ValueKind != System.Text.Json.JsonValueKind.Null)
-                            optsPage.SetRgbMode(rgb.GetString());
+                        if (cfg.TryGetProperty("RgbMode", out var rgb))
+                            optsPage.SetRgbMode(rgb.ValueKind == System.Text.Json.JsonValueKind.Null
+                                ? null
+                                : rgb.GetString());
                         if (cfg.TryGetProperty("AnimatedCommand", out var ac) && ac.ValueKind != System.Text.Json.JsonValueKind.Null)
                             optsPage.SetAnimatedCommand(ac.GetString() ?? "");
                         if (cfg.TryGetProperty("SkippedMetrics", out var sm) && sm.ValueKind == System.Text.Json.JsonValueKind.Array)

@@ -154,6 +154,23 @@ namespace AvifEncoder.Core.Tests
         }
 
         [TestMethod]
+        public void SaveAndLoad_EmptyAnimatedCommandAndAutoRgbMode_PreservesResetSemantics()
+        {
+            var original = new AppConfig
+            {
+                EncodeAnimatedCommand = "",
+                EncodeRgbMode = null
+            };
+
+            AppConfigHelper.SaveToFile(original, _tempFile);
+            var loaded = AppConfigHelper.LoadFromFile(_tempFile);
+
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual("", loaded!.EncodeAnimatedCommand);
+            Assert.IsNull(loaded.EncodeRgbMode);
+        }
+
+        [TestMethod]
         public void Serialize_IncludesEncodingFields()
         {
             var cfg = new AppConfig
