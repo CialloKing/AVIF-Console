@@ -186,6 +186,9 @@ namespace AvifEncoder.Core.Tests
             Assert.IsTrue(loaded!.HasField(nameof(AppConfig.EncodeTimeoutEncode)));
             Assert.IsFalse(loaded.HasField(nameof(AppConfig.EncodeTimeoutSearch)));
             Assert.IsTrue(loaded.HasField(nameof(AppConfig.EncodeEncoder)));
+            Assert.IsTrue(loaded.ShouldApplyField(nameof(AppConfig.EncodeTimeoutEncode)));
+            Assert.IsFalse(loaded.ShouldApplyField(nameof(AppConfig.EncodeTimeoutSearch)));
+            Assert.IsTrue(new AppConfig().ShouldApplyField(nameof(AppConfig.EncodeTimeoutSearch)));
         }
 
         [TestMethod]

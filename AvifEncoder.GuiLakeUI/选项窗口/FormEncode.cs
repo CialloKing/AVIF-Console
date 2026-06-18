@@ -1301,6 +1301,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
         /// </summary>
         public void ApplyConfig(AppConfig cfg)
         {
+            bool ApplyField(string name) => cfg.ShouldApplyField(name);
+
             _isApplyingPreset = true;
             try
             {
@@ -1312,24 +1314,43 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     SetComboBoxItem(cmbEncoder, cfg.EncodeEncoder);
                 }
-                numJobs.Value = cfg.EncodeJobs;
-                numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
-                numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
+                if (ApplyField(nameof(AppConfig.EncodeJobs)))
+                    numJobs.Value = cfg.EncodeJobs;
+                if (ApplyField(nameof(AppConfig.EncodeSearchCpuUsed)))
+                    numSearchCpuUsed.Value = cfg.EncodeSearchCpuUsed;
+                if (ApplyField(nameof(AppConfig.EncodeFinalCpuUsed)))
+                    numFinalCpuUsed.Value = cfg.EncodeFinalCpuUsed;
                 if (cfg.EncodeTemplate != null)
                 {
                     txtTemplate.Text = cfg.EncodeTemplate;
                 }
-                chkSearch.Checked = cfg.EncodeSearch;
-                if (cfg.EncodeCrfRangeMode)
+                if (ApplyField(nameof(AppConfig.EncodeSearch)))
+                    chkSearch.Checked = cfg.EncodeSearch;
+                if (ApplyField(nameof(AppConfig.EncodeCrfRangeMode)))
                 {
-                    rbCrfRange.Checked = true;
-                    numCrfMin.Value = cfg.EncodeCrfMin;
-                    numCrfMax.Value = cfg.EncodeCrfMax;
+                    if (cfg.EncodeCrfRangeMode)
+                    {
+                        rbCrfRange.Checked = true;
+                        if (ApplyField(nameof(AppConfig.EncodeCrfMin)))
+                            numCrfMin.Value = cfg.EncodeCrfMin;
+                        if (ApplyField(nameof(AppConfig.EncodeCrfMax)))
+                            numCrfMax.Value = cfg.EncodeCrfMax;
+                    }
+                    else
+                    {
+                        rbCrfFix.Checked = true;
+                        if (ApplyField(nameof(AppConfig.EncodeCrfFix)))
+                            numCrfFix.Value = cfg.EncodeCrfFix;
+                    }
                 }
                 else
                 {
-                    rbCrfFix.Checked = true;
-                    numCrfFix.Value = cfg.EncodeCrfFix;
+                    if (ApplyField(nameof(AppConfig.EncodeCrfFix)))
+                        numCrfFix.Value = cfg.EncodeCrfFix;
+                    if (ApplyField(nameof(AppConfig.EncodeCrfMin)))
+                        numCrfMin.Value = cfg.EncodeCrfMin;
+                    if (ApplyField(nameof(AppConfig.EncodeCrfMax)))
+                        numCrfMax.Value = cfg.EncodeCrfMax;
                 }
                 if (cfg.EncodeQualityMode != null)
                 {
@@ -1344,7 +1365,8 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     SetQualityRange(qMode);
                 }
-                if (cfg.EncodeQualityValue <= numQualityValue.Maximum
+                if (ApplyField(nameof(AppConfig.EncodeQualityValue))
+                    && cfg.EncodeQualityValue <= numQualityValue.Maximum
                     && cfg.EncodeQualityValue >= numQualityValue.Minimum)
                 {
                     numQualityValue.Value =
@@ -1363,19 +1385,28 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
                 }
-                chkLossless.Checked = cfg.EncodeLossless;
-                chkRecursive.Checked = cfg.EncodeRecursive;
-                numMaxRes.Value = cfg.EncodeMaxRes;
-                chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
-                if (cfg.EncodeConflict >= 0
+                if (ApplyField(nameof(AppConfig.EncodeLossless)))
+                    chkLossless.Checked = cfg.EncodeLossless;
+                if (ApplyField(nameof(AppConfig.EncodeRecursive)))
+                    chkRecursive.Checked = cfg.EncodeRecursive;
+                if (ApplyField(nameof(AppConfig.EncodeMaxRes)))
+                    numMaxRes.Value = cfg.EncodeMaxRes;
+                if (ApplyField(nameof(AppConfig.EncodeOutputFullRes)))
+                    chkOutputFullRes.Checked = cfg.EncodeOutputFullRes;
+                if (ApplyField(nameof(AppConfig.EncodeConflict))
+                    && cfg.EncodeConflict >= 0
                     && cfg.EncodeConflict < cmbConflict.Items.Count)
                 {
                     cmbConflict.SelectedIndex = cfg.EncodeConflict;
                 }
-                chkSerialEncode.Checked = cfg.EncodeSerialEncode;
-                chkPriorSearch.Checked = cfg.EncodePriorSearch;
-                chkProxy.Checked = cfg.EncodeProxy;
-                chkSweep.Checked = cfg.EncodeSweep;
+                if (ApplyField(nameof(AppConfig.EncodeSerialEncode)))
+                    chkSerialEncode.Checked = cfg.EncodeSerialEncode;
+                if (ApplyField(nameof(AppConfig.EncodePriorSearch)))
+                    chkPriorSearch.Checked = cfg.EncodePriorSearch;
+                if (ApplyField(nameof(AppConfig.EncodeProxy)))
+                    chkProxy.Checked = cfg.EncodeProxy;
+                if (ApplyField(nameof(AppConfig.EncodeSweep)))
+                    chkSweep.Checked = cfg.EncodeSweep;
 
                 if (cfg.EncodeInput != null)
                 {
@@ -1392,21 +1423,26 @@ namespace AvifEncoder.GuiLakeUI.选项窗口
                 {
                     if (cfg.EncodeExtensions != null)
                         optsPage.SetExtensions(cfg.EncodeExtensions);
-                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutEncode)))
+                    if (ApplyField(nameof(AppConfig.EncodeTimeoutEncode)))
                         optsPage.SetEncodeTimeout(cfg.EncodeTimeoutEncode);
-                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSearch)))
+                    if (ApplyField(nameof(AppConfig.EncodeTimeoutSearch)))
                         optsPage.SetSearchTimeout(cfg.EncodeTimeoutSearch);
-                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSafe)))
+                    if (ApplyField(nameof(AppConfig.EncodeTimeoutSafe)))
                         optsPage.SetSafeTimeout(cfg.EncodeTimeoutSafe);
-                    if (cfg.HasField(nameof(AppConfig.EncodeTimeoutSsim)))
+                    if (ApplyField(nameof(AppConfig.EncodeTimeoutSsim)))
                         optsPage.SetSsimTimeout(cfg.EncodeTimeoutSsim);
-                    optsPage.SetDryRun(cfg.EncodeDryRun);
-                    optsPage.SetVerboseOutput(cfg.EncodeVerbose);
+                    if (ApplyField(nameof(AppConfig.EncodeDryRun)))
+                        optsPage.SetDryRun(cfg.EncodeDryRun);
+                    if (ApplyField(nameof(AppConfig.EncodeVerbose)))
+                        optsPage.SetVerboseOutput(cfg.EncodeVerbose);
                     if (cfg.EncodeEncoderParams != null)
                         optsPage.SetEncoderCustomParams(cfg.EncodeEncoderParams);
-                    optsPage.SetDenoise(cfg.EncodeDenoise);
-                    optsPage.SetArNrUseMaxFrames(cfg.EncodeArNrUseMaxFrames);
-                    OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
+                    if (ApplyField(nameof(AppConfig.EncodeDenoise)))
+                        optsPage.SetDenoise(cfg.EncodeDenoise);
+                    if (ApplyField(nameof(AppConfig.EncodeArNrUseMaxFrames)))
+                        optsPage.SetArNrUseMaxFrames(cfg.EncodeArNrUseMaxFrames);
+                    if (ApplyField(nameof(AppConfig.EncodeRgbMode)))
+                        OptionsPage?.SetRgbMode(cfg.EncodeRgbMode);
                     if (cfg.EncodeAnimatedCommand != null)
                         optsPage.SetAnimatedCommand(cfg.EncodeAnimatedCommand);
                     if (cfg.EncodeSkippedMetrics != null)

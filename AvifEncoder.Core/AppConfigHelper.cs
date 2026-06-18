@@ -77,6 +77,9 @@ namespace AvifEncoder
         public bool HasField(string name)
             => _loadedFields?.Contains(name) == true;
 
+        public bool ShouldApplyField(string name)
+            => _loadedFields == null || _loadedFields.Contains(name);
+
         internal void SetLoadedFields(IEnumerable<string> names)
             => _loadedFields = new HashSet<string>(names, StringComparer.Ordinal);
     }
