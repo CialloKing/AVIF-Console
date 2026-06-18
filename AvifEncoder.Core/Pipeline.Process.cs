@@ -471,7 +471,7 @@ namespace AvifEncoder
                         {
                             try
                             {
-                                _fs.CopyFile(outputPath, failedDest, true);
+                                _fs.CopyFileAtomic(outputPath, failedDest, true);
                             }
                             catch { }
                             try { _fs.DeleteFile(outputPath); } catch { }
