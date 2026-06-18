@@ -781,17 +781,6 @@ namespace AvifEncoder
         {
             lock (_csvLock)
             {
-                if (!_csvHeaderWritten)
-                {
-                    if (!_fs.FileExists(_csvPath))
-                    {
-                        _fs.WriteAllText(_csvPath,
-                            string.Join(",", CsvColumnNames) + "\n",
-                            new UTF8Encoding(true));
-                    }
-                    _csvHeaderWritten = true;
-                }
-
                 _csvBuffer.AppendLine(GetCsvRow(r));
                 _csvBufferCount++;
                 // ★ 每 50 行批量刷盘，session 结束时 FlushCsvBuffer() 兜底
@@ -805,7 +794,11 @@ namespace AvifEncoder
         {
             if (_csvBuffer.Length > 0)
             {
-                _fs.AppendAllText(_csvPath, _csvBuffer.ToString());
+                _fs.AppendAllTextWithHeader(
+                    _csvPath,
+                    string.Join(",", CsvColumnNames),
+                    _csvBuffer.ToString(),
+                    new UTF8Encoding(true));
                 _csvBuffer.Clear();
                 _csvBufferCount = 0;
             }

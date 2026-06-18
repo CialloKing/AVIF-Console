@@ -195,7 +195,6 @@ namespace AvifEncoder
         // CSV 持续写入
         private readonly object _csvLock = new();
         private string _csvPath = "";
-        private bool _csvHeaderWritten;
 
         // Journal 断点续传
         private string _journalPath = "";
