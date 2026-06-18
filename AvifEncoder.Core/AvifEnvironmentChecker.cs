@@ -35,14 +35,19 @@ namespace AvifEncoder
         /// <summary>缓存最近一次检测结果，供 UI 动态获取</summary>
         public static EnvironmentCheckResult? LastResult { get; private set; }
 
-        public static async Task<EnvironmentCheckResult> CheckEnvironmentAsync(
+        public static Task<EnvironmentCheckResult> CheckEnvironmentAsync(
     ILogger? logger = null,
     string? tempDir = null)
+            => CheckEnvironmentAsync(logger, tempDir, EncoderUtils.FindExecutable);
+
+        internal static async Task<EnvironmentCheckResult> CheckEnvironmentAsync(
+            ILogger? logger,
+            string? tempDir,
+            Func<string, string?> findExecutable)
         {
             var result = new EnvironmentCheckResult();
             bool ownsWorkDir = tempDir == null;
             string workDir = tempDir ?? CreateDefaultCheckWorkDir();
-            Directory.CreateDirectory(workDir);
             string runId = Guid.NewGuid().ToString("N");
             string testBmpPath = Path.Combine(workDir, $"test_input_{runId}.bmp");
 
@@ -50,8 +55,10 @@ namespace AvifEncoder
 
             try
             {
+                Directory.CreateDirectory(workDir);
+
                 // 1. ffmpeg 检查
-                string? ffmpeg = EncoderUtils.FindExecutable("ffmpeg");
+                string? ffmpeg = findExecutable("ffmpeg");
                 result.FfmpegAvailable = ffmpeg != null;
                 Log(ffmpeg != null ? "[OK] ffmpeg 已找到" : "[FAIL] ffmpeg 未找到，请确保在 PATH 或程序目录中");
 
@@ -121,8 +128,8 @@ namespace AvifEncoder
                 // 5. 外部工具检测
                 Log("\n外部指标工具可用性检测");
                 Log("----------------------------------------");
-                result.Ssimulacra2Available = EncoderUtils.FindExecutable("ssimulacra2") != null;
-                result.ButteraugliAvailable = EncoderUtils.FindExecutable("butteraugli_main") != null;
+                result.Ssimulacra2Available = findExecutable("ssimulacra2") != null;
+                result.ButteraugliAvailable = findExecutable("butteraugli_main") != null;
                 Log($"  SSIMULACRA2: {(result.Ssimulacra2Available ? "[OK] 已找到" : "[FAIL] 未找到")} (ssimulacra2.exe)");
                 Log($"  Butteraugli: {(result.ButteraugliAvailable ? "[OK] 已找到" : "[FAIL] 未找到")} (butteraugli_main.exe)");
                 Log("\n未找到的工具无法计算相应的指标，请不要设置为目标质量");
@@ -155,8 +162,9 @@ namespace AvifEncoder
                     }
                     catch { }
                 }
+
+                LastResult = result;
             }
-            LastResult = result;
             return result;
         }
 

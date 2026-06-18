@@ -637,14 +637,12 @@ namespace AvifEncoder.Core.Tests
         [TestMethod]
         public async Task EnvironmentCheck_LastResult_IsCached()
         {
-            var r1 = AvifEnvironmentChecker.LastResult;
-            if (r1 == null)
-            {
-                await AvifEnvironmentChecker.CheckEnvironmentAsync();
-                r1 = AvifEnvironmentChecker.LastResult;
-            }
-            Assert.IsNotNull(r1, "LastResult should be set after check");
-            Assert.IsTrue(r1.FfmpegAvailable);
+            AssertFfmpegAvailable();
+
+            var result = await AvifEnvironmentChecker.CheckEnvironmentAsync();
+
+            Assert.AreSame(result, AvifEnvironmentChecker.LastResult);
+            Assert.IsTrue(result.FfmpegAvailable);
         }
     }
 

@@ -17,5 +17,20 @@ namespace AvifEncoder.Core.Tests
             Assert.AreEqual(32, Path.GetFileName(first).Length);
             Assert.AreEqual(32, Path.GetFileName(second).Length);
         }
+
+        [TestMethod]
+        public async Task CheckEnvironmentAsync_UpdatesLastResultWhenFfmpegIsMissing()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), $"env_check_missing_{Guid.NewGuid():N}");
+
+            var result = await AvifEnvironmentChecker.CheckEnvironmentAsync(
+                logger: null,
+                tempDir: tempDir,
+                findExecutable: _ => null);
+
+            Assert.IsFalse(result.FfmpegAvailable);
+            Assert.AreSame(result, AvifEnvironmentChecker.LastResult);
+            Assert.IsFalse(Directory.Exists(tempDir));
+        }
     }
 }
