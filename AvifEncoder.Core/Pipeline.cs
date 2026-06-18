@@ -205,7 +205,7 @@ namespace AvifEncoder
         private int _journalCountSinceSnapshot;
         private DateTime _lastSnapshotTime;
         private long _journalEventCount;   // 累计事件数，用于增量回放定位
-        private bool _saveSnapshotPending; // ★ 快照标记：锁内设true，锁外执行I/O，避免阻塞高并发写入
+        private int _saveSnapshotPending; // ★ 快照标记：锁内设1，锁外领取I/O，避免高并发触发丢失
         private int _snapshotInProgress;   // ★ CAS 哨兵，防止并发快照写入
         private Dictionary<string, QualityMetrics>? _resumeMetricsForExport;  // Resume 恢复的指标，供 ExportCsv 修补旧行
 
@@ -1494,24 +1494,30 @@ namespace AvifEncoder
                 if (_journalCountSinceSnapshot >= 500)
                 {
                     _journalCountSinceSnapshot = 0;
-                    _saveSnapshotPending = true;
+                    Interlocked.Exchange(ref _saveSnapshotPending, 1);
                 }
             }
             // 锁外异步执行快照 I/O
-            if (_saveSnapshotPending)
+            if (Volatile.Read(ref _saveSnapshotPending) != 0)
             {
                 if (Interlocked.CompareExchange(ref _snapshotInProgress, 1, 0) == 0)
                 {
                     try
                     {
+                        Interlocked.Exchange(ref _saveSnapshotPending, 0);
                         var (oldDone, oldMetrics, _, _) = LoadSnapshot();
                         var (newDone, newMetrics, _, _) = ReplayJournalWithMetrics(0);
                         SaveSnapshot(oldDone.Union(newDone),
                             MergeMetrics(oldMetrics, newMetrics));
                     }
-                    catch { }
-                    Interlocked.Exchange(ref _snapshotInProgress, 0);
-                    _saveSnapshotPending = false;  // ★ 在 CAS 块内重置，避免丢失其他线程的并发触发
+                    catch
+                    {
+                        Interlocked.Exchange(ref _saveSnapshotPending, 1);
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _snapshotInProgress, 0);
+                    }
                 }
             }
         }
