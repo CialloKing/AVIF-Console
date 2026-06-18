@@ -40,10 +40,11 @@ namespace AvifEncoder
     string? tempDir = null)
         {
             var result = new EnvironmentCheckResult();
-            string workDir = tempDir ?? Path.Combine(
-                Path.GetTempPath(), "AvifEncoder_check");
+            bool ownsWorkDir = tempDir == null;
+            string workDir = tempDir ?? CreateDefaultCheckWorkDir();
             Directory.CreateDirectory(workDir);
-            string testBmpPath = Path.Combine(workDir, "test_input.bmp");
+            string runId = Guid.NewGuid().ToString("N");
+            string testBmpPath = Path.Combine(workDir, $"test_input_{runId}.bmp");
 
             void Log(string msg) => logger?.LogInfo(msg);
 
@@ -76,7 +77,7 @@ namespace AvifEncoder
                 byte[] bmpBytes = CreateTestBmp();
                 File.WriteAllBytes(testBmpPath, bmpBytes);
 
-                var tasks = encoders.Select(enc => TestEncoderAsync(enc, testBmpPath, workDir, ffmpeg!));
+                var tasks = encoders.Select(enc => TestEncoderAsync(enc, testBmpPath, workDir, ffmpeg!, runId));
                 var encoderResults = await Task.WhenAll(tasks);
                 result.Encoders = [.. encoderResults];
 
@@ -139,14 +140,33 @@ namespace AvifEncoder
             finally
             {
                 if (File.Exists(testBmpPath)) try { File.Delete(testBmpPath); } catch { }
-                if (Directory.Exists(workDir) && !Directory.EnumerateFileSystemEntries(workDir).Any())
-                    try { Directory.Delete(workDir); } catch { }
+                if (Directory.Exists(workDir))
+                {
+                    try
+                    {
+                        if (ownsWorkDir)
+                        {
+                            Directory.Delete(workDir, recursive: true);
+                        }
+                        else if (!Directory.EnumerateFileSystemEntries(workDir).Any())
+                        {
+                            Directory.Delete(workDir);
+                        }
+                    }
+                    catch { }
+                }
             }
             LastResult = result;
             return result;
         }
 
         // ========== 以下私有方法保持不变 ==========
+        internal static string CreateDefaultCheckWorkDir()
+            => Path.Combine(
+                Path.GetTempPath(),
+                "AvifEncoder_check",
+                Guid.NewGuid().ToString("N"));
+
         private static async Task<List<string>> GetAvailableEncodersAsync(string ffmpegPath)
         {
             var list = new List<string>();
@@ -177,11 +197,16 @@ namespace AvifEncoder
             return list;
         }
 
-        private static async Task<EncoderStatus> TestEncoderAsync(string enc, string testInput, string testDir, string ffmpegPath)
+        private static async Task<EncoderStatus> TestEncoderAsync(
+            string enc,
+            string testInput,
+            string testDir,
+            string ffmpegPath,
+            string runId)
         {
             bool ok = false;
             string note = "不可用";
-            string outFile = Path.Combine(testDir, $"test_{enc}.avif");
+            string outFile = Path.Combine(testDir, $"test_{enc}_{runId}.avif");
             try
             {
                 string qpArg = enc switch
