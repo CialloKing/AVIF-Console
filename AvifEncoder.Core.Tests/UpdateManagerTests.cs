@@ -44,5 +44,29 @@ namespace AvifEncoder.Core.Tests
             Assert.EndsWith(".bat", first);
             Assert.AreNotEqual(Path.Combine(exeDir, "_update.bat"), first);
         }
+
+        [TestMethod]
+        public void WriteUpdateScriptAtomic_ReplacesExistingFileAndCleansTempFile()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), $"update_script_{Guid.NewGuid():N}");
+            string batPath = Path.Combine(dir, "_update.test.bat");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(batPath, "old");
+
+                UpdateManager.WriteUpdateScriptAtomic(batPath, "new");
+
+                Assert.AreEqual("new", File.ReadAllText(batPath));
+                Assert.IsEmpty(Directory.GetFiles(dir, "_update.test.bat.*.tmp"));
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
     }
 }

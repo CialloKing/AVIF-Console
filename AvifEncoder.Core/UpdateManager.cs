@@ -322,7 +322,7 @@ namespace AvifEncoder
             string batPath = GetUpdateScriptPath(exePath);
             string fullNewPath = Path.GetFullPath(newPath);
 
-            File.WriteAllText(batPath, BuildUpdateScript(exePath, fullNewPath));
+            WriteUpdateScriptAtomic(batPath, BuildUpdateScript(exePath, fullNewPath));
             // 启动 bat（不等待）
             System.Diagnostics.Process.Start(
                 new System.Diagnostics.ProcessStartInfo
@@ -366,6 +366,29 @@ namespace AvifEncoder
             return Path.Combine(
                 exeDir,
                 "_update." + Guid.NewGuid().ToString("N") + ".bat");
+        }
+
+        internal static void WriteUpdateScriptAtomic(string batPath, string script)
+        {
+            string? dir = Path.GetDirectoryName(batPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            string tmpPath = batPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tmpPath, script);
+                File.Move(tmpPath, batPath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(tmpPath))
+                {
+                    try { File.Delete(tmpPath); } catch { }
+                }
+            }
         }
 
         /// <summary>
