@@ -527,7 +527,12 @@ namespace AvifEncoder
 
             bool anyPass = false;
             int lastPass = -1;
-            double passMargin = 0.02;  // 保守余量
+            double passMargin = metricMode switch
+            {
+                "gmsd"   => 0.0005,  // GMSD 原生值 0.001~0.01，0.02 远超其尺度
+                "butter3"=> 0.1,     // Butteraugli 原生值 0.3~3.0
+                _        => 0.02    // VMAF/SSIM/PSNR/XPSNR
+            };
 
             foreach (int crf in testCrfs)
             {
